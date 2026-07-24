@@ -133,12 +133,9 @@ try {
       },
     );
 
-    this.ws.on(
-      'error',
-      (error: Error) => {
-        console.error(
-          'OKX WebSocket error:',
-          error,
+    this.ws.on('error',
+      (error: Error) => {console.error(
+          'OKX WebSocket error:',error,
         );
       },
     );
@@ -150,7 +147,7 @@ try {
     // Re-attach all event listeners (you'll need to refactor this into a method)
   }, 5000);
 });
-
+}
   public onOrderBook(
     callback: (
       update: OKXOrderBookUpdate,

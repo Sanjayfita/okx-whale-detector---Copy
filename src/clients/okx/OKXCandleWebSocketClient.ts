@@ -116,17 +116,14 @@ try {
     this.ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
     // Re-attach all event listeners (you'll need to refactor this into a method)
   }, 5000);
-});
-
-  public onCandle(
-    callback: (
-      candle: OKXCandle,
-    ) => void,
-  ): void {
-    this.onCandleUpdate =
-      callback;
+  });
   }
-
+  public onCandle(
+    callback: (candle: OKXCandle) => void,
+  ): void {
+    this.onCandleUpdate = callback;
+  }
+  
   public subscribeToCandles(
     instId: string,
   ): void {
