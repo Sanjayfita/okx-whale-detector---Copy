@@ -25,7 +25,7 @@ export interface OKXCandleUpdate {
 }
 
 export class OKXWebSocketClient {
-  private readonly ws: WebSocket;
+  private ws: WebSocket;
 
   private onOrderBookUpdate?: (
     update: OKXOrderBookUpdate,
@@ -141,11 +141,7 @@ try {
     );
 
     this.ws.on('close', () => {
-  console.log('Disconnected from OKX WebSocket. Reconnecting in 5s...');
-  setTimeout(() => {
-    this.ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
-    // Re-attach all event listeners (you'll need to refactor this into a method)
-  }, 5000);
+  console.log('❌ Disconnected from OKX WebSocket. Please restart the app.');
 });
 }
   public onOrderBook(
