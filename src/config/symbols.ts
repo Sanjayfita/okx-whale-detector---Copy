@@ -1,0 +1,7 @@
+export const WATCHLIST = [
+  'BTC-USDT',
+  'ETH-USDT',
+  'SOL-USDT',
+  'XRP-USDT',
+  'DOGE-USDT',
+];
