@@ -49,6 +49,24 @@ export class WhaleBehaviorEngine {
   private readonly REFILL_MIN_COUNT =
     2;
 
+public prune(
+  activeWhales: Whale[],
+): void {
+  const activeKeys =
+    new Set(
+      activeWhales.map(
+        whale =>
+          this.getKey(whale),
+      ),
+    );
+
+  for (const key of this.history.keys()) {
+    if (!activeKeys.has(key)) {
+      this.history.delete(key);
+    }
+  }
+}
+
  public analyze(
   whale: Whale,
 ): WhaleBehavior[] {

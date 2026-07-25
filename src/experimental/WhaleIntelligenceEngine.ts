@@ -6,7 +6,7 @@ import type {
 
 import {
   WhaleEventDetector,
-} from './WhaleEventDetector';
+} from '../core/WhaleEventDetector';
 
 export class WhaleIntelligenceEngine {
   private eventDetector =

@@ -252,7 +252,9 @@ if (
     );
   }
 }
-
+state.whaleScoreEngine.prune(
+  result.active,
+);
         const currentPrice =
   state.orderBookManager
     .getMidPrice();
@@ -443,6 +445,10 @@ for (
     `${scored.whale.price}`,
   );
 }
+state.whaleScoreEngine.prune(
+  result.active,
+);
+
     const marketSignal =
       state.marketAnalyzer.analyze(
         result.active,

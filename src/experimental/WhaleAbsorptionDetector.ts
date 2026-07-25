@@ -2,7 +2,7 @@ import type { Whale } from '../types/whale';
 import type {
   AggressiveTrade,
   AggressiveTradeSide,
-} from './AggressiveTradeTracker';
+} from '../core/AggressiveTradeTracker';
 
 export type AbsorptionType = 'BID_ABSORPTION' | 'ASK_ABSORPTION';
 

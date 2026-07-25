@@ -64,7 +64,23 @@ export class WhaleScoreEngine {
   ) {
     this.config = config;
   }
+public prune(
+  activeWhales: Whale[],
+): void {
+  const activeKeys =
+    new Set(
+      activeWhales.map(
+        whale =>
+          this.getKey(whale),
+      ),
+    );
 
+  for (const key of this.history.keys()) {
+    if (!activeKeys.has(key)) {
+      this.history.delete(key);
+    }
+  }
+}
   public score(
     whale: Whale,
     currentPrice: number,
