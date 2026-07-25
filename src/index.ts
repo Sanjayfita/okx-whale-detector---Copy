@@ -601,7 +601,7 @@ console.log(
       'BULLISH'
     ) {
       console.log(
-        `🟢 BULLISH | Confidence: ` +
+        `🟢 BULLISH |Pressure Strength: ` +
         `${marketSignal.confidence.toFixed(
           1,
         )}%`,
@@ -611,14 +611,14 @@ console.log(
       'BEARISH'
     ) {
       console.log(
-        `🔴 BEARISH | Confidence: ` +
+        `🔴 BEARISH |Pressure Strength: ` +
         `${marketSignal.confidence.toFixed(
           1,
         )}%`,
       );
     } else {
       console.log(
-        `⚪ NEUTRAL | Confidence: ` +
+        `⚪ NEUTRAL |Pressure Strength: ` +
         `${marketSignal.confidence.toFixed(
           1,
         )}%`,
