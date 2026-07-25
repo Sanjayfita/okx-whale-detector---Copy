@@ -2,6 +2,9 @@ import { OKXWebSocketClient } from './clients/okx/OKXWebSocketClient';
 import { OKXCandleWebSocketClient,} from './clients/okx/OKXCandleWebSocketClient';
 import { WATCHLIST } from './config/symbols';
 import { MarketState } from './core/MarketState';
+import {
+  SummaryThrottle,
+} from './core/SummaryThrottle';  
 
 console.log(
   'OKX Whale Detector starting...',
@@ -17,8 +20,10 @@ const candleClient =
 const marketStates =
   new Map<string, MarketState>();
 
-const lastDisplayTimes =
-  new Map<string, number>();
+const summaryThrottle =
+  new SummaryThrottle(
+    5_000,
+  );
 
 for (
   const symbol
@@ -63,6 +68,7 @@ client.onReconnect(() => {
      * must also be replaced.
      */
   }
+summaryThrottle.reset();
 
   console.log(
     '✅ Local market state reset. ' +
@@ -70,36 +76,40 @@ client.onReconnect(() => {
   );
 });
 
-let candleCounter = 0;
-candleClient.onCandle((candle) => {
-  candleCounter++;
-  if (candleCounter % 10 === 0) {
-    // Only log every 10th candle
-    console.log(`📊 ${candle.instId} 1m | O: ${candle.open} | ...`);
-  }
-  // ... rest of logic (keep running, just reduce logging)
-});
-
+const candleCounters =
+  new Map<string, number>();
 
 candleClient.onCandle(
-  (candle) => {
+  candle => {
     const state =
       marketStates.get(
         candle.instId,
       );
 
-
-    if (
-      !state
-    ) {
+    if (!state) {
       return;
     }
-
 
     state.candleHistory.add(
       candle,
     );
 
+    const count =
+      (
+        candleCounters.get(
+          candle.instId,
+        ) ??
+        0
+      ) + 1;
+
+    candleCounters.set(
+      candle.instId,
+      count,
+    );
+
+    if (count % 10 !== 0) {
+      return;
+    }
 
     console.log(
       `🕯️ ${candle.instId} 1m | ` +
@@ -108,8 +118,7 @@ candleClient.onCandle(
       `L: ${candle.low} | ` +
       `C: ${candle.close} | ` +
       `Closed: ${candle.confirm} | ` +
-      `History: ` +
-      `${state.candleHistory.getSize()}`,
+      `History: ${state.candleHistory.getSize()}`,
     );
   },
 );
@@ -384,27 +393,13 @@ state.whaleRefillDetector.prune(
      * DISPLAY SUMMARY
      */
 
-    const now =
-      Date.now();
-
-const lastDisplayTime =
-  lastDisplayTimes.get(
+ if (
+  !summaryThrottle.shouldDisplay(
     update.instId,
-  ) ?? 0;
-
-if (
-  now -
-  lastDisplayTime <
-  5_000
+  )
 ) {
   return;
 }
-
-lastDisplayTimes.set(
-  update.instId,
-  now,
-);
-
 
     const newWalls =
       walls.filter(
