@@ -103,6 +103,54 @@ export class MarketAnalyzer {
       bidPressurePercent -
       askPressurePercent;
 
+const neutralBandPercent = 10;
+const absoluteNetPressure =
+  Math.abs(netPressure);
+
+if (
+  absoluteNetPressure <
+  neutralBandPercent
+) {
+  bias = 'NEUTRAL';
+  confidence =
+    Math.round(
+      (
+        1 -
+        absoluteNetPressure /
+        neutralBandPercent
+      ) * 100,
+    );
+  reason =
+    'Whale pressure is within the neutral band';
+} else {
+  bias =
+    netPressure > 0
+      ? 'BULLISH'
+      : 'BEARISH';
+
+  confidence =
+    Math.round(
+      Math.min(
+        100,
+        (
+          (
+            absoluteNetPressure -
+            neutralBandPercent
+          ) /
+          (
+            100 -
+            neutralBandPercent
+          )
+        ) * 100,
+      ),
+    );
+
+  reason =
+    netPressure > 0
+      ? 'Bid whale pressure exceeds the neutral band'
+      : 'Ask whale pressure exceeds the neutral band';
+}
+
     return {
       bias,
       confidence,
