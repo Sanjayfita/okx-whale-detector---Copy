@@ -79,10 +79,11 @@ export class WallDetector {
       }
 
       const existingWall =
-        this.findNearbyWall(
-          side,
-          level.price,
-        );
+  this.findNearbyWall(
+    side,
+    level.price,
+    matchedWallKeys,
+  );
 
       if (existingWall) {
         matchedWallKeys.add(
@@ -139,39 +140,51 @@ export class WallDetector {
   }
 
   private findNearbyWall(
-    side: WallSide,
-    price: number,
-  ): Wall | undefined {
-    for (
-      const wall of this.walls.values()
+  side: WallSide,
+  price: number,
+  matchedWallKeys: Set<string>,
+): Wall | undefined {
+  let closestWall:
+    Wall | undefined;
+
+  let closestDistance =
+    Number.POSITIVE_INFINITY;
+
+  for (const wall of this.walls.values()) {
+    if (
+      wall.side !== side ||
+      matchedWallKeys.has(
+        wall.wallId,
+      )
     ) {
-      if (
-        wall.side !== side
-      ) {
-        continue;
-      }
-
-      const priceDifferencePercent =
-        Math.abs(
-          (
-            (
-              price -
-              wall.currentPrice
-            ) /
-            wall.currentPrice
-          ) * 100,
-        );
-
-      if (
-        priceDifferencePercent <=
-        this.config.priceTolerancePercent
-      ) {
-        return wall;
-      }
+      continue;
     }
 
-    return undefined;
+    const distancePercent =
+      Math.abs(
+        (
+          (
+            price -
+            wall.currentPrice
+          ) /
+          wall.currentPrice
+        ) * 100,
+      );
+
+    if (
+      distancePercent <=
+        this.config.priceTolerancePercent &&
+      distancePercent <
+        closestDistance
+    ) {
+      closestWall = wall;
+      closestDistance =
+        distancePercent;
+    }
   }
+
+  return closestWall;
+}
 
   private updateWall(
     wall: Wall,

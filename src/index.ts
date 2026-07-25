@@ -179,6 +179,10 @@ const scoredWhales =
     currentPrice,
   );
 
+state.whaleScoreEngine.prune(
+  result.active,
+);
+
   for (
   const whale
   of result.active
@@ -201,6 +205,10 @@ const scoredWhales =
     );
   }
 }
+
+state.whaleBehaviorEngine.prune(
+  result.active,
+);
 
 const walls =
   state.wallDetector.detect(
@@ -252,39 +260,7 @@ if (
     );
   }
 }
-state.whaleScoreEngine.prune(
-  result.active,
-);
-        const currentPrice =
-  state.orderBookManager
-    .getMidPrice();
 
-    for (const whale of result.active) {
-  const refill =
-    state.whaleRefillDetector.detect(
-      whale,
-    );
-
-  if (!refill) {
-    continue;
-  }
-
-  console.log(
-    `🔄 REFILLING ${whale.side} WHALE | ` +
-    `Price: ${whale.price} | ` +
-    `Refill: $${refill.refillAmountUSD.toLocaleString(
-      undefined,
-      {
-        maximumFractionDigits: 0,
-      },
-    )} | ` +
-    `Count: ${refill.refillCount}`,
-  );
-}
-
-state.whaleRefillDetector.prune(
-  result.active,
-);
 
       const value =
         whale.notionalUSD.toLocaleString(
@@ -345,6 +321,37 @@ state.whaleRefillDetector.prune(
       }
     }
 
+for (
+  const whale
+  of result.active
+) {
+  const refill =
+    state.whaleRefillDetector.detect(
+      whale,
+    );
+
+  if (!refill) {
+    continue;
+  }
+
+  console.log(
+    `🔄 REFILLING ${whale.side} WHALE | ` +
+    `Price: ${whale.price} | ` +
+    `Refill: $` +
+    `${refill.refillAmountUSD.toLocaleString(
+      undefined,
+      {
+        maximumFractionDigits:
+          0,
+      },
+    )} | ` +
+    `Count: ${refill.refillCount}`,
+  );
+}
+
+state.whaleRefillDetector.prune(
+  result.active,
+);
 
     /*
      * MOVED WALL EVENTS
