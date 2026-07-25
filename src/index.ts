@@ -1,15 +1,7 @@
 import { OKXWebSocketClient } from './clients/okx/OKXWebSocketClient';
-import { OrderBookManager } from './core/OrderBookManager';
-import { WhaleTracker } from './services/WhaleTracker';
-import { MarketAnalyzer } from './core/MarketAnalyzer';
-import { WhaleEventDetector } from './core/WhaleEventDetector';
-import { WhaleBehaviorEngine } from './core/WhaleBehaviorEngine';
-import { WallDetector } from './core/WallDetector';
-import { WhaleRefillDetector } from './core/WhaleRefillDetector';
 import { OKXCandleWebSocketClient,} from './clients/okx/OKXCandleWebSocketClient';
 import { WATCHLIST } from './config/symbols';
 import { MarketState } from './core/MarketState';
-import { WhaleScoreEngine } from './core/WhaleScoreEngine';
 
 console.log(
   'OKX Whale Detector starting...',
@@ -19,12 +11,13 @@ console.log(
 const client =
   new OKXWebSocketClient();
 
+const candleClient =
+  new OKXCandleWebSocketClient();
 
 const marketStates =
   new Map<string, MarketState>();
 
-const whaleScoreEngines =
-  new Map<string, WhaleScoreEngine>();
+let lastDisplayTime = 0;
 
 for (
   const symbol
@@ -34,12 +27,6 @@ for (
     symbol,
 
     new MarketState(),
-  );
-
-  whaleScoreEngines.set(
-    symbol,
-
-    new WhaleScoreEngine(),
   );
 }
 
@@ -74,26 +61,13 @@ client.onReconnect(() => {
      * separate score-engine map, so it
      * must also be replaced.
      */
-    whaleScoreEngines.set(
-      symbol,
-      new WhaleScoreEngine(),
-    );
   }
-
-  lastDisplayTime = 0;
 
   console.log(
     '✅ Local market state reset. ' +
     'Waiting for fresh snapshots...',
   );
 });
-
-const candleClient =
-  new OKXCandleWebSocketClient();
-
-
-let lastDisplayTime =
-  0;
 
 let candleCounter = 0;
 candleClient.onCandle((candle) => {
@@ -173,10 +147,16 @@ if (!wasApplied) {
 
   return;
 }
+const orderBook =
+  state.orderBookManager
+    .getOrderBook();
 
-
-    const orderBook =
-      state.orderBookManager.getOrderBook();
+if (
+  !orderBook.initialized ||
+  orderBook.status !== 'SYNCED'
+) {
+  return;
+}
 
     const result =
   state.whaleTracker.scan(
@@ -193,19 +173,8 @@ if (
   return;
 }
 
-const whaleScoreEngine =
-  whaleScoreEngines.get(
-    update.instId,
-  );
-
-if (
-  !whaleScoreEngine
-) {
-  return;
-}
-
 const scoredWhales =
-  whaleScoreEngine.scoreMany(
+  state.whaleScoreEngine.scoreMany(
     result.active,
     currentPrice,
   );
