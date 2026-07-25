@@ -3,10 +3,8 @@ import type { Whale } from '../types/whale';
 export type WhaleBehaviorType =
   | 'SPOOF'
   | 'PERSISTENT'
-  | 'REFILLING'
   | 'ACCUMULATION'
-  | 'DISTRIBUTION'
-  | 'ABSORPTION';
+  | 'DISTRIBUTION';
 
 export interface WhaleBehavior {
   type: WhaleBehaviorType;
@@ -35,8 +33,6 @@ interface WhaleBehaviorHistory {
 
   decreaseCount: number;
 
-  refillCount: number;
-
   lastPrice: number;
 }
 
@@ -53,10 +49,9 @@ export class WhaleBehaviorEngine {
   private readonly REFILL_MIN_COUNT =
     2;
 
-  public analyze(
-    whale: Whale,
-    currentPrice: number,
-  ): WhaleBehavior[] {
+ public analyze(
+  whale: Whale,
+): WhaleBehavior[] {
     const now =
       Date.now();
 
@@ -94,9 +89,6 @@ export class WhaleBehaviorEngine {
           0,
 
         decreaseCount:
-          0,
-
-        refillCount:
           0,
 
         lastPrice:
@@ -144,20 +136,6 @@ export class WhaleBehaviorEngine {
     }
 
     /*
-     * REFILL DETECTION
-     *
-     * Wall decreases and
-     * later grows again.
-     */
-
-    if (
-      history.decreaseCount >= 1 &&
-      history.increaseCount >= 2
-    ) {
-      history.refillCount++;
-    }
-
-    /*
      * SPOOF DETECTION
      *
      * Very young wall that
@@ -198,31 +176,7 @@ export class WhaleBehaviorEngine {
      * REFILLING
      */
 
-    if (
-      history.refillCount >=
-      this.REFILL_MIN_COUNT
-    ) {
-      behaviors.push({
-        type:
-          'REFILLING',
-
-        whale,
-
-        confidence:
-          Math.min(
-            100,
-            60 +
-            history.refillCount *
-            10,
-          ),
-
-        reason:
-          `Whale repeatedly replenished liquidity (${history.refillCount} refill cycles)`,
-
-        detectedAt:
-          now,
-      });
-    }
+    
 
     /*
      * ACCUMULATION
@@ -286,47 +240,6 @@ export class WhaleBehaviorEngine {
 
         reason:
           'Ask liquidity is repeatedly increasing',
-
-        detectedAt:
-          now,
-      });
-    }
-
-    /*
-     * ABSORPTION
-     */
-
-    const distancePercent =
-      Math.abs(
-        (
-          whale.price -
-          currentPrice
-        ) /
-        currentPrice,
-      ) *
-      100;
-
-    if (
-      distancePercent <=
-      0.25 &&
-      ageSeconds >=
-      10
-    ) {
-      behaviors.push({
-        type:
-          'ABSORPTION',
-
-        whale,
-
-        confidence:
-          Math.min(
-            100,
-            60 +
-            ageSeconds,
-          ),
-
-        reason:
-          'Large liquidity remains close to market price',
 
         detectedAt:
           now,

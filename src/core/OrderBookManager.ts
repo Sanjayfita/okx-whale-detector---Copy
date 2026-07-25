@@ -15,19 +15,66 @@ export class OrderBookManager {
   };
   
   public applyUpdate(
-    bids: OrderBookLevel[],
-    asks: OrderBookLevel[],
-    timestamp: number,
-    seqId: number,
-  ): void {
-    this.applyLevels(this.orderBook.bids, bids, timestamp);
-    this.applyLevels(this.orderBook.asks, asks, timestamp);
+  bids: OrderBookLevel[],
+  asks: OrderBookLevel[],
+  timestamp: number,
+  seqId: number,
+  prevSeqId: number,
+  action: 'snapshot' | 'update',
+): boolean {
+  if (action === 'snapshot') {
+    this.orderBook.bids.clear();
+    this.orderBook.asks.clear();
+
+    this.applyLevels(
+      this.orderBook.bids,
+      bids,
+      timestamp,
+    );
+
+    this.applyLevels(
+      this.orderBook.asks,
+      asks,
+      timestamp,
+    );
 
     this.orderBook.lastSeqId = seqId;
     this.orderBook.updatedAt = timestamp;
     this.orderBook.initialized = true;
     this.orderBook.status = 'SYNCED';
+
+    return true;
   }
+
+  if (
+    !this.orderBook.initialized ||
+    this.orderBook.lastSeqId === null ||
+    prevSeqId !== this.orderBook.lastSeqId
+  ) {
+    this.orderBook.status = 'INVALID';
+    this.orderBook.initialized = false;
+
+    return false;
+  }
+
+  this.applyLevels(
+    this.orderBook.bids,
+    bids,
+    timestamp,
+  );
+
+  this.applyLevels(
+    this.orderBook.asks,
+    asks,
+    timestamp,
+  );
+
+  this.orderBook.lastSeqId = seqId;
+  this.orderBook.updatedAt = timestamp;
+  this.orderBook.status = 'SYNCED';
+
+  return true;
+}
 
   private applyLevels(
     side: Map<number, OrderLevel>,

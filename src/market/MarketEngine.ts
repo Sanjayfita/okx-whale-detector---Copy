@@ -61,18 +61,28 @@ export class MarketEngine {
       new WhaleEventDetector();
   }
 
- public processOrderBook(
+public processOrderBook(
   bids: OrderBookLevel[],
   asks: OrderBookLevel[],
   timestamp: number,
-  seqId?: number,
+  seqId: number,
+  prevSeqId: number,
+  action: 'snapshot' | 'update',
 ): MarketSnapshot {
-    this.orderBookManager.applyUpdate(
-      bids,
-      asks,
-      timestamp,
-      seqId ?? 0,
-    );
+    const wasApplied = this.orderBookManager.applyUpdate(
+  bids,
+  asks,
+  timestamp,
+  seqId,
+  prevSeqId,
+  action,
+);
+
+if (!wasApplied) {
+  throw new Error(
+    `Order-book sequence gap for ${this.symbol}`,
+  );
+}
 
     const result =
       this.whaleTracker.scan(

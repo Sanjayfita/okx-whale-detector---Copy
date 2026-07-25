@@ -3,6 +3,7 @@ import type { OrderBookLevel } from '../../types/orderbook';
 
 export interface OKXOrderBookUpdate {
   instId: string;
+  action: 'snapshot' | 'update';
   asks: OrderBookLevel[];
   bids: OrderBookLevel[];
   timestamp: number;
@@ -25,7 +26,26 @@ export interface OKXCandleUpdate {
 }
 
 export class OKXWebSocketClient {
-  private ws: WebSocket;
+  private ws: WebSocket | null = null;
+private reconnectTimer?: NodeJS.Timeout;
+private heartbeatTimer?: NodeJS.Timeout;
+private reconnectAttempt = 0;
+private intentionallyClosed = false;
+
+private readonly url =
+  'wss://ws.okx.com:8443/ws/v5/public';
+
+private readonly orderBookSubscriptions =
+  new Map<string, string>();
+
+private readonly candleSubscriptions =
+  new Map<
+    string,
+    {
+      instId: string;
+      interval: string;
+    }
+  >();
 
   private onOrderBookUpdate?: (
     update: OKXOrderBookUpdate,
@@ -36,114 +56,312 @@ export class OKXWebSocketClient {
   ) => void;
 
   constructor() {
-    this.ws = new WebSocket(
-      'wss://ws.okx.com:8443/ws/v5/public',
+  this.connect();
+}
+private connect(): void {
+  if (this.intentionallyClosed) {
+    return;
+  }
+
+  const ws = new WebSocket(
+    this.url,
+    {
+      maxPayload:
+        2 * 1024 * 1024,
+      perMessageDeflate: false,
+    },
+  );
+
+  this.ws = ws;
+
+  ws.on('open', () => {
+    console.log(
+      'Connected to OKX WebSocket',
     );
 
-    this.ws.on('open', () => {
-      console.log(
-        'Connected to OKX WebSocket',
-      );
+    this.reconnectAttempt = 0;
+    this.startHeartbeat();
+    this.resubscribeAll();
+  });
+
+  ws.on(
+    'message',
+    data => {
+      this.handleMessage(data);
+    },
+  );
+
+  ws.on('error', error => {
+    console.error(
+      'OKX WebSocket error:',
+      error,
+    );
+  });
+
+  ws.on('close', () => {
+    console.log(
+      '❌ Disconnected from OKX WebSocket',
+    );
+
+    this.stopHeartbeat();
+
+    if (!this.intentionallyClosed) {
+      this.scheduleReconnect();
+    }
+  });
+}
+
+private handleMessage(
+  data: WebSocket.RawData,
+): void {
+  const rawMessage =
+    data.toString();
+
+  // OKX heartbeat response is plain text, not JSON.
+  if (rawMessage === 'pong') {
+    return;
+  }
+
+  let message: any;
+
+  try {
+    message = JSON.parse(
+      rawMessage,
+    );
+  } catch (error) {
+    console.error(
+      'Failed to parse WebSocket message:',
+      error,
+    );
+
+    return;
+  }
+
+  if (message.event) {
+    console.log(
+      'OKX event:',
+      message,
+    );
+
+    return;
+  }
+
+  if (
+    message.arg?.channel ===
+      'books' &&
+    message.data?.length > 0
+  ) {
+    const orderBook =
+      message.data[0];
+
+    this.onOrderBookUpdate?.({
+      instId:
+        message.arg.instId,
+
+      action:
+        message.action as
+          | 'snapshot'
+          | 'update',
+
+      asks:
+        orderBook.asks,
+      bids:
+        orderBook.bids,
+
+      timestamp: Number(
+        orderBook.ts,
+      ),
+      seqId: Number(
+        orderBook.seqId,
+      ),
+      prevSeqId: Number(
+        orderBook.prevSeqId,
+      ),
     });
+  }
 
-    this.ws.on(
-      'message',
-      (data: WebSocket.RawData) => {
-       let message;
-try {
-  message = JSON.parse(data.toString());
-} catch (error) {
-  console.error('Failed to parse WebSocket message:', error);
-  return;
+  if (
+    message.arg?.channel?.startsWith(
+      'candle',
+    ) &&
+    message.data?.length > 0
+  ) {
+    const rawCandle =
+      message.data[0];
+
+    this.onCandleUpdate?.({
+      instId:
+        message.arg.instId,
+
+      interval:
+        message.arg.channel.replace(
+          'candle',
+          '',
+        ),
+
+      candle: {
+        timestamp: Number(
+          rawCandle[0],
+        ),
+        open: Number(
+          rawCandle[1],
+        ),
+        high: Number(
+          rawCandle[2],
+        ),
+        low: Number(
+          rawCandle[3],
+        ),
+        close: Number(
+          rawCandle[4],
+        ),
+        volume: Number(
+          rawCandle[5],
+        ),
+        confirmed:
+          rawCandle[8] === '1',
+      },
+    });
+  }
 }
 
-        if (message.event) {
-          console.log(
-            'OKX event:',
-            message,
-          );
-          return;
-        }
+private scheduleReconnect(): void {
+  if (this.reconnectTimer) {
+    return;
+  }
 
-        if (
-          message.arg?.channel ===
-            'books' &&
-          message.data?.length > 0
-        ) {
-          const orderBook =
-            message.data[0];
-
-          this.onOrderBookUpdate?.({
-            instId: message.arg.instId,
-            asks: orderBook.asks,
-            bids: orderBook.bids,
-            timestamp: Number(
-              orderBook.ts,
-            ),
-            seqId: Number(
-              orderBook.seqId,
-            ),
-            prevSeqId: Number(
-              orderBook.prevSeqId,
-            ),
-          });
-        }
-
-        if (
-          message.arg?.channel?.startsWith(
-            'candle',
-          ) &&
-          message.data?.length > 0
-        ) {
-          const rawCandle =
-            message.data[0];
-
-          this.onCandleUpdate?.({
-            instId:
-              message.arg.instId,
-            interval:
-              message.arg.channel.replace(
-                'candle',
-                '',
-              ),
-            candle: {
-              timestamp: Number(
-                rawCandle[0],
-              ),
-              open: Number(
-                rawCandle[1],
-              ),
-              high: Number(
-                rawCandle[2],
-              ),
-              low: Number(
-                rawCandle[3],
-              ),
-              close: Number(
-                rawCandle[4],
-              ),
-              volume: Number(
-                rawCandle[5],
-              ),
-              confirmed:
-                rawCandle[8] === '1',
-            },
-          });
-        }
-      },
+  const delayMs =
+    Math.min(
+      30_000,
+      1_000 *
+        2 ** this.reconnectAttempt,
     );
 
-    this.ws.on('error',
-      (error: Error) => {console.error(
-          'OKX WebSocket error:',error,
-        );
-      },
-    );
+  this.reconnectAttempt += 1;
 
-    this.ws.on('close', () => {
-  console.log('❌ Disconnected from OKX WebSocket. Please restart the app.');
-});
+  console.log(
+    `Reconnecting OKX WebSocket in ` +
+    `${delayMs / 1_000}s...`,
+  );
+
+  this.reconnectTimer =
+    setTimeout(() => {
+      this.reconnectTimer =
+        undefined;
+
+      this.connect();
+    }, delayMs);
 }
+
+private startHeartbeat(): void {
+  this.stopHeartbeat();
+
+  this.heartbeatTimer =
+    setInterval(() => {
+      if (
+        this.ws?.readyState ===
+        WebSocket.OPEN
+      ) {
+        this.ws.send('ping');
+      }
+    }, 20_000);
+}
+
+private stopHeartbeat(): void {
+  if (this.heartbeatTimer) {
+    clearInterval(
+      this.heartbeatTimer,
+    );
+
+    this.heartbeatTimer =
+      undefined;
+  }
+}
+
+private resubscribeAll(): void {
+  for (
+    const [
+      instId,
+      instType,
+    ]
+    of this.orderBookSubscriptions
+  ) {
+    this.sendOrderBookSubscription(
+      instId,
+      instType,
+    );
+  }
+
+  for (
+    const subscription
+    of this.candleSubscriptions.values()
+  ) {
+    this.sendCandleSubscription(
+      subscription.instId,
+      subscription.interval,
+    );
+  }
+}
+
+private sendOrderBookSubscription(
+  instId: string,
+  instType: string,
+): void {
+  if (
+    this.ws?.readyState !==
+    WebSocket.OPEN
+  ) {
+    return;
+  }
+
+  this.ws.send(
+    JSON.stringify({
+      op: 'subscribe',
+      args: [
+        {
+          channel: 'books',
+          instId,
+          instType,
+        },
+      ],
+    }),
+  );
+
+  console.log(
+    `📘 Subscribed to ${instId} order book`,
+  );
+}
+
+private sendCandleSubscription(
+  instId: string,
+  interval: string,
+): void {
+  if (
+    this.ws?.readyState !==
+    WebSocket.OPEN
+  ) {
+    return;
+  }
+
+  this.ws.send(
+    JSON.stringify({
+      op: 'subscribe',
+      args: [
+        {
+          channel:
+            `candle${interval}`,
+          instId,
+        },
+      ],
+    }),
+  );
+
+  console.log(
+    `📈 Subscribed to ${instId} ` +
+    `${interval} candles`,
+  );
+}
+
   public onOrderBook(
     callback: (
       update: OKXOrderBookUpdate,
@@ -162,92 +380,62 @@ try {
       callback;
   }
 
-  public subscribeToOrderBook(
-    instId: string,
-    instType: string = 'SPOT',
-  ): void {
-    const subscribeMessage = {
-      op: 'subscribe',
-      args: [
-        {
-          channel: 'books',
-          instId,
-          instType,
-        },
-      ],
-    };
+ public subscribeToOrderBook(
+  instId: string,
+  instType: string = 'SPOT',
+): void {
+  this.orderBookSubscriptions.set(
+    instId,
+    instType,
+  );
 
-    if (
-      this.ws.readyState ===
-      WebSocket.OPEN
-    ) {
-      this.ws.send(
-        JSON.stringify(
-          subscribeMessage,
-        ),
-      );
-    } else {
-      this.ws.once(
-        'open',
-        () => {
-          this.ws.send(
-            JSON.stringify(
-              subscribeMessage,
-            ),
-          );
-        },
-      );
-    }
+  this.sendOrderBookSubscription(
+    instId,
+    instType,
+  );
+}
+
+public subscribeToCandle(
+  instId: string,
+  interval: string,
+): void {
+  const normalizedInterval =
+    interval
+      .trim()
+      .toLowerCase();
+
+  const subscriptionKey =
+    `${instId}:${normalizedInterval}`;
+
+  this.candleSubscriptions.set(
+    subscriptionKey,
+    {
+      instId,
+      interval:
+        normalizedInterval,
+    },
+  );
+
+  this.sendCandleSubscription(
+    instId,
+    normalizedInterval,
+  );
+}
+
+public close(): void {
+  this.intentionallyClosed = true;
+
+  if (this.reconnectTimer) {
+    clearTimeout(
+      this.reconnectTimer,
+    );
+
+    this.reconnectTimer =
+      undefined;
   }
 
-  public subscribeToCandle(
-    instId: string,
-    interval: string,
-  ): void {
-    const normalizedInterval =
-      interval
-        .trim()
-        .toLowerCase();
-
-    const subscribeMessage = {
-      op: 'subscribe',
-      args: [
-        {
-          channel:
-            `candle${normalizedInterval}`,
-          instId,
-        },
-      ],
-    };
-
-    const sendSubscription = () => {
-      if (
-        this.ws.readyState ===
-        WebSocket.OPEN
-      ) {
-        this.ws.send(
-          JSON.stringify(
-            subscribeMessage,
-          ),
-        );
-
-        console.log(
-          `📈 Subscribed to ${instId} ` +
-          `${normalizedInterval} candles`,
-        );
-      }
-    };
-
-    if (
-      this.ws.readyState ===
-      WebSocket.OPEN
-    ) {
-      sendSubscription();
-    } else {
-      this.ws.once(
-        'open',
-        sendSubscription,
-      );
-    }
-  }
+  this.stopHeartbeat();
+  this.ws?.close();
+  this.ws = null;
+}
 }

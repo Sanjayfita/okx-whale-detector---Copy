@@ -111,15 +111,24 @@ client.onOrderBook(
     }
 
 
-    state.orderBookManager.applyUpdate(
-      update.bids,
+    const wasApplied =
+  state.orderBookManager.applyUpdate(
+    update.bids,
+    update.asks,
+    update.timestamp,
+    update.seqId,
+    update.prevSeqId,
+    update.action,
+  );
 
-      update.asks,
+if (!wasApplied) {
+  console.error(
+    `Order-book sequence gap for ${update.instId}. ` +
+    'Detector output is paused until a new snapshot is received.',
+  );
 
-      update.timestamp,
-
-      update.seqId,
-    );
+  return;
+}
 
 
     const orderBook =
@@ -163,9 +172,8 @@ const scoredWhales =
 ) {
   const behaviors =
     state.whaleBehaviorEngine.analyze(
-      whale,
-      currentPrice,
-    );
+  whale,
+);
 
   for (
     const behavior
@@ -196,7 +204,7 @@ const walls =
 
 
     for (
-      const event of whaleEvents
+const event of whaleEvents
     ) {
       const whale =
         event.whale;
@@ -236,34 +244,32 @@ if (
   state.orderBookManager
     .getMidPrice();
 
-    for (
-  const whale
-  of result.active
-) {
+    for (const whale of result.active) {
   const refill =
     state.whaleRefillDetector.detect(
       whale,
     );
 
-  if (
-    refill
-  ) {
-    console.log(
-      `🔄 REFILLING ` +
-      `${whale.side} WHALE | ` +
-      `Price: ${whale.price} | ` +
-      `Refill: $` +
-      `${refill.refillAmountUSD.toLocaleString(
-        undefined,
-        {
-          maximumFractionDigits:
-            0,
-        },
-      )} | ` +
-      `Count: ${refill.refillCount}`,
-    );
+  if (!refill) {
+    continue;
   }
+
+  console.log(
+    `🔄 REFILLING ${whale.side} WHALE | ` +
+    `Price: ${whale.price} | ` +
+    `Refill: $${refill.refillAmountUSD.toLocaleString(
+      undefined,
+      {
+        maximumFractionDigits: 0,
+      },
+    )} | ` +
+    `Count: ${refill.refillCount}`,
+  );
 }
+
+state.whaleRefillDetector.prune(
+  result.active,
+);
 
       const value =
         whale.notionalUSD.toLocaleString(
