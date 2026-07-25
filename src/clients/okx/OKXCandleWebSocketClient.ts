@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import {isRecord,} from './okxValidation';
 
 export interface OKXCandle {
   instId: string;
@@ -96,12 +97,11 @@ private handleMessage(
   const rawMessage =
     data.toString();
 
-  // OKX replies to the heartbeat with plain-text "pong".
   if (rawMessage === 'pong') {
     return;
   }
 
-  let message: any;
+  let message: unknown;
 
   try {
     message = JSON.parse(
@@ -116,7 +116,18 @@ private handleMessage(
     return;
   }
 
-  if (message.event) {
+  if (!isRecord(message)) {
+    console.error(
+      'Rejected non-object OKX candle message',
+    );
+
+    return;
+  }
+
+  if (
+    typeof message.event ===
+    'string'
+  ) {
     console.log(
       'OKX Candle event:',
       message,
@@ -125,49 +136,118 @@ private handleMessage(
     return;
   }
 
-  if (
-    message.arg?.channel ===
-      'candle1m' &&
-    message.data?.length > 0
-  ) {
-    const values =
-      message.data[0];
-
-    const candle: OKXCandle = {
-      instId:
-        message.arg.instId,
-
-      timestamp: Number(
-        values[0],
-      ),
-      open: Number(
-        values[1],
-      ),
-      high: Number(
-        values[2],
-      ),
-      low: Number(
-        values[3],
-      ),
-      close: Number(
-        values[4],
-      ),
-      volume: Number(
-        values[5],
-      ),
-      volumeCurrency: Number(
-        values[6],
-      ),
-      volumeCurrencyQuote:
-        Number(values[7]),
-      confirm:
-        values[8] === '1',
-    };
-
-    this.onCandleUpdate?.(
-      candle,
+  if (!isRecord(message.arg)) {
+    console.error(
+      'Rejected candle message without valid arg',
     );
+
+    return;
   }
+
+  const channel =
+    message.arg.channel;
+
+  const instId =
+    message.arg.instId;
+
+  if (
+    channel !== 'candle1m' ||
+    typeof instId !== 'string'
+  ) {
+    return;
+  }
+
+  if (
+    !Array.isArray(
+      message.data,
+    ) ||
+    message.data.length === 0
+  ) {
+    console.error(
+      'Rejected candle message without valid data',
+    );
+
+    return;
+  }
+
+  const values =
+    message.data[0];
+
+  if (
+    !Array.isArray(values) ||
+    values.length < 9
+  ) {
+    console.error(
+      'Rejected malformed OKX candle payload',
+    );
+
+    return;
+  }
+
+  const timestamp =
+    Number(values[0]);
+
+  const open =
+    Number(values[1]);
+
+  const high =
+    Number(values[2]);
+
+  const low =
+    Number(values[3]);
+
+  const close =
+    Number(values[4]);
+
+  const volume =
+    Number(values[5]);
+
+  const volumeCurrency =
+    Number(values[6]);
+
+  const volumeCurrencyQuote =
+    Number(values[7]);
+
+  if (
+    !Number.isFinite(
+      timestamp,
+    ) ||
+    !Number.isFinite(open) ||
+    !Number.isFinite(high) ||
+    !Number.isFinite(low) ||
+    !Number.isFinite(close) ||
+    !Number.isFinite(volume) ||
+    !Number.isFinite(
+      volumeCurrency,
+    ) ||
+    !Number.isFinite(
+      volumeCurrencyQuote,
+    )
+  ) {
+    console.error(
+      'Rejected invalid OKX candle values',
+    );
+
+    return;
+  }
+
+  const candle: OKXCandle = {
+    instId,
+    timestamp,
+    open,
+    high,
+    low,
+    close,
+    volume,
+    volumeCurrency,
+    volumeCurrencyQuote,
+    confirm:
+      values[8] === '1',
+  };
+
+  this.onCandleUpdate?.(
+    candle,
+  );
 }
 
 private scheduleReconnect(): void {

@@ -43,6 +43,50 @@ for (
   );
 }
 
+client.onReconnect(() => {
+  console.warn(
+    '🔄 OKX connection restored. ' +
+    'Resetting local market state...',
+  );
+
+  for (
+    const symbol
+    of WATCHLIST
+  ) {
+    /*
+     * A new MarketState resets:
+     * - OrderBookManager
+     * - WhaleTracker
+     * - WhaleEventDetector
+     * - WallDetector
+     * - WhaleRefillDetector
+     * - WhaleBehaviorEngine
+     * - internal WhaleScoreEngine
+     * - MarketAnalyzer
+     */
+    marketStates.set(
+      symbol,
+      new MarketState(),
+    );
+
+    /*
+     * src/index.ts currently uses this
+     * separate score-engine map, so it
+     * must also be replaced.
+     */
+    whaleScoreEngines.set(
+      symbol,
+      new WhaleScoreEngine(),
+    );
+  }
+
+  lastDisplayTime = 0;
+
+  console.log(
+    '✅ Local market state reset. ' +
+    'Waiting for fresh snapshots...',
+  );
+});
 
 const candleClient =
   new OKXCandleWebSocketClient();
@@ -644,7 +688,7 @@ for (
   );
 
 
-  candleClient.subscribeToCandles(
+  candleClient.subscribeToCandle(
     symbol,
   );
 }

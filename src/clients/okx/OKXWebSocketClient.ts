@@ -1,5 +1,9 @@
 import WebSocket from 'ws';
 import type { OrderBookLevel } from '../../types/orderbook';
+import {
+  isOrderBookLevel,
+  isRecord,
+} from './okxValidation';
 
 export interface OKXOrderBookUpdate {
   instId: string;
@@ -31,7 +35,8 @@ private reconnectTimer?: NodeJS.Timeout;
 private heartbeatTimer?: NodeJS.Timeout;
 private reconnectAttempt = 0;
 private intentionallyClosed = false;
-
+private hasConnectedOnce = false;
+private onReconnectCallback?: () => void;
 private readonly url =
   'wss://ws.okx.com:8443/ws/v5/public';
 
@@ -75,14 +80,31 @@ private connect(): void {
   this.ws = ws;
 
   ws.on('open', () => {
-    console.log(
-      'Connected to OKX WebSocket',
-    );
+  const isReconnect =
+    this.hasConnectedOnce;
 
-    this.reconnectAttempt = 0;
-    this.startHeartbeat();
-    this.resubscribeAll();
-  });
+  this.hasConnectedOnce = true;
+  this.reconnectAttempt = 0;
+
+  console.log(
+    isReconnect
+      ? 'Reconnected to OKX WebSocket'
+      : 'Connected to OKX WebSocket',
+  );
+
+  /*
+   * Reset local state before sending
+   * subscriptions. This ensures that
+   * the new snapshot cannot mix with
+   * data from the previous connection.
+   */
+  if (isReconnect) {
+    this.onReconnectCallback?.();
+  }
+
+  this.startHeartbeat();
+  this.resubscribeAll();
+});
 
   ws.on(
     'message',
@@ -360,6 +382,13 @@ private sendCandleSubscription(
     `📈 Subscribed to ${instId} ` +
     `${interval} candles`,
   );
+}
+
+public onReconnect(
+  callback: () => void,
+): void {
+  this.onReconnectCallback =
+    callback;
 }
 
   public onOrderBook(

@@ -46,6 +46,7 @@ export class OrderBookManager {
     return true;
   }
 
+  
   if (
     !this.orderBook.initialized ||
     this.orderBook.lastSeqId === null ||
@@ -76,6 +77,16 @@ export class OrderBookManager {
   return true;
 }
 
+public reset(): void {
+  this.orderBook.bids.clear();
+  this.orderBook.asks.clear();
+  this.orderBook.lastSeqId = null;
+  this.orderBook.status =
+    'INITIALIZING';
+  this.orderBook.initialized =
+    false;
+  this.orderBook.updatedAt = 0;
+}
   private applyLevels(
     side: Map<number, OrderLevel>,
     levels: OrderBookLevel[],
@@ -91,6 +102,15 @@ export class OrderBookManager {
 
       const price = Number(rawPrice);
       const size = Number(rawSize);
+
+if (
+  !Number.isFinite(price) ||
+  price <= 0 ||
+  !Number.isFinite(size) ||
+  size < 0
+) {
+  continue;
+}
 
       if (size === 0) {
         side.delete(price);
