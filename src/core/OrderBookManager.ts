@@ -132,15 +132,46 @@ if (
     return this.orderBook;
   }
 
-  public getBestBid(): OrderLevel | undefined {
-    return [...this.orderBook.bids.values()]
-      .sort((a, b) => b.price - a.price)[0];
+ public getBestBid():
+  OrderLevel | undefined {
+  let best:
+    OrderLevel | undefined;
+
+  for (
+    const level
+    of this.orderBook.bids.values()
+  ) {
+    if (
+      !best ||
+      level.price > best.price
+    ) {
+      best = level;
+    }
   }
 
-  public getBestAsk(): OrderLevel | undefined {
-    return [...this.orderBook.asks.values()]
-      .sort((a, b) => a.price - b.price)[0];
+  return best;
+}
+
+public getBestAsk():
+  OrderLevel | undefined {
+  let best:
+    OrderLevel | undefined;
+
+  for (
+    const level
+    of this.orderBook.asks.values()
+  ) {
+    if (
+      !best ||
+      level.price < best.price
+    ) {
+      best = level;
+    }
   }
+
+  return best;
+}
+
 public getMidPrice(): number | undefined {
   const bestBid =
     this.getBestBid();

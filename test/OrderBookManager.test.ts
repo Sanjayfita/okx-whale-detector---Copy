@@ -77,4 +77,286 @@ describe('OrderBookManager', () => {
       manager.getOrderBook().status,
     ).toBe('INVALID');
   });
+describe(
+  'best bid and ask selection',
+  () => {
+    it(
+      'returns undefined for empty sides',
+      () => {
+        const manager =
+          new OrderBookManager();
+
+        expect(
+          manager.getBestBid(),
+        ).toBeUndefined();
+
+        expect(
+          manager.getBestAsk(),
+        ).toBeUndefined();
+
+        expect(
+          manager.getMidPrice(),
+        ).toBeUndefined();
+      },
+    );
+
+    it(
+      'returns the only bid and ask levels',
+      () => {
+        const manager =
+          new OrderBookManager();
+
+        const applied =
+          manager.applyUpdate(
+            [
+              [
+                '100',
+                '10',
+                '0',
+                '1',
+              ],
+            ],
+            [
+              [
+                '101',
+                '8',
+                '0',
+                '1',
+              ],
+            ],
+            1_000,
+            1,
+            -1,
+            'snapshot',
+          );
+
+        expect(applied).toBe(true);
+
+        expect(
+          manager.getBestBid()?.price,
+        ).toBe(100);
+
+        expect(
+          manager.getBestAsk()?.price,
+        ).toBe(101);
+
+        expect(
+          manager.getMidPrice(),
+        ).toBe(100.5);
+      },
+    );
+
+    it(
+      'finds best levels regardless of insertion order',
+      () => {
+        const manager =
+          new OrderBookManager();
+
+        manager.applyUpdate(
+          [
+            [
+              '99',
+              '10',
+              '0',
+              '1',
+            ],
+            [
+              '101',
+              '10',
+              '0',
+              '1',
+            ],
+            [
+              '100',
+              '10',
+              '0',
+              '1',
+            ],
+          ],
+          [
+            [
+              '103',
+              '10',
+              '0',
+              '1',
+            ],
+            [
+              '101.5',
+              '10',
+              '0',
+              '1',
+            ],
+            [
+              '102',
+              '10',
+              '0',
+              '1',
+            ],
+          ],
+          1_000,
+          1,
+          -1,
+          'snapshot',
+        );
+
+        expect(
+          manager.getBestBid()?.price,
+        ).toBe(101);
+
+        expect(
+          manager.getBestAsk()?.price,
+        ).toBe(101.5);
+      },
+    );
+
+    it(
+      'uses the next best level after deleting the previous best',
+      () => {
+        const manager =
+          new OrderBookManager();
+
+        manager.applyUpdate(
+          [
+            [
+              '100',
+              '10',
+              '0',
+              '1',
+            ],
+            [
+              '99',
+              '10',
+              '0',
+              '1',
+            ],
+          ],
+          [
+            [
+              '101',
+              '10',
+              '0',
+              '1',
+            ],
+            [
+              '102',
+              '10',
+              '0',
+              '1',
+            ],
+          ],
+          1_000,
+          1,
+          -1,
+          'snapshot',
+        );
+
+        const applied =
+          manager.applyUpdate(
+            [
+              [
+                '100',
+                '0',
+                '0',
+                '0',
+              ],
+            ],
+            [
+              [
+                '101',
+                '0',
+                '0',
+                '0',
+              ],
+            ],
+            2_000,
+            2,
+            1,
+            'update',
+          );
+
+        expect(applied).toBe(true);
+
+        expect(
+          manager.getBestBid()?.price,
+        ).toBe(99);
+
+        expect(
+          manager.getBestAsk()?.price,
+        ).toBe(102);
+      },
+    );
+
+    it(
+      'selects a newly inserted better level',
+      () => {
+        const manager =
+          new OrderBookManager();
+
+        manager.applyUpdate(
+          [
+            [
+              '100',
+              '10',
+              '0',
+              '1',
+            ],
+          ],
+          [
+            [
+              '101',
+              '10',
+              '0',
+              '1',
+            ],
+          ],
+          1_000,
+          1,
+          -1,
+          'snapshot',
+        );
+
+        const applied =
+          manager.applyUpdate(
+            [
+              [
+                '100.5',
+                '10',
+                '0',
+                '1',
+              ],
+            ],
+            [
+              [
+                '100.8',
+                '10',
+                '0',
+                '1',
+              ],
+            ],
+            2_000,
+            2,
+            1,
+            'update',
+          );
+
+        expect(applied).toBe(true);
+
+        expect(
+          manager.getBestBid()?.price,
+        ).toBe(100.5);
+
+        expect(
+          manager.getBestAsk()?.price,
+        ).toBe(100.8);
+
+        expect(
+          manager.getMidPrice(),
+        ).toBeCloseTo(
+          100.65,
+        );
+      },
+    );
+  },
+);
+
 });

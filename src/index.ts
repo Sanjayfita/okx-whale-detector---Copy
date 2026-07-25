@@ -17,7 +17,8 @@ const candleClient =
 const marketStates =
   new Map<string, MarketState>();
 
-let lastDisplayTime = 0;
+const lastDisplayTimes =
+  new Map<string, number>();
 
 for (
   const symbol
@@ -386,18 +387,23 @@ state.whaleRefillDetector.prune(
     const now =
       Date.now();
 
+const lastDisplayTime =
+  lastDisplayTimes.get(
+    update.instId,
+  ) ?? 0;
 
-    if (
-      now -
-      lastDisplayTime <
-      5_000
-    ) {
-      return;
-    }
+if (
+  now -
+  lastDisplayTime <
+  5_000
+) {
+  return;
+}
 
-
-    lastDisplayTime =
-      now;
+lastDisplayTimes.set(
+  update.instId,
+  now,
+);
 
 
     const newWalls =
