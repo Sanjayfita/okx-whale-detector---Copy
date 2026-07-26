@@ -168,8 +168,10 @@ it(
   () => {
     const whale = {
       side:
+      
         'ASK' as const,
-
+wallId:
+  'wall-1',
       price:
         101,
 

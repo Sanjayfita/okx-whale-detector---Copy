@@ -13,6 +13,8 @@ import type { Whale } from
 const whale = (
   notionalQuote: number,
 ): Whale => ({
+  wallId:
+  'wall-1',
   side: 'BID',
   price: 100,
   size: notionalQuote / 100,

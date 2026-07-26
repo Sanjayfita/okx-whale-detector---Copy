@@ -20,6 +20,8 @@ const createWhale = (
   overrides:
     Partial<Whale> = {},
 ): Whale => ({
+ wallId:
+  'wall-1',
   side:
     'BID',
 

@@ -21,11 +21,14 @@ const createWhale = (
   overrides:
     Partial<Whale> = {},
 ): Whale => ({
+wallId:
+  'wall-1',
   side:
+  
     'ASK',
 
   price:
-    101,
+    100.01,
 
   size:
     10_000,
@@ -188,6 +191,56 @@ describe(
         ]);
       },
     );
+it(
+  'does not re-emit behavior when the same wall moves',
+  () => {
+    const tracker =
+      new BehaviorTransitionTracker();
+
+    const before =
+      createWhale({
+        wallId:
+          'wall-1',
+
+        price:
+          100.02,
+      });
+
+    const after =
+      createWhale({
+        wallId:
+          'wall-1',
+
+        price:
+          100.01,
+      });
+
+    tracker.getEnteredBehaviors(
+      before,
+      [
+        createBehavior(
+          before,
+          'PERSISTENT',
+        ),
+      ],
+    );
+
+    const entered =
+      tracker.getEnteredBehaviors(
+        after,
+        [
+          createBehavior(
+            after,
+            'PERSISTENT',
+        ),
+      ],
+    );
+
+    expect(
+      entered,
+    ).toEqual([]);
+  },
+);
 
     it(
       'emits a behavior again after it disappears and later returns',
@@ -242,16 +295,16 @@ describe(
           new BehaviorTransitionTracker();
 
         const firstWhale =
-          createWhale({
-            price:
-              101,
-          });
+  createWhale({
+    price:
+      101,
+  });
 
-        const secondWhale =
-          createWhale({
-            price:
-              102,
-          });
+const secondWhale =
+  createWhale({
+    price:
+      102,
+  });
 
         tracker.getEnteredBehaviors(
           firstWhale,

@@ -3,12 +3,10 @@ export type WhaleSide =
   | 'ASK';
 
 export interface Whale {
+  wallId: string
   side: WhaleSide;
-
   price: number;
-
   size: number;
-
   notionalQuote: number;
 quoteCurrency: 'USDT';
   detectedAt: number;
@@ -39,23 +37,15 @@ export type WhaleChangeType =
   | 'REMOVED';
 
 export interface WhaleChange {
+  wallId: string;
   type: WhaleChangeType;
-
   side: WhaleSide;
-
   price: number;
-
   previousPrice?: number;
-
   previousSize: number;
-
   currentSize: number;
-
   sizeDifference: number;
-
   previousNotionalQuote: number;
-
   currentNotionalQuote: number;
-
   timestamp: number;
 }

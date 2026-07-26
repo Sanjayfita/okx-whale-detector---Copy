@@ -170,8 +170,8 @@ export class WhaleRefillDetector {
   }
 
   private getKey(
-    whale: Whale,
-  ): string {
-    return `${whale.side}:${whale.price}`;
-  }
+  whale: Whale,
+): string {
+  return whale.wallId;
+}
 }

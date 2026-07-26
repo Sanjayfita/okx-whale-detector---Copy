@@ -424,13 +424,10 @@ public prune(
   }
 
   private getKey(
-    whale: Whale,
-  ): string {
-    return (
-      `${whale.side}:` +
-      `${whale.price}`
-    );
-  }
+  whale: Whale,
+): string {
+  return whale.wallId;
+}
 
   public reset(): void {
     this.history.clear();

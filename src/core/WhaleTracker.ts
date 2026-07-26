@@ -55,6 +55,9 @@ export class WhaleTracker {
   private readonly trackedWalls =
     new Map<string, TrackedWall>();
 
+private nextWallId =
+  1;
+    
   private readonly MIN_WHALE_NOTIONAL_QUOTE =
     500_000;
 
@@ -130,8 +133,10 @@ export class WhaleTracker {
           !existing
         ) {
           const whale: Whale = {
-            side,
+  wallId:
+    this.createWallId(),
 
+  side,
             price:
               level.price,
 
@@ -252,7 +257,10 @@ quoteCurrency:
           );
 
         const whale: Whale = {
-          side,
+  wallId:
+    existing.whale.wallId,
+
+  side,
 
           price:
             level.price,
@@ -321,8 +329,12 @@ quoteCurrency:
      * FIND REMOVED WALLS
      */
 
-    const disappearedWalls: Whale[] =
-      [];
+    const disappearedWalls:
+  Array<{
+    key: string;
+    trackedWall:
+      TrackedWall;
+  }> = [];
 
     for (
       const [
@@ -339,9 +351,10 @@ quoteCurrency:
         continue;
       }
 
-      disappearedWalls.push(
-        trackedWall.whale,
-      );
+      disappearedWalls.push({
+  key,
+  trackedWall,
+});
 
       this.trackedWalls.delete(
         key,
@@ -367,12 +380,22 @@ quoteCurrency:
       new Set<Whale>();
 
     for (
-      const removed
-      of disappearedWalls
-    ) {
+  const disappeared
+  of disappearedWalls
+) {
+  const removed =
+    disappeared.trackedWall
+      .whale;
       const moved =
         newWhales.find(
           newWhale => {
+            if (
+  movedNewWhales.has(
+    newWhale,
+  )
+) {
+  return false;
+}
             if (
               newWhale.side !==
               removed.side
@@ -410,7 +433,95 @@ quoteCurrency:
       ) {
         continue;
       }
+const oldTrackedWall =
+  disappeared.trackedWall;
 
+const movedKey =
+  this.createWallKey(
+    moved.side,
+    moved.price,
+  );
+
+const ageSeconds =
+  Math.floor(
+    (
+      now -
+      oldTrackedWall.firstSeenAt
+    ) /
+    1000,
+  );
+
+const updateCount =
+  oldTrackedWall.updateCount +
+  1;
+
+const maxNotionalQuote =
+  Math.max(
+    oldTrackedWall
+      .maxNotionalQuote,
+    moved.notionalQuote,
+  );
+
+/*
+ * Mutate the new whale object so every
+ * existing reference in currentWhales
+ * and newWhales receives the old ID
+ * and history.
+ */
+Object.assign(
+  moved,
+  {
+    wallId:
+      removed.wallId,
+
+    firstSeenAt:
+      oldTrackedWall.firstSeenAt,
+
+    lastSeenAt:
+      now,
+
+    ageSeconds,
+
+    updateCount,
+
+    maxNotionalQuote,
+
+    strength:
+      this.calculateStrength(
+        moved.notionalQuote,
+        ageSeconds,
+      ),
+  },
+);
+
+/*
+ * Replace the temporary new-wall state
+ * with the old wall's preserved history.
+ */
+this.trackedWalls.set(
+  movedKey,
+  {
+    whale:
+      moved,
+
+    firstSeenAt:
+      oldTrackedWall.firstSeenAt,
+
+    lastSeenAt:
+      now,
+
+    initialNotionalQuote:
+      oldTrackedWall
+        .initialNotionalQuote,
+
+    maxNotionalQuote,
+
+    updateCount,
+
+    lastPrice:
+      moved.price,
+  },
+);
       movedRemovedWhales.add(
         removed,
       );
@@ -420,8 +531,11 @@ quoteCurrency:
       );
 
       movedWhales.push({
-        type:
-          'MOVED',
+  wallId:
+    removed.wallId,
+
+  type:
+    'MOVED',
 
         side:
           removed.side,
@@ -476,21 +590,24 @@ quoteCurrency:
      */
 
     for (
-      const removed
-      of disappearedWalls
-    ) {
+  const disappeared
+  of disappearedWalls
+) {
+  const removed =
+    disappeared.trackedWall
+      .whale;
       if (
-        movedRemovedWhales.has(
-          removed,
-        )
-      ) {
-        continue;
-      }
+    movedRemovedWhales.has(
+      removed,
+    )
+  ) {
+    continue;
+  }
 
-      removedWhales.push(
-        removed,
-      );
-    }
+  removedWhales.push(
+    removed,
+  );
+}
 
     /*
      * PERSISTENCE
@@ -574,7 +691,14 @@ quoteCurrency:
       movedWhales,
     };
   }
+private createWallId(): string {
+  const wallId =
+    `wall-${this.nextWallId}`;
 
+  this.nextWallId += 1;
+
+  return wallId;
+}
   private createWallKey(
     side: WhaleSide,
 
@@ -714,6 +838,7 @@ quoteCurrency:
   }
 
   public reset(): void {
-    this.trackedWalls.clear();
-  }
+  this.trackedWalls.clear();
+  this.nextWallId = 1;
+ }
 }

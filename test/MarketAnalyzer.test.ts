@@ -17,6 +17,8 @@ const createWhale = (
   side: WhaleSide,
   notionalQuote: number,
 ): Whale => ({
+  wallId:
+  'wall-1',
   side,
 
   /*
