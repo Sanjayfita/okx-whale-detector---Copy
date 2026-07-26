@@ -43,6 +43,8 @@ for (
   new CandleUpdateHandler(
     marketStates,
   );
+const sequenceGapSymbols =
+  new Set<string>();
 
   candleClient.onCandle(
   candle => {
@@ -85,6 +87,7 @@ client.onReconnect(() => {
      */
 candleUpdateHandler.reset(); 
 summaryThrottle.reset();
+sequenceGapSymbols.clear();
 
   console.log(
     '✅ Local market state reset. ' +
@@ -119,12 +122,28 @@ client.onOrderBook(
   );
 
 if (!wasApplied) {
-  console.error(
-    `Order-book sequence gap for ${update.instId}. ` +
-    'Detector output is paused until a new snapshot is received.',
-  );
+  if (
+    !sequenceGapSymbols.has(
+      update.instId,
+    )
+  ) {
+    sequenceGapSymbols.add(
+      update.instId,
+    );
+
+    console.error(
+      `Order-book sequence gap for ${update.instId}. ` +
+      'Detector output is paused until a new snapshot is received.',
+    );
+  }
 
   return;
+}
+
+if (update.action === 'snapshot') {
+  sequenceGapSymbols.delete(
+    update.instId,
+  );
 }
 const orderBook =
   state.orderBookManager
@@ -502,7 +521,7 @@ state.whaleScoreEngine.prune(
     console.log(
       `🟢 Active BID Whales: ` +
       `${bidWhales.length} ` +
-      `$(${totalBidValue.toLocaleString(
+      `(${totalBidValue.toLocaleString(
          'en-US',
   {
     maximumFractionDigits:
@@ -515,7 +534,7 @@ state.whaleScoreEngine.prune(
     console.log(
       `🔴 Active ASK Whales: ` +
       `${askWhales.length} ` +
-      `$({totalAskValue.toLocaleString(
+      `(${totalAskValue.toLocaleString(
          'en-US',
   {
     maximumFractionDigits:

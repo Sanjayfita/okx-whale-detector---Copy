@@ -325,18 +325,7 @@ try {
     error,
   );
 }
-    try {
-  this.onOrderBookUpdate?.(
-    update,
-  );
-} catch (error) {
-  console.error(
-    `Order-book callback failed for ` +
-    `${update.instId}:`,
-    error,
-  );
-}
-
+   
     return;
   }
 
@@ -645,6 +634,10 @@ public subscribeToCandle(
 }
 
 public close(): void {
+  if (this.intentionallyClosed) {
+    return;
+  }
+
   this.intentionallyClosed = true;
 
   if (this.reconnectTimer) {
@@ -657,6 +650,11 @@ public close(): void {
   }
 
   this.stopHeartbeat();
+
+  console.log(
+    'Closing OKX WebSocket intentionally...',
+  );
+
   this.ws?.close();
   this.ws = null;
 }

@@ -368,6 +368,10 @@ private sendCandleSubscription(
 }
 
 public close(): void {
+  if (this.intentionallyClosed) {
+    return;
+  }
+
   this.intentionallyClosed = true;
 
   if (this.reconnectTimer) {
@@ -380,6 +384,11 @@ public close(): void {
   }
 
   this.stopHeartbeat();
+
+  console.log(
+    'Closing OKX Candle WebSocket intentionally...',
+  );
+
   this.ws?.close();
   this.ws = null;
 }
