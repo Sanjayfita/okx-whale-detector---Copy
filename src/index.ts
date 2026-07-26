@@ -5,6 +5,9 @@ import { MarketState } from './core/MarketState';
 import {
   SummaryThrottle,
 } from './core/SummaryThrottle';  
+import {
+  CandleUpdateHandler,
+} from './core/CandleUpdateHandler';
 
 console.log(
   'OKX Whale Detector starting...',
@@ -61,7 +64,19 @@ client.onReconnect(() => {
       symbol,
       new MarketState(),
     );
+    
+const candleUpdateHandler =
+  new CandleUpdateHandler(
+    marketStates,
+  );
 
+  candleClient.onCandle(
+  candle => {
+    candleUpdateHandler.handle(
+      candle,
+    );
+  },
+);
     /*
      * src/index.ts currently uses this
      * separate score-engine map, so it
@@ -75,53 +90,6 @@ summaryThrottle.reset();
     'Waiting for fresh snapshots...',
   );
 });
-
-const candleCounters =
-  new Map<string, number>();
-
-candleClient.onCandle(
-  candle => {
-    const state =
-      marketStates.get(
-        candle.instId,
-      );
-
-    if (!state) {
-      return;
-    }
-
-    state.candleHistory.add(
-      candle,
-    );
-
-    const count =
-      (
-        candleCounters.get(
-          candle.instId,
-        ) ??
-        0
-      ) + 1;
-
-    candleCounters.set(
-      candle.instId,
-      count,
-    );
-
-    if (count % 10 !== 0) {
-      return;
-    }
-
-    console.log(
-      `🕯️ ${candle.instId} 1m | ` +
-      `O: ${candle.open} | ` +
-      `H: ${candle.high} | ` +
-      `L: ${candle.low} | ` +
-      `C: ${candle.close} | ` +
-      `Closed: ${candle.confirm} | ` +
-      `History: ${state.candleHistory.getSize()}`,
-    );
-  },
-);
 
 
 client.onOrderBook(
