@@ -627,6 +627,23 @@ console.log(
     );
   },
 );
+
+for (
+  const symbol
+  of WATCHLIST
+) {
+  client.subscribeToOrderBook(
+    symbol,
+
+    'SPOT',
+  );
+
+
+  candleClient.subscribeToCandle(
+    symbol,
+  );
+}
+
 let isShuttingDown = false;
 
 const shutdown = (
@@ -657,19 +674,3 @@ process.once(
   () =>
     shutdown('SIGTERM'),
 );
-
-for (
-  const symbol
-  of WATCHLIST
-) {
-  client.subscribeToOrderBook(
-    symbol,
-
-    'SPOT',
-  );
-
-
-  candleClient.subscribeToCandle(
-    symbol,
-  );
-}

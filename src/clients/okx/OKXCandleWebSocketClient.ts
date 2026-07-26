@@ -245,9 +245,17 @@ private handleMessage(
       values[8] === '1',
   };
 
+ try {
   this.onCandleUpdate?.(
     candle,
   );
+} catch (error) {
+  console.error(
+    `Candle callback failed for ` +
+    `${candle.instId}:`,
+    error,
+  );
+}
 }
 
 private scheduleReconnect(): void {

@@ -139,12 +139,11 @@ private handleMessage(
   const rawMessage =
     data.toString();
 
-  // OKX heartbeat response is plain text, not JSON.
   if (rawMessage === 'pong') {
     return;
   }
 
-  let message: any;
+  let message: unknown;
 
   try {
     message = JSON.parse(
@@ -152,14 +151,34 @@ private handleMessage(
     );
   } catch (error) {
     console.error(
-      'Failed to parse WebSocket message:',
+      'Failed to parse OKX WebSocket message:',
       error,
     );
 
     return;
   }
 
-  if (message.event) {
+  /*
+   * JSON.parse can return anything:
+   * an object, array, string, number,
+   * boolean, or null.
+   */
+  if (!isRecord(message)) {
+    console.error(
+      'Rejected non-object OKX message',
+    );
+
+    return;
+  }
+
+  /*
+   * Subscription confirmations and
+   * OKX error messages have an event.
+   */
+  if (
+    typeof message.event ===
+    'string'
+  ) {
     console.log(
       'OKX event:',
       message,
@@ -168,80 +187,208 @@ private handleMessage(
     return;
   }
 
+  /*
+   * A market-data message must contain
+   * an arg object.
+   */
+  if (!isRecord(message.arg)) {
+    console.error(
+      'Rejected OKX message without valid arg',
+    );
+
+    return;
+  }
+
+  const channel =
+    message.arg.channel;
+
+  const instId =
+    message.arg.instId;
+
   if (
-    message.arg?.channel ===
-      'books' &&
-    message.data?.length > 0
+    typeof channel !== 'string' ||
+    typeof instId !== 'string'
   ) {
+    console.error(
+      'Rejected OKX message with invalid channel or instId',
+    );
+
+    return;
+  }
+
+  if (!Array.isArray(message.data)) {
+    console.error(
+      'Rejected OKX message without valid data array',
+    );
+
+    return;
+  }
+
+  if (message.data.length === 0) {
+    return;
+  }
+
+  if (channel === 'books') {
     const orderBook =
       message.data[0];
 
-    this.onOrderBookUpdate?.({
-      instId:
-        message.arg.instId,
+    if (!isRecord(orderBook)) {
+      console.error(
+        'Rejected malformed OKX order-book object',
+      );
 
-      action:
-        message.action as
-          | 'snapshot'
-          | 'update',
+      return;
+    }
 
-      asks:
+    if (
+      !Array.isArray(
         orderBook.asks,
-      bids:
+      ) ||
+      !orderBook.asks.every(
+        isOrderBookLevel,
+      ) ||
+      !Array.isArray(
         orderBook.bids,
+      ) ||
+      !orderBook.bids.every(
+        isOrderBookLevel,
+      )
+    ) {
+      console.error(
+        'Rejected malformed OKX order-book payload',
+      );
 
-      timestamp: Number(
-        orderBook.ts,
-      ),
-      seqId: Number(
-        orderBook.seqId,
-      ),
-      prevSeqId: Number(
-        orderBook.prevSeqId,
-      ),
-    });
+      return;
+    }
+
+    const timestamp =
+      Number(orderBook.ts);
+
+    const seqId =
+      Number(orderBook.seqId);
+
+    const prevSeqId =
+      Number(orderBook.prevSeqId);
+
+    if (
+      !Number.isFinite(
+        timestamp,
+      ) ||
+      !Number.isSafeInteger(
+        seqId,
+      ) ||
+      !Number.isSafeInteger(
+        prevSeqId,
+      )
+    ) {
+      console.error(
+        'Rejected invalid OKX sequence or timestamp',
+      );
+
+      return;
+    }
+
+    if (
+      message.action !==
+        'snapshot' &&
+      message.action !==
+        'update'
+    ) {
+      console.error(
+        'Rejected invalid OKX order-book action',
+      );
+
+      return;
+    }
+
+    try {
+  this.onOrderBookUpdate?.(
+    update,
+  );
+} catch (error) {
+  console.error(
+    `Order-book callback failed for ` +
+    `${update.instId}:`,
+    error,
+  );
+}
+
+    return;
   }
 
   if (
-    message.arg?.channel?.startsWith(
+    channel.startsWith(
       'candle',
-    ) &&
-    message.data?.length > 0
+    )
   ) {
     const rawCandle =
       message.data[0];
 
-    this.onCandleUpdate?.({
-      instId:
-        message.arg.instId,
+    if (
+      !Array.isArray(
+        rawCandle,
+      ) ||
+      rawCandle.length < 9
+    ) {
+      console.error(
+        'Rejected malformed OKX candle payload',
+      );
 
+      return;
+    }
+
+    const timestamp =
+      Number(rawCandle[0]);
+
+    const open =
+      Number(rawCandle[1]);
+
+    const high =
+      Number(rawCandle[2]);
+
+    const low =
+      Number(rawCandle[3]);
+
+    const close =
+      Number(rawCandle[4]);
+
+    const volume =
+      Number(rawCandle[5]);
+
+    if (
+      !Number.isFinite(
+        timestamp,
+      ) ||
+      !Number.isFinite(open) ||
+      !Number.isFinite(high) ||
+      !Number.isFinite(low) ||
+      !Number.isFinite(close) ||
+      !Number.isFinite(volume)
+    ) {
+      console.error(
+        'Rejected invalid OKX candle values',
+      );
+
+      return;
+    }
+
+    this.onCandleUpdate?.({
+      instId,
       interval:
-        message.arg.channel.replace(
+        channel.replace(
           'candle',
           '',
         ),
-
       candle: {
-        timestamp: Number(
-          rawCandle[0],
-        ),
-        open: Number(
-          rawCandle[1],
-        ),
-        high: Number(
-          rawCandle[2],
-        ),
-        low: Number(
-          rawCandle[3],
-        ),
-        close: Number(
-          rawCandle[4],
-        ),
-        volume: Number(
-          rawCandle[5],
-        ),
+        timestamp,
+        open,
+        high,
+        low,
+        close,
+        volume,
         confirmed:
-          rawCandle[8] === '1',
+          rawCandle[8] ===
+          '1',
       },
     });
   }
