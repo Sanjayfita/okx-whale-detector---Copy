@@ -171,10 +171,9 @@ public prune(
      */
 
     const stabilityScore =
-      this.calculateStabilityScore(
-        whale,
-        history,
-      );
+  this.calculateStabilityScore(
+    history,
+  );
 
     const rawScore =
       sizeScore +
@@ -312,10 +311,9 @@ public prune(
     );
   }
 
-  private calculateStabilityScore(
-    whale: Whale,
-    history: WhaleHistory,
-  ): number {
+ private calculateStabilityScore(
+  history: WhaleHistory,
+): number {
     if (
       history.highestNotional ===
       0

@@ -47,8 +47,6 @@ export class WhaleBehaviorEngine {
   private readonly PERSISTENT_MIN_AGE_SECONDS =
     30;
 
-  private readonly REFILL_MIN_COUNT =
-    2;
 
 public prune(
   activeWhales: Whale[],
