@@ -162,19 +162,103 @@ describe(
       vi.useRealTimers();
       vi.restoreAllMocks();
     });
+
 it(
   'logs PERSISTENT only once across repeated updates',
   () => {
+    const whale = {
+      side:
+        'ASK' as const,
+
+      price:
+        101,
+
+      size:
+        10_000,
+
+      notionalQuote:
+        1_010_000,
+
+      quoteCurrency:
+        'USDT' as const,
+
+      detectedAt:
+        Date.now(),
+
+      firstSeenAt:
+        Date.now() -
+        30_000,
+
+      lastSeenAt:
+        Date.now(),
+
+      ageSeconds:
+        30,
+
+      updateCount:
+        5,
+
+      maxNotionalQuote:
+        1_010_000,
+
+      strength:
+        1,
+    };
+
+    /*
+     * Keep the exact same whale identity
+     * across both order-book updates.
+     */
+    vi.spyOn(
+      state.whaleTracker,
+      'scan',
+    ).mockReturnValue({
+      active: [
+        whale,
+      ],
+
+      trackedWalls:
+        1,
+
+      newWalls:
+        0,
+
+      persistentWalls:
+        1,
+
+      strongWalls:
+        0,
+
+      totalBidNotionalQuote:
+        0,
+
+      totalAskNotionalQuote:
+        whale.notionalQuote,
+
+      strongestBid:
+        undefined,
+
+      strongestAsk:
+        whale,
+
+      newWhales: [],
+
+      removedWhales: [],
+
+      movedWhales: [],
+    });
+
     vi.spyOn(
       state.whaleBehaviorEngine,
       'analyze',
     ).mockImplementation(
-      whale => [
+      analyzedWhale => [
         {
           type:
             'PERSISTENT',
 
-          whale,
+          whale:
+            analyzedWhale,
 
           confidence:
             80,
@@ -188,56 +272,12 @@ it(
       ],
     );
 
-    /*
-     * The small bid is required so
-     * MarketEngine can calculate a
-     * mid-price.
-     *
-     * 100 × 1 = 100 USDT, so it is
-     * not large enough to be a whale.
-     *
-     * 101 × 10,000 = 1,010,000 USDT,
-     * so only the ASK level qualifies.
-     */
     engine.processOrderBookUpdate(
-      createSnapshot({
-        bids: [
-          [
-            '100',
-            '1',
-            '0',
-            '1',
-          ],
-        ],
-
-        asks: [
-          [
-            '101',
-            '10000',
-            '0',
-            '1',
-          ],
-        ],
-      }),
+      createSnapshot(),
     );
 
-    /*
-     * Update the same ASK wall.
-     * Keep the small bid unchanged.
-     */
     engine.processOrderBookUpdate(
-      createUpdate({
-        bids: [],
-
-        asks: [
-          [
-            '101',
-            '10001',
-            '0',
-            '1',
-          ],
-        ],
-      }),
+      createUpdate(),
     );
 
     const persistentLogs =
@@ -247,8 +287,8 @@ it(
         call =>
           String(
             call[0],
-          ).includes(
-            '🧠 PERSISTENT',
+          ).startsWith(
+            '🧠 PERSISTENT |',
           ),
       );
 
@@ -257,6 +297,7 @@ it(
     ).toHaveLength(1);
   },
 );
+
     it(
       'ignores updates for an unknown symbol',
       () => {
