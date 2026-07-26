@@ -39,6 +39,19 @@ for (
   );
 }
 
+  const candleUpdateHandler =
+  new CandleUpdateHandler(
+    marketStates,
+  );
+
+  candleClient.onCandle(
+  candle => {
+    candleUpdateHandler.handle(
+      candle,
+    );
+  },
+);
+
 client.onReconnect(() => {
   console.warn(
     '🔄 OKX connection restored. ' +
@@ -64,26 +77,13 @@ client.onReconnect(() => {
       symbol,
       new MarketState(),
     );
-    
-const candleUpdateHandler =
-  new CandleUpdateHandler(
-    marketStates,
-  );
-
-  candleClient.onCandle(
-  candle => {
-    candleUpdateHandler.handle(
-      candle,
-    );
-  },
-);
-  candleUpdateHandler.reset();
+  }
     /*
      * src/index.ts currently uses this
      * separate score-engine map, so it
      * must also be replaced.
      */
-  }
+candleUpdateHandler.reset(); 
 summaryThrottle.reset();
 
   console.log(
@@ -226,14 +226,14 @@ if (
       `🎭 SPOOF DETECTED | ` +
       `${spoof.whale.side} | ` +
       `Price: ${spoof.whale.price} | ` +
-      `Value: $` +
+      `Value: ` +
       `${spoof.whale.notionalQuote.toLocaleString(
-        undefined,
-        {
-          maximumFractionDigits:
-            0,
-        },
-      )} | ` +
+        'en-US',
+  {
+    maximumFractionDigits:
+      0,
+  },
+)} USDT | ` +
       `Confidence: ` +
       `${spoof.confidence}%`,
     );
@@ -259,7 +259,7 @@ if (
         console.log(
           `🆕 NEW ${whale.side} WHALE | ` +
           `Price: ${whale.price} | ` +
-          `Value: $${value}`,
+          `Value: ${value} USDT`,
         );
       }
 
@@ -271,7 +271,7 @@ if (
         console.log(
           `💥 REMOVED ${whale.side} WHALE | ` +
           `Price: ${whale.price} | ` +
-          `Value: $${value}`,
+          `Value: ${value} USDT`,
         );
       }
 
@@ -283,7 +283,7 @@ if (
         console.log(
           `📈 INCREASED ${whale.side} WHALE | ` +
           `Price: ${whale.price} | ` +
-          `Value: $${value}`,
+          `Value: ${value} USDT`
         );
       }
 
@@ -295,7 +295,7 @@ if (
         console.log(
           `📉 DECREASED ${whale.side} WHALE | ` +
           `Price: ${whale.price} | ` +
-          `Value: $${value}`,
+          `Value: ${value} USDT`,
         );
       }
     }
@@ -316,14 +316,14 @@ for (
   console.log(
     `🔄 REFILLING ${whale.side} WHALE | ` +
     `Price: ${whale.price} | ` +
-    `Refill: $` +
-    `${refill.refillAmountUSD.toLocaleString(
-      undefined,
-      {
-        maximumFractionDigits:
-          0,
-      },
-    )} | ` +
+    `Refill: ` +
+    `${refill.refillAmountQuote.toLocaleString(
+      'en-US',
+  {
+    maximumFractionDigits:
+      0,
+  },
+)} USDT | ` +
     `Count: ${refill.refillCount}`,
   );
 }
@@ -345,15 +345,14 @@ state.whaleRefillDetector.prune(
         `Price: ` +
         `${moved.previousPrice} → ` +
         `${moved.price} | ` +
-        `Value: $` +
+        `Value: ` +
         `${moved.currentNotionalQuote.toLocaleString(
-          undefined,
-
-          {
-            maximumFractionDigits:
-              0,
-          },
-        )}`,
+          'en-US',
+  {
+    maximumFractionDigits:
+      0,
+  },
+)} USDT`,
       );
     }
 
@@ -503,30 +502,27 @@ state.whaleScoreEngine.prune(
     console.log(
       `🟢 Active BID Whales: ` +
       `${bidWhales.length} ` +
-      `($${totalBidValue.toLocaleString(
-        undefined,
-
-        {
-          maximumFractionDigits:
-            0,
-        },
-      )})`,
+      `$(${totalBidValue.toLocaleString(
+         'en-US',
+  {
+    maximumFractionDigits:
+      0,
+  },
+)} USDT)`,
     );
 
 
     console.log(
       `🔴 Active ASK Whales: ` +
       `${askWhales.length} ` +
-      `($${totalAskValue.toLocaleString(
-        undefined,
-
-        {
-          maximumFractionDigits:
-            0,
-        },
-      )})`,
+      `$({totalAskValue.toLocaleString(
+         'en-US',
+  {
+    maximumFractionDigits:
+      0,
+  },
+)} USDT)`,
     );
-
 
     console.log(
       `🐋 Total Active Whale Walls: ` +

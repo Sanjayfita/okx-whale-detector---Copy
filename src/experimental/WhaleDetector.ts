@@ -25,6 +25,7 @@ export class WhaleDetector {
       const size = Number(bid[1]);
       const notionalQuote = price * size;
 
+      
       if (notionalQuote >= this.minimumNotionalQuote) {
         whales.push({
           side: 'BID',

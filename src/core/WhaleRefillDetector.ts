@@ -5,7 +5,7 @@ export interface WhaleRefillEvent {
   refillCount: number;
   previousNotionalQuote: number;
   currentNotionalQuote: number;
-  refillAmountUSD: number;
+  refillAmountQuote: number;
   timestamp: number;
 }
 
@@ -115,7 +115,7 @@ export class WhaleRefillDetector {
       return undefined;
     }
 
-    const refillAmountUSD =
+    const refillAmountQuote =
       current -
       existing.lowestNotionalQuote;
 
@@ -129,9 +129,9 @@ export class WhaleRefillDetector {
       whale,
       refillCount: existing.refillCount,
       previousNotionalQuote:
-        current - refillAmountUSD,
+        current - refillAmountQuote,
       currentNotionalQuote: current,
-      refillAmountUSD,
+      refillAmountQuote,
       timestamp: Date.now(),
     };
   }

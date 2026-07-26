@@ -47,7 +47,7 @@ describe('WhaleRefillDetector', () => {
         whale(920_000),
       );
 
-    expect(event?.refillAmountUSD)
+    expect(event?.refillAmountQuote)
       .toBe(120_000);
 
     expect(event?.refillCount)
