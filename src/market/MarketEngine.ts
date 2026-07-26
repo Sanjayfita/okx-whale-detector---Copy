@@ -152,38 +152,37 @@ const walls =
      */
 
     const whaleEvents =
-      state.whaleEventDetector.detect(
-        result.active,
-      );
+  state.whaleEventDetector.detect(
+    result.active,
+  );
 
-
-    for (
-const event of whaleEvents
-    ) {
-
-if (
-  event.type ===
-  'REMOVED'
+for (
+  const event
+  of whaleEvents
 ) {
-  const spoof =
-    state.whaleBehaviorEngine
-      .analyzeRemoval(
-        event.whale,
-      );
-
   if (
-  spoof
-) {
-  this.reporter.reportSpoof(
-    spoof,
+    event.type ===
+    'REMOVED'
+  ) {
+    const spoof =
+      state.whaleBehaviorEngine
+        .analyzeRemoval(
+          event.whale,
+        );
+
+    if (
+      spoof
+    ) {
+      this.reporter.reportSpoof(
+        spoof,
+      );
+    }
+  }
+
+  this.reporter.reportWhaleEvent(
+    event,
   );
 }
-}
-}
-
-this.reporter.reportWhaleEvent(
-  event,
-);
 
 for (
   const whale
@@ -194,13 +193,16 @@ for (
       whale,
     );
 
-  if (!refill) {
+  if (
+    !refill
+  ) {
     continue;
   }
 
-  this.reporter.reportWhaleEvent(
-  event,
-);
+  this.reporter.reportRefill(
+    refill,
+  );
+}
 
 state.whaleRefillDetector.prune(
   result.active,
