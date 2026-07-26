@@ -300,7 +300,31 @@ private handleMessage(
 
       return;
     }
+const update:
+  OKXOrderBookUpdate = {
+  instId,
+  action:
+    message.action,
+  asks:
+    orderBook.asks,
+  bids:
+    orderBook.bids,
+  timestamp,
+  seqId,
+  prevSeqId,
+};
 
+try {
+  this.onOrderBookUpdate?.(
+    update,
+  );
+} catch (error) {
+  console.error(
+    `Order-book callback failed for ` +
+    `${update.instId}:`,
+    error,
+  );
+}
     try {
   this.onOrderBookUpdate?.(
     update,
@@ -372,25 +396,38 @@ private handleMessage(
       return;
     }
 
-    this.onCandleUpdate?.({
-      instId,
-      interval:
-        channel.replace(
-          'candle',
-          '',
-        ),
-      candle: {
-        timestamp,
-        open,
-        high,
-        low,
-        close,
-        volume,
-        confirmed:
-          rawCandle[8] ===
-          '1',
-      },
-    });
+    const update:
+  OKXCandleUpdate = {
+  instId,
+  interval:
+    channel.replace(
+      'candle',
+      '',
+    ),
+  candle: {
+    timestamp,
+    open,
+    high,
+    low,
+    close,
+    volume,
+    confirmed:
+      rawCandle[8] ===
+      '1',
+  },
+};
+
+try {
+  this.onCandleUpdate?.(
+    update,
+  );
+} catch (error) {
+  console.error(
+    `Candle callback failed for ` +
+    `${update.instId}:`,
+    error,
+  );
+}
   }
 }
 
