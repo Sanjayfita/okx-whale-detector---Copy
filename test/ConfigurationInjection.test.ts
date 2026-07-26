@@ -37,6 +37,8 @@ const createLevel = (
     rawSize:
       size.toString(),
     notionalQuote,
+    quoteCurrency:
+  'USDT',
     updatedAt:
       Date.now(),
   };

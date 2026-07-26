@@ -141,6 +141,9 @@ export class WhaleTracker {
             notionalQuote:
               level.notionalQuote,
 
+quoteCurrency:
+  level.quoteCurrency,
+
             detectedAt:
               level.updatedAt,
 
@@ -259,6 +262,9 @@ export class WhaleTracker {
 
           notionalQuote:
             level.notionalQuote,
+
+quoteCurrency:
+  level.quoteCurrency,
 
           detectedAt:
             level.updatedAt,

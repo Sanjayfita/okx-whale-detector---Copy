@@ -28,12 +28,10 @@ const createWhale = (
    * notional values used in each test.
    */
   price: 100,
-
-  size:
-    notionalQuote / 100,
-
+  size: notionalQuote / 100,
   notionalQuote,
-
+quoteCurrency:
+  'USDT',
   detectedAt:
     Date.now(),
 });

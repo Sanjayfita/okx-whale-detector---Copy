@@ -19,16 +19,12 @@ const createLevel = (
   price: number,
   size: number,
 ): OrderLevel => ({
-  price,
-  rawPrice:
+  price, rawPrice:
     price.toString(),
-  size,
-  rawSize:
-    size.toString(),
-  notionalQuote:
-    price * size,
-  updatedAt:
-    Date.now(),
+  size, rawSize: size.toString(),
+  notionalQuote:price * size,
+    quoteCurrency:'USDT',
+  updatedAt:Date.now(),
 });
 
 const createOrderBook = (

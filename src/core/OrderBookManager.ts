@@ -117,14 +117,21 @@ if (
         continue;
       }
 
-      side.set(price, {
-        price,
-        rawPrice,
-        size,
-        rawSize,
-        notionalQuote: price * size,
-        updatedAt: timestamp,
-      });
+     side.set(price, {
+  price,
+  rawPrice,
+  size,
+  rawSize,
+
+  notionalQuote:
+    price * size,
+
+  quoteCurrency:
+    'USDT',
+
+  updatedAt:
+    timestamp,
+});
     }
   }
 

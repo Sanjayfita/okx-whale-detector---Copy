@@ -17,6 +17,8 @@ const whale = (
   price: 100,
   size: notionalQuote / 100,
   notionalQuote,
+  quoteCurrency:
+  'USDT',
   detectedAt: 0,
 });
 
