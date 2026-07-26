@@ -3,6 +3,7 @@ import type { Whale } from '../types/whale';
 export type WhaleBehaviorType =
   | 'SPOOF'
   | 'PERSISTENT'
+  | 'REFILLING'
   | 'ACCUMULATION'
   | 'DISTRIBUTION';
 
