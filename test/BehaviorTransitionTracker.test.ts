@@ -199,8 +199,7 @@ it(
 
     const before =
       createWhale({
-        wallId:
-          'wall-1',
+        
 
         price:
           100.02,
@@ -208,8 +207,7 @@ it(
 
     const after =
       createWhale({
-        wallId:
-          'wall-1',
+        
 
         price:
           100.01,
@@ -296,12 +294,16 @@ it(
 
         const firstWhale =
   createWhale({
+     wallId:
+      'wall-1',
     price:
       101,
   });
 
 const secondWhale =
   createWhale({
+     wallId:
+      'wall-2',
     price:
       102,
   });
