@@ -13,13 +13,13 @@ export interface WhaleAbsorptionEvent {
 
   price: number;
 
-  whaleNotionalUSD: number;
+  whaleNotionalQuote: number;
 
   aggressiveSide: AggressiveTradeSide;
 
   aggressiveVolume: number;
 
-  aggressiveNotionalUSD: number;
+  aggressiveNotionalQuote: number;
 
   priceChangePercent: number;
 
@@ -35,7 +35,7 @@ interface TrackedWall {
 
   aggressiveVolume: number;
 
-  aggressiveNotionalUSD: number;
+  aggressiveNotionalQuote: number;
 
   firstPrice: number;
 
@@ -49,7 +49,7 @@ interface TrackedWall {
 export interface WhaleAbsorptionConfig {
   proximityPercent: number;
 
-  minimumAggressiveNotionalUSD: number;
+  minimumAggressiveNotionalQuote: number;
 
   minimumAggressiveVolumeRatio: number;
 
@@ -61,7 +61,7 @@ export interface WhaleAbsorptionConfig {
 const DEFAULT_CONFIG: WhaleAbsorptionConfig = {
   proximityPercent: 0.10,
 
-  minimumAggressiveNotionalUSD: 100_000,
+  minimumAggressiveNotionalQuote: 100_000,
 
   minimumAggressiveVolumeRatio: 0.25,
 
@@ -105,7 +105,7 @@ export class WhaleAbsorptionDetector {
 
           aggressiveVolume: 0,
 
-          aggressiveNotionalUSD: 0,
+          aggressiveNotionalQuote: 0,
 
           firstPrice: whale.price,
 
@@ -144,7 +144,7 @@ export class WhaleAbsorptionDetector {
 
       wall.aggressiveVolume += trade.size;
 
-      wall.aggressiveNotionalUSD += trade.notionalUSD;
+      wall.aggressiveNotionalQuote += trade.notionalQuote;
 
       const event = this.detectAbsorption(wall, trade);
 
@@ -168,12 +168,12 @@ export class WhaleAbsorptionDetector {
       );
 
     const aggressiveVolumeRatio =
-      wall.aggressiveNotionalUSD /
-      wall.whale.notionalUSD;
+      wall.aggressiveNotionalQuote /
+      wall.whale.notionalQuote;
 
     if (
-      wall.aggressiveNotionalUSD <
-      this.config.minimumAggressiveNotionalUSD
+      wall.aggressiveNotionalQuote <
+      this.config.minimumAggressiveNotionalQuote
     ) {
       return null;
     }
@@ -209,13 +209,13 @@ export class WhaleAbsorptionDetector {
 
       price: wall.whale.price,
 
-      whaleNotionalUSD: wall.whale.notionalUSD,
+    whaleNotionalQuote: wall.whale.notionalQuote,
 
       aggressiveSide: trade.side,
 
       aggressiveVolume: wall.aggressiveVolume,
 
-      aggressiveNotionalUSD: wall.aggressiveNotionalUSD,
+      aggressiveNotionalQuote: wall.aggressiveNotionalQuote,
 
       priceChangePercent,
 
@@ -281,7 +281,7 @@ export class WhaleAbsorptionDetector {
   ): void {
     wall.aggressiveVolume = 0;
 
-    wall.aggressiveNotionalUSD = 0;
+    wall.aggressiveNotionalQuote = 0;
 
     wall.firstPrice = wall.lastPrice;
   }

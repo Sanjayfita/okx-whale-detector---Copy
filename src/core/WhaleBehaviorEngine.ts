@@ -23,11 +23,11 @@ interface WhaleBehaviorHistory {
 
   lastSeenAt: number;
 
-  highestNotionalUSD: number;
+  highestNotionalQuote: number;
 
-  lowestNotionalUSD: number;
+  lowestNotionalQuote: number;
 
-  previousNotionalUSD: number;
+  previousNotionalQuote: number;
 
   increaseCount: number;
 
@@ -94,14 +94,14 @@ public prune(
         lastSeenAt:
           now,
 
-        highestNotionalUSD:
-          whale.notionalUSD,
+        highestNotionalQuote:
+          whale.notionalQuote,
 
-        lowestNotionalUSD:
-          whale.notionalUSD,
+        lowestNotionalQuote:
+          whale.notionalQuote,
 
-        previousNotionalUSD:
-          whale.notionalUSD,
+        previousNotionalQuote:
+          whale.notionalQuote,
 
         increaseCount:
           0,
@@ -133,21 +133,21 @@ public prune(
       );
 
     const previousNotional =
-      history.previousNotionalUSD;
+      history.previousNotionalQuote;
 
     /*
      * Track size changes
      */
 
     if (
-      whale.notionalUSD >
+      whale.notionalQuote >
       previousNotional
     ) {
       history.increaseCount++;
     }
 
     if (
-      whale.notionalUSD <
+      whale.notionalQuote <
       previousNotional
     ) {
       history.decreaseCount++;
@@ -204,8 +204,8 @@ public prune(
       whale.side ===
       'BID' &&
       history.increaseCount >= 3 &&
-      whale.notionalUSD >
-      history.lowestNotionalUSD *
+      whale.notionalQuote >
+      history.lowestNotionalQuote *
       1.2
     ) {
       behaviors.push({
@@ -238,8 +238,8 @@ public prune(
       whale.side ===
       'ASK' &&
       history.increaseCount >= 3 &&
-      whale.notionalUSD >
-      history.lowestNotionalUSD *
+      whale.notionalQuote >
+      history.lowestNotionalQuote *
       1.2
     ) {
       behaviors.push({
@@ -271,20 +271,20 @@ public prune(
     history.lastSeenAt =
       now;
 
-    history.highestNotionalUSD =
+    history.highestNotionalQuote =
       Math.max(
-        history.highestNotionalUSD,
-        whale.notionalUSD,
+        history.highestNotionalQuote,
+        whale.notionalQuote,
       );
 
-    history.lowestNotionalUSD =
+    history.lowestNotionalQuote =
       Math.min(
-        history.lowestNotionalUSD,
-        whale.notionalUSD,
+        history.lowestNotionalQuote,
+        whale.notionalQuote,
       );
 
-    history.previousNotionalUSD =
-      whale.notionalUSD;
+    history.previousNotionalQuote =
+      whale.notionalQuote;
 
     history.lastPrice =
       whale.price;

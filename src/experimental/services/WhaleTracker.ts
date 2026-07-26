@@ -3,13 +3,13 @@ import type {
   WhaleChange,
   WhaleChangeType,
   WhaleSide,
-} from '../types/whale';
+} from '../../types/whale';
 
 interface TrackedWhale extends Whale {
   firstSeenAt: number;
   lastSeenAt: number;
   updateCount: number;
-  maxNotionalUSD: number;
+  maxNotionalQuote: number;
 }
 
 export interface WhaleTrackerConfig {
@@ -90,11 +90,11 @@ export class WhaleTracker {
       incoming.size -
       previous.size,
 
-    previousNotionalUSD:
-      previous.notionalUSD,
+    previousNotionalQuote:
+      previous.notionalQuote,
 
-    currentNotionalUSD:
-      incoming.notionalUSD,
+    currentNotionalQuote:
+      incoming.notionalQuote,
 
     timestamp:
       now,
@@ -142,11 +142,11 @@ export class WhaleTracker {
         sizeDifference:
           tracked.size,
 
-        previousNotionalUSD:
+        previousNotionalQuote:
           0,
 
-        currentNotionalUSD:
-          tracked.notionalUSD,
+        currentNotionalQuote:
+          tracked.notionalQuote,
 
         timestamp:
           now,
@@ -186,10 +186,10 @@ export class WhaleTracker {
           sizeDifference:
             -whale.size,
 
-          previousNotionalUSD:
-            whale.notionalUSD,
+          previousNotionalQuote:
+            whale.notionalQuote,
 
-          currentNotionalUSD:
+          currentNotionalQuote:
             0,
 
           timestamp:
@@ -275,7 +275,7 @@ export class WhaleTracker {
       whale.price;
 
     const previousNotional =
-      whale.notionalUSD;
+      whale.notionalQuote;
 
     whale.price =
       incoming.price;
@@ -283,8 +283,8 @@ export class WhaleTracker {
     whale.size =
       incoming.size;
 
-    whale.notionalUSD =
-      incoming.notionalUSD;
+    whale.notionalQuote =
+      incoming.notionalQuote;
 
     whale.lastSeenAt =
       now;
@@ -301,10 +301,10 @@ export class WhaleTracker {
     whale.updateCount +=
       1;
 
-    whale.maxNotionalUSD =
+    whale.maxNotionalQuote =
       Math.max(
-        whale.maxNotionalUSD,
-        incoming.notionalUSD,
+        whale.maxNotionalQuote,
+        incoming.notionalQuote,
       );
 
     if (
@@ -315,14 +315,14 @@ export class WhaleTracker {
     }
 
     if (
-      incoming.notionalUSD >
+      incoming.notionalQuote >
       previousNotional
     ) {
       return 'INCREASED';
     }
 
     if (
-      incoming.notionalUSD <
+      incoming.notionalQuote <
       previousNotional
     ) {
       return 'REDUCED';
@@ -347,8 +347,8 @@ export class WhaleTracker {
       updateCount:
         1,
 
-      maxNotionalUSD:
-        whale.notionalUSD,
+      maxNotionalQuote:
+        whale.notionalQuote,
 
       ageSeconds:
         0,

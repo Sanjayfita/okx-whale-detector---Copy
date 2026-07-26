@@ -100,10 +100,10 @@ public prune(
         lastSeen: now,
 
         highestNotional:
-          whale.notionalUSD,
+          whale.notionalQuote,
 
         lowestNotional:
-          whale.notionalUSD,
+          whale.notionalQuote,
 
         lastPrice:
           whale.price,
@@ -121,13 +121,13 @@ public prune(
     history.highestNotional =
       Math.max(
         history.highestNotional,
-        whale.notionalUSD,
+        whale.notionalQuote,
       );
 
     history.lowestNotional =
       Math.min(
         history.lowestNotional,
-        whale.notionalUSD,
+        whale.notionalQuote,
       );
 
     /*
@@ -136,7 +136,7 @@ public prune(
 
     const sizeScore =
       this.calculateSizeScore(
-        whale.notionalUSD,
+        whale.notionalQuote,
       );
 
     /*
@@ -255,7 +255,7 @@ public prune(
   }
 
   private calculateSizeScore(
-    notionalUSD: number,
+    notionalQuote: number,
   ): number {
     /*
      * $500k = small whale
@@ -266,7 +266,7 @@ public prune(
     const score =
       Math.log10(
         Math.max(
-          notionalUSD,
+          notionalQuote,
           500_000,
         ) /
         500_000,

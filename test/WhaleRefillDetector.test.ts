@@ -11,12 +11,12 @@ import type { Whale } from
   '../src/types/whale';
 
 const whale = (
-  notionalUSD: number,
+  notionalQuote: number,
 ): Whale => ({
   side: 'BID',
   price: 100,
-  size: notionalUSD / 100,
-  notionalUSD,
+  size: notionalQuote / 100,
+  notionalQuote,
   detectedAt: 0,
 });
 

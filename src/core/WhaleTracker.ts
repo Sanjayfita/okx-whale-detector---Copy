@@ -20,9 +20,9 @@ export interface WhaleScanResult {
 
   strongWalls: number;
 
-  totalBidNotionalUSD: number;
+  totalBidNotionalQuote: number;
 
-  totalAskNotionalUSD: number;
+  totalAskNotionalQuote: number;
 
   strongestBid?: Whale;
 
@@ -42,9 +42,9 @@ interface TrackedWall {
 
   lastSeenAt: number;
 
-  initialNotionalUSD: number;
+  initialNotionalQuote: number;
 
-  maxNotionalUSD: number;
+  maxNotionalQuote: number;
 
   updateCount: number;
 
@@ -55,7 +55,7 @@ export class WhaleTracker {
   private readonly trackedWalls =
     new Map<string, TrackedWall>();
 
-  private readonly MIN_WHALE_NOTIONAL_USD =
+  private readonly MIN_WHALE_NOTIONAL_QUOTE =
     500_000;
 
   private readonly PERSISTENT_WALL_AGE_SECONDS =
@@ -85,10 +85,10 @@ export class WhaleTracker {
     const currentKeys =
       new Set<string>();
 
-    let totalBidNotionalUSD =
+    let totalBidNotionalQuote =
       0;
 
-    let totalAskNotionalUSD =
+    let totalAskNotionalQuote =
       0;
 
     const processSide = (
@@ -101,8 +101,8 @@ export class WhaleTracker {
         of levels.values()
       ) {
         if (
-          level.notionalUSD <
-          this.MIN_WHALE_NOTIONAL_USD
+          level.notionalQuote <
+          this.MIN_WHALE_NOTIONAL_QUOTE
         ) {
           continue;
         }
@@ -138,8 +138,8 @@ export class WhaleTracker {
             size:
               level.size,
 
-            notionalUSD:
-              level.notionalUSD,
+            notionalQuote:
+              level.notionalQuote,
 
             detectedAt:
               level.updatedAt,
@@ -156,12 +156,12 @@ export class WhaleTracker {
             updateCount:
               1,
 
-            maxNotionalUSD:
-              level.notionalUSD,
+            maxNotionalQuote:
+              level.notionalQuote,
 
             strength:
               this.calculateStrength(
-                level.notionalUSD,
+                level.notionalQuote,
 
                 0,
               ),
@@ -178,11 +178,11 @@ export class WhaleTracker {
               lastSeenAt:
                 now,
 
-              initialNotionalUSD:
-                level.notionalUSD,
+              initialNotionalQuote:
+                level.notionalQuote,
 
-              maxNotionalUSD:
-                level.notionalUSD,
+              maxNotionalQuote:
+                level.notionalQuote,
 
               updateCount:
                 1,
@@ -203,11 +203,11 @@ export class WhaleTracker {
           if (
             side === 'BID'
           ) {
-            totalBidNotionalUSD +=
-              level.notionalUSD;
+            totalBidNotionalQuote +=
+              level.notionalQuote;
           } else {
-            totalAskNotionalUSD +=
-              level.notionalUSD;
+            totalAskNotionalQuote +=
+              level.notionalQuote;
           }
 
           continue;
@@ -222,11 +222,11 @@ export class WhaleTracker {
 
         existing.updateCount++;
 
-        existing.maxNotionalUSD =
+        existing.maxNotionalQuote =
           Math.max(
-            existing.maxNotionalUSD,
+            existing.maxNotionalQuote,
 
-            level.notionalUSD,
+            level.notionalQuote,
           );
 
         existing.lastPrice =
@@ -243,7 +243,7 @@ export class WhaleTracker {
 
         const strength =
           this.calculateStrength(
-            level.notionalUSD,
+            level.notionalQuote,
 
             ageSeconds,
           );
@@ -257,8 +257,8 @@ export class WhaleTracker {
           size:
             level.size,
 
-          notionalUSD:
-            level.notionalUSD,
+          notionalQuote:
+            level.notionalQuote,
 
           detectedAt:
             level.updatedAt,
@@ -274,8 +274,8 @@ export class WhaleTracker {
           updateCount:
             existing.updateCount,
 
-          maxNotionalUSD:
-            existing.maxNotionalUSD,
+          maxNotionalQuote:
+            existing.maxNotionalQuote,
 
           strength,
         };
@@ -290,11 +290,11 @@ export class WhaleTracker {
         if (
           side === 'BID'
         ) {
-          totalBidNotionalUSD +=
-            level.notionalUSD;
+          totalBidNotionalQuote +=
+            level.notionalQuote;
         } else {
-          totalAskNotionalUSD +=
-            level.notionalUSD;
+          totalAskNotionalQuote +=
+            level.notionalQuote;
         }
       }
     };
@@ -436,11 +436,11 @@ export class WhaleTracker {
           moved.size -
           removed.size,
 
-        previousNotionalUSD:
-          removed.notionalUSD,
+        previousNotionalQuote:
+          removed.notionalQuote,
 
-        currentNotionalUSD:
-          moved.notionalUSD,
+        currentNotionalQuote:
+          moved.notionalQuote,
 
         timestamp:
           now,
@@ -552,9 +552,9 @@ export class WhaleTracker {
 
       strongWalls,
 
-      totalBidNotionalUSD,
+      totalBidNotionalQuote,
 
-      totalAskNotionalUSD,
+      totalAskNotionalQuote,
 
       strongestBid,
 
@@ -580,7 +580,7 @@ export class WhaleTracker {
   }
 
   private calculateStrength(
-    notionalUSD: number,
+    notionalQuote: number,
 
     ageSeconds: number,
   ): number {
@@ -588,19 +588,19 @@ export class WhaleTracker {
       0;
 
     if (
-      notionalUSD >=
+      notionalQuote >=
       10_000_000
     ) {
       score +=
         50;
     } else if (
-      notionalUSD >=
+      notionalQuote >=
       5_000_000
     ) {
       score +=
         40;
     } else if (
-      notionalUSD >=
+      notionalQuote >=
       1_000_000
     ) {
       score +=

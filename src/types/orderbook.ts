@@ -5,12 +5,25 @@ export type OrderBookLevel = [
   orderCount: string,
 ];
 
+export type QuoteCurrency =
+  'USDT';
+
 export interface OrderLevel {
   price: number;
   rawPrice: string;
   size: number;
   rawSize: string;
-  notionalUSD: number;
+
+  /*
+   * For SPOT:
+   * price × base-asset size,
+   * denominated in quoteCurrency.
+   */
+  notionalQuote: number;
+
+  quoteCurrency:
+    QuoteCurrency;
+
   updatedAt: number;
 }
 

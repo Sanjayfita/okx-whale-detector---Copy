@@ -15,7 +15,7 @@ import type {
 
 const createWhale = (
   side: WhaleSide,
-  notionalUSD: number,
+  notionalQuote: number,
 ): Whale => ({
   side,
 
@@ -30,9 +30,9 @@ const createWhale = (
   price: 100,
 
   size:
-    notionalUSD / 100,
+    notionalQuote / 100,
 
-  notionalUSD,
+  notionalQuote,
 
   detectedAt:
     Date.now(),

@@ -593,10 +593,19 @@ public onReconnect(
       callback;
   }
 
- public subscribeToOrderBook(
+public subscribeToOrderBook(
   instId: string,
   instType: string = 'SPOT',
 ): void {
+  if (instType !== 'SPOT') {
+    throw new Error(
+      `Unsupported instrument type: ` +
+      `${instType}. ` +
+      'The current notional calculation ' +
+      'supports SPOT instruments only.',
+    );
+  }
+
   this.orderBookSubscriptions.set(
     instId,
     instType,

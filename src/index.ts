@@ -227,7 +227,7 @@ if (
       `${spoof.whale.side} | ` +
       `Price: ${spoof.whale.price} | ` +
       `Value: $` +
-      `${spoof.whale.notionalUSD.toLocaleString(
+      `${spoof.whale.notionalQuote.toLocaleString(
         undefined,
         {
           maximumFractionDigits:
@@ -242,7 +242,7 @@ if (
 
 
       const value =
-        whale.notionalUSD.toLocaleString(
+        whale.notionalQuote.toLocaleString(
           undefined,
 
           {
@@ -346,7 +346,7 @@ state.whaleRefillDetector.prune(
         `${moved.previousPrice} → ` +
         `${moved.price} | ` +
         `Value: $` +
-        `${moved.currentNotionalUSD.toLocaleString(
+        `${moved.currentNotionalQuote.toLocaleString(
           undefined,
 
           {
@@ -459,7 +459,7 @@ state.whaleScoreEngine.prune(
           whale,
         ) =>
           total +
-          whale.notionalUSD,
+          whale.notionalQuote,
 
         0,
       );
@@ -473,7 +473,7 @@ state.whaleScoreEngine.prune(
           whale,
         ) =>
           total +
-          whale.notionalUSD,
+          whale.notionalQuote,
 
         0,
       );

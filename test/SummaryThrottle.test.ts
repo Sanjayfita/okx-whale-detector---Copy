@@ -1,5 +1,4 @@
 import {
-  afterEach,
   beforeEach,
   describe,
   expect,
@@ -24,10 +23,6 @@ describe(
       );
     });
 
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
     it(
       'allows BTC and ETH once during the same five-second window',
       () => {
@@ -48,6 +43,10 @@ describe(
           ),
         ).toBe(true);
 
+        /*
+         * Repeated updates for each
+         * symbol remain blocked.
+         */
         expect(
           throttle.shouldDisplay(
             'BTC-USDT',
@@ -117,7 +116,7 @@ describe(
     );
 
     it(
-      'tracks BTC and ETH independently',
+      'tracks symbols independently',
       () => {
         const throttle =
           new SummaryThrottle(
@@ -134,6 +133,10 @@ describe(
           2_000,
         );
 
+        /*
+         * BTC is still throttled,
+         * but ETH has never displayed.
+         */
         expect(
           throttle.shouldDisplay(
             'BTC-USDT',
@@ -150,6 +153,10 @@ describe(
           3_000,
         );
 
+        /*
+         * BTC has now waited 5 seconds.
+         * ETH has waited only 3 seconds.
+         */
         expect(
           throttle.shouldDisplay(
             'BTC-USDT',
@@ -165,7 +172,7 @@ describe(
     );
 
     it(
-      'allows a symbol again after resetting it',
+      'allows summaries again after reset',
       () => {
         const throttle =
           new SummaryThrottle(
@@ -197,7 +204,7 @@ describe(
     );
 
     it(
-      'allows all symbols again after a full reset',
+      'can reset all symbols',
       () => {
         const throttle =
           new SummaryThrottle(

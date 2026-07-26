@@ -9,8 +9,8 @@ export interface Whale {
 
   size: number;
 
-  notionalUSD: number;
-
+  notionalQuote: number;
+quoteCurrency: 'USDT';
   detectedAt: number;
 
   firstSeenAt?: number;
@@ -21,13 +21,13 @@ export interface Whale {
 
   updateCount?: number;
 
-  maxNotionalUSD?: number;
+  maxNotionalQuote?: number;
 
   strength?: number;
 }
 
 export interface WhaleThresholds {
-  minNotionalUSD: number;
+  minNotionalQuote: number;
 }
 
 export type WhaleChangeType =
@@ -53,9 +53,9 @@ export interface WhaleChange {
 
   sizeDifference: number;
 
-  previousNotionalUSD: number;
+  previousNotionalQuote: number;
 
-  currentNotionalUSD: number;
+  currentNotionalQuote: number;
 
   timestamp: number;
 }

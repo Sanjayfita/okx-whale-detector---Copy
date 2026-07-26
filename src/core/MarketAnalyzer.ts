@@ -42,7 +42,7 @@ export class MarketAnalyzer {
         1 / (1 + distancePercent);
 
       const weightedPressure =
-        whale.notionalUSD * distanceWeight;
+        whale.notionalQuote * distanceWeight;
 
       if (whale.side === 'BID') {
         bidPressure += weightedPressure;
@@ -75,23 +75,6 @@ export class MarketAnalyzer {
     let bias: MarketBias;
     let confidence: number;
     let reason: string;
-
-    if (bidRatio > askRatio) {
-      bias = 'BULLISH';
-      confidence = bidRatio * 100;
-      reason =
-        'Distance-weighted bid pressure dominates';
-    } else if (askRatio > bidRatio) {
-      bias = 'BEARISH';
-      confidence = askRatio * 100;
-      reason =
-        'Distance-weighted ask pressure dominates';
-    } else {
-      bias = 'NEUTRAL';
-      confidence = 50;
-      reason =
-        'Distance-weighted whale pressure is balanced';
-    }
 
         const bidPressurePercent =
       bidRatio * 100;

@@ -122,7 +122,7 @@ if (
         rawPrice,
         size,
         rawSize,
-        notionalUSD: price * size,
+        notionalQuote: price * size,
         updatedAt: timestamp,
       });
     }

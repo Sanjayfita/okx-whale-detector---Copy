@@ -24,10 +24,10 @@ import type {
 
 const createLevel = (
   price: number,
-  notionalUSD: number,
+  notionalQuote: number,
 ): OrderLevel => {
   const size =
-    notionalUSD / price;
+    notionalQuote / price;
 
   return {
     price,
@@ -36,7 +36,7 @@ const createLevel = (
     size,
     rawSize:
       size.toString(),
-    notionalUSD,
+    notionalQuote,
     updatedAt:
       Date.now(),
   };
@@ -115,7 +115,7 @@ describe(
 
         const productionDetector =
           new WallDetector({
-            minNotionalUSD:
+            minNotionalQuote:
               appConfig.whale
                 .minimumNotionalQuote,
 
@@ -140,7 +140,7 @@ describe(
             /*
              * Very small test threshold.
              */
-            minNotionalUSD:
+            minNotionalQuote:
               1_000,
 
             persistentAfterMs:
@@ -193,7 +193,7 @@ describe(
 
         const detector =
           new WallDetector({
-            minNotionalUSD:
+            minNotionalQuote:
               1_000,
 
             persistentAfterMs:

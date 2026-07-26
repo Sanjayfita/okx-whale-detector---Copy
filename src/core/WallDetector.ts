@@ -10,7 +10,7 @@ import {
 } from '../types/wall';
 
 export interface WallDetectorConfig {
-  minNotionalUSD: number;
+  minNotionalQuote: number;
   persistentAfterMs: number;
   strongAfterMs: number;
   priceTolerancePercent: number;
@@ -26,7 +26,7 @@ export class WallDetector {
 
   constructor(
   config: WallDetectorConfig = {
-    minNotionalUSD: 500_000,
+    minNotionalQuote: 500_000,
     persistentAfterMs: 30_000,
     strongAfterMs: 120_000,
     priceTolerancePercent: 0.1,
@@ -72,8 +72,8 @@ export class WallDetector {
       const level of levels.values()
     ) {
       if (
-        level.notionalUSD <
-        this.config.minNotionalUSD
+        level.notionalQuote <
+        this.config.minNotionalQuote
       ) {
         continue;
       }
@@ -113,13 +113,13 @@ export class WallDetector {
         initialPrice: level.price,
         currentPrice: level.price,
         initialNotional:
-          level.notionalUSD,
+          level.notionalQuote,
         currentNotional:
-          level.notionalUSD,
+          level.notionalQuote,
         highestNotional:
-          level.notionalUSD,
+          level.notionalQuote,
         lowestNotional:
-          level.notionalUSD,
+          level.notionalQuote,
         firstSeen: now,
         lastSeen: now,
         ageMs: 0,
@@ -197,7 +197,7 @@ export class WallDetector {
       level.price;
 
     wall.currentNotional =
-      level.notionalUSD;
+      level.notionalQuote;
 
     wall.lastSeen =
       now;
@@ -209,13 +209,13 @@ export class WallDetector {
     wall.highestNotional =
       Math.max(
         wall.highestNotional,
-        level.notionalUSD,
+        level.notionalQuote,
       );
 
     wall.lowestNotional =
       Math.min(
         wall.lowestNotional,
-        level.notionalUSD,
+        level.notionalQuote,
       );
 
     wall.priceMovementPercent =

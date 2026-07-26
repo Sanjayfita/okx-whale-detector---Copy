@@ -31,9 +31,9 @@ export class WhaleAnalyzer {
 
         let strength: WhaleAnalysis['strength'];
 
-        if (whale.notionalUSD >= 1_000_000) {
+      if (whale.notionalQuote >= 1_000_000) {
           strength = 'HIGH';
-        } else if (whale.notionalUSD >= 750_000) {
+        } else if (whale.notionalQuote >= 750_000) {
           strength = 'MEDIUM';
         } else {
           strength = 'LOW';

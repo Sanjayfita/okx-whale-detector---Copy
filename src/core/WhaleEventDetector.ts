@@ -107,13 +107,13 @@ for (
     );
 
     const change =
-      whale.notionalUSD -
-      previous.whale.notionalUSD;
+      whale.notionalQuote -
+      previous.whale.notionalQuote;
 
     const changePercent =
       Math.abs(
         change /
-        previous.whale.notionalUSD,
+        previous.whale.notionalQuote,
       ) * 100;
 
     if (

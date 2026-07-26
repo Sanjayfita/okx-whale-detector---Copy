@@ -4,7 +4,6 @@ import type { OrderBook } from './orderbook';
 import type { MarketState } from './market';
 import type { Wall, WallSide } from './wall';
 import type { Signal } from './signal';
-import type { OKXOrderBookMessage } from './okx';
 
 export enum EventType {
   ORDERBOOK_UPDATE = 'ORDERBOOK_UPDATE',

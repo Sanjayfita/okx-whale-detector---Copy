@@ -3,16 +3,16 @@ import type { Whale } from '../types/whale';
 export interface WhaleRefillEvent {
   whale: Whale;
   refillCount: number;
-  previousNotionalUSD: number;
-  currentNotionalUSD: number;
+  previousNotionalQuote: number;
+  currentNotionalQuote: number;
   refillAmountUSD: number;
   timestamp: number;
 }
 
 interface WhaleRefillHistory {
-  baselineNotionalUSD: number;
-  lastNotionalUSD: number;
-  lowestNotionalUSD: number;
+  baselineNotionalQuote: number;
+  lastNotionalQuote: number;
+  lowestNotionalQuote: number;
   refillCount: number;
   inDrawdown: boolean;
 }
@@ -47,14 +47,14 @@ export class WhaleRefillDetector {
     whale: Whale,
   ): WhaleRefillEvent | undefined {
     const key = this.getKey(whale);
-    const current = whale.notionalUSD;
+    const current = whale.notionalQuote;
     const existing = this.history.get(key);
 
     if (!existing) {
       this.history.set(key, {
-        baselineNotionalUSD: current,
-        lastNotionalUSD: current,
-        lowestNotionalUSD: current,
+        baselineNotionalQuote: current,
+        lastNotionalQuote: current,
+        lowestNotionalQuote: current,
         refillCount: 0,
         inDrawdown: false,
       });
@@ -63,19 +63,19 @@ export class WhaleRefillDetector {
     }
 
     if (!existing.inDrawdown) {
-      existing.baselineNotionalUSD =
+      existing.baselineNotionalQuote =
         Math.max(
-          existing.baselineNotionalUSD,
+          existing.baselineNotionalQuote,
           current,
         );
 
       const dropPercent =
         (
           (
-            existing.baselineNotionalUSD -
+            existing.baselineNotionalQuote -
             current
           ) /
-          existing.baselineNotionalUSD
+          existing.baselineNotionalQuote
         ) * 100;
 
       if (
@@ -83,21 +83,21 @@ export class WhaleRefillDetector {
         this.config.dropThresholdPercent
       ) {
         existing.inDrawdown = true;
-        existing.lowestNotionalUSD = current;
+        existing.lowestNotionalQuote = current;
       }
 
-      existing.lastNotionalUSD = current;
+      existing.lastNotionalQuote = current;
       return undefined;
     }
 
-    existing.lowestNotionalUSD =
+    existing.lowestNotionalQuote =
       Math.min(
-        existing.lowestNotionalUSD,
+        existing.lowestNotionalQuote,
         current,
       );
 
     const recoveryTarget =
-      existing.baselineNotionalUSD *
+      existing.baselineNotionalQuote *
       (
         this.config.recoveryThresholdPercent /
         100
@@ -105,32 +105,32 @@ export class WhaleRefillDetector {
 
     const isRecovering =
       current >
-      existing.lastNotionalUSD;
+      existing.lastNotionalQuote;
 
     if (
       !isRecovering ||
       current < recoveryTarget
     ) {
-      existing.lastNotionalUSD = current;
+      existing.lastNotionalQuote = current;
       return undefined;
     }
 
     const refillAmountUSD =
       current -
-      existing.lowestNotionalUSD;
+      existing.lowestNotionalQuote;
 
     existing.refillCount += 1;
-    existing.baselineNotionalUSD = current;
-    existing.lastNotionalUSD = current;
-    existing.lowestNotionalUSD = current;
+    existing.baselineNotionalQuote = current;
+    existing.lastNotionalQuote = current;
+    existing.lowestNotionalQuote = current;
     existing.inDrawdown = false;
 
     return {
       whale,
       refillCount: existing.refillCount,
-      previousNotionalUSD:
+      previousNotionalQuote:
         current - refillAmountUSD,
-      currentNotionalUSD: current,
+      currentNotionalQuote: current,
       refillAmountUSD,
       timestamp: Date.now(),
     };

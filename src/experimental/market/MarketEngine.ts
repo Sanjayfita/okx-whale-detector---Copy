@@ -1,10 +1,10 @@
-import { OrderBookManager } from '../core/OrderBookManager';
-import { WhaleTracker } from '../core/WhaleTracker';
-import { MarketAnalyzer } from '../core/MarketAnalyzer';
-import { WhaleEventDetector } from '../core/WhaleEventDetector';
-import type { OrderBookLevel } from '../types/orderbook';
+import { OrderBookManager } from '../../core/OrderBookManager';
+import { WhaleTracker } from '../../core/WhaleTracker';
+import { MarketAnalyzer } from '../../core/MarketAnalyzer';
+import { WhaleEventDetector } from '../../core/WhaleEventDetector';
+import type { OrderBookLevel } from '../../types/orderbook';
 
-import type { Whale } from '../types/whale';
+import type { Whale } from '../../types/whale';
 
 export interface MarketSnapshot {
   symbol: string;

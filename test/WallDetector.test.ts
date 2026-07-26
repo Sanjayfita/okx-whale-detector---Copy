@@ -25,7 +25,7 @@ const createLevel = (
   size,
   rawSize:
     size.toString(),
-  notionalUSD:
+  notionalQuote:
     price * size,
   updatedAt:
     Date.now(),
@@ -61,7 +61,7 @@ const createOrderBook = (
 
 const createDetector = (): WallDetector =>
   new WallDetector({
-    minNotionalUSD: 500_000,
+    minNotionalQuote: 500_000,
     persistentAfterMs: 30_000,
     strongAfterMs: 120_000,
 
