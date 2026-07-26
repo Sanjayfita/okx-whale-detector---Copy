@@ -77,6 +77,8 @@ const candleUpdateHandler =
     );
   },
 );
+  candleUpdateHandler.reset();
+
     /*
      * src/index.ts currently uses this
      * separate score-engine map, so it
