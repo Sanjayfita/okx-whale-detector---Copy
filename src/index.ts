@@ -627,7 +627,36 @@ console.log(
     );
   },
 );
+let isShuttingDown = false;
 
+const shutdown = (
+  signal: NodeJS.Signals,
+): void => {
+  if (isShuttingDown) {
+    return;
+  }
+
+  isShuttingDown = true;
+
+  console.log(
+    `Received ${signal}; closing OKX connections.`,
+  );
+
+  client.close();
+  candleClient.close();
+};
+
+process.once(
+  'SIGINT',
+  () =>
+    shutdown('SIGINT'),
+);
+
+process.once(
+  'SIGTERM',
+  () =>
+    shutdown('SIGTERM'),
+);
 
 for (
   const symbol

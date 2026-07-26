@@ -1,0 +1,313 @@
+import {
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+
+import {
+  WallDetector,
+} from '../src/core/WallDetector';
+
+import {
+  SummaryThrottle,
+} from '../src/core/SummaryThrottle';
+
+import {
+  appConfig,
+} from '../src/config/appConfig';
+
+import type {
+  OrderBook,
+  OrderLevel,
+} from '../src/types/orderbook';
+
+const createLevel = (
+  price: number,
+  notionalUSD: number,
+): OrderLevel => {
+  const size =
+    notionalUSD / price;
+
+  return {
+    price,
+    rawPrice:
+      price.toString(),
+    size,
+    rawSize:
+      size.toString(),
+    notionalUSD,
+    updatedAt:
+      Date.now(),
+  };
+};
+
+const createOrderBook = (
+  bidLevels: OrderLevel[],
+): OrderBook => ({
+  bids:
+    new Map(
+      bidLevels.map(
+        level => [
+          level.price,
+          level,
+        ],
+      ),
+    ),
+
+  asks:
+    new Map(),
+
+  lastSeqId: 1,
+  status: 'SYNCED',
+  initialized: true,
+  updatedAt:
+    Date.now(),
+});
+
+describe(
+  'central configuration injection',
+  () => {
+    it(
+      'contains the expected application defaults',
+      () => {
+        expect(
+          appConfig.whale
+            .minimumNotionalQuote,
+        ).toBe(500_000);
+
+        expect(
+          appConfig.whale
+            .persistentAfterMs,
+        ).toBe(30_000);
+
+        expect(
+          appConfig.whale
+            .strongAfterMs,
+        ).toBe(120_000);
+
+        expect(
+          appConfig.events
+            .removalGraceMs,
+        ).toBe(2_000);
+
+        expect(
+          appConfig.reporting
+            .summaryIntervalMs,
+        ).toBe(5_000);
+      },
+    );
+
+    it(
+      'changes wall detection when a smaller threshold is injected',
+      () => {
+        const orderBook =
+          createOrderBook([
+            /*
+             * This level is below the
+             * production $500,000 threshold.
+             */
+            createLevel(
+              100,
+              10_000,
+            ),
+          ]);
+
+        const productionDetector =
+          new WallDetector({
+            minNotionalUSD:
+              appConfig.whale
+                .minimumNotionalQuote,
+
+            persistentAfterMs:
+              appConfig.whale
+                .persistentAfterMs,
+
+            strongAfterMs:
+              appConfig.whale
+                .strongAfterMs,
+
+            priceTolerancePercent:
+              0.1,
+
+            removalGracePeriodMs:
+              appConfig.events
+                .removalGraceMs,
+          });
+
+        const testDetector =
+          new WallDetector({
+            /*
+             * Very small test threshold.
+             */
+            minNotionalUSD:
+              1_000,
+
+            persistentAfterMs:
+              100,
+
+            strongAfterMs:
+              200,
+
+            priceTolerancePercent:
+              0.1,
+
+            removalGracePeriodMs:
+              50,
+          });
+
+        const productionWalls =
+          productionDetector.detect(
+            orderBook,
+          );
+
+        const testWalls =
+          testDetector.detect(
+            orderBook,
+          );
+
+        expect(
+          productionWalls,
+        ).toHaveLength(0);
+
+        expect(
+          testWalls,
+        ).toHaveLength(1);
+
+        expect(
+          testWalls[0]?.currentNotional,
+        ).toBe(10_000);
+      },
+    );
+
+    it(
+      'changes persistence behavior when smaller ages are injected',
+      () => {
+        vi.useFakeTimers();
+
+        vi.setSystemTime(
+          new Date(
+            '2026-07-25T12:00:00Z',
+          ),
+        );
+
+        const detector =
+          new WallDetector({
+            minNotionalUSD:
+              1_000,
+
+            persistentAfterMs:
+              100,
+
+            strongAfterMs:
+              200,
+
+            priceTolerancePercent:
+              0.1,
+
+            removalGracePeriodMs:
+              50,
+          });
+
+        const orderBook =
+          createOrderBook([
+            createLevel(
+              100,
+              10_000,
+            ),
+          ]);
+
+        const firstResult =
+          detector.detect(
+            orderBook,
+          );
+
+        expect(
+          firstResult[0]?.status,
+        ).toBe('NEW');
+
+        vi.advanceTimersByTime(
+          100,
+        );
+
+        const persistentResult =
+          detector.detect(
+            orderBook,
+          );
+
+        expect(
+          persistentResult[0]?.status,
+        ).toBe(
+          'PERSISTENT',
+        );
+
+        vi.advanceTimersByTime(
+          100,
+        );
+
+        const strongResult =
+          detector.detect(
+            orderBook,
+          );
+
+        expect(
+          strongResult[0]?.status,
+        ).toBe('STRONG');
+
+        vi.useRealTimers();
+      },
+    );
+
+    it(
+      'changes reporting timing when a smaller interval is injected',
+      () => {
+        const productionThrottle =
+          new SummaryThrottle(
+            appConfig.reporting
+              .summaryIntervalMs,
+          );
+
+        const testThrottle =
+          new SummaryThrottle(
+            100,
+          );
+
+        expect(
+          productionThrottle
+            .shouldDisplay(
+              'BTC-USDT',
+              1_000,
+            ),
+        ).toBe(true);
+
+        expect(
+          testThrottle.shouldDisplay(
+            'BTC-USDT',
+            1_000,
+          ),
+        ).toBe(true);
+
+        /*
+         * Only 100 milliseconds later:
+         *
+         * production interval = blocked
+         * test interval = allowed
+         */
+        expect(
+          productionThrottle
+            .shouldDisplay(
+              'BTC-USDT',
+              1_100,
+            ),
+        ).toBe(false);
+
+        expect(
+          testThrottle.shouldDisplay(
+            'BTC-USDT',
+            1_100,
+          ),
+        ).toBe(true);
+      },
+    );
+  },
+);
