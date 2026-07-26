@@ -162,7 +162,101 @@ describe(
       vi.useRealTimers();
       vi.restoreAllMocks();
     });
+it(
+  'logs PERSISTENT only once across repeated updates',
+  () => {
+    vi.spyOn(
+      state.whaleBehaviorEngine,
+      'analyze',
+    ).mockImplementation(
+      whale => [
+        {
+          type:
+            'PERSISTENT',
 
+          whale,
+
+          confidence:
+            80,
+
+          reason:
+            'Whale has remained active for 30s',
+
+          detectedAt:
+            Date.now(),
+        },
+      ],
+    );
+
+    /*
+     * The small bid is required so
+     * MarketEngine can calculate a
+     * mid-price.
+     *
+     * 100 × 1 = 100 USDT, so it is
+     * not large enough to be a whale.
+     *
+     * 101 × 10,000 = 1,010,000 USDT,
+     * so only the ASK level qualifies.
+     */
+    engine.processOrderBookUpdate(
+      createSnapshot({
+        bids: [
+          [
+            '100',
+            '1',
+            '0',
+            '1',
+          ],
+        ],
+
+        asks: [
+          [
+            '101',
+            '10000',
+            '0',
+            '1',
+          ],
+        ],
+      }),
+    );
+
+    /*
+     * Update the same ASK wall.
+     * Keep the small bid unchanged.
+     */
+    engine.processOrderBookUpdate(
+      createUpdate({
+        bids: [],
+
+        asks: [
+          [
+            '101',
+            '10001',
+            '0',
+            '1',
+          ],
+        ],
+      }),
+    );
+
+    const persistentLogs =
+      vi.mocked(
+        console.log,
+      ).mock.calls.filter(
+        call =>
+          String(
+            call[0],
+          ).includes(
+            '🧠 PERSISTENT',
+          ),
+      );
+
+    expect(
+      persistentLogs,
+    ).toHaveLength(1);
+  },
+);
     it(
       'ignores updates for an unknown symbol',
       () => {

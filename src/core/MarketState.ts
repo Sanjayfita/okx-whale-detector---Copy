@@ -28,6 +28,10 @@ import {
   WhaleBehaviorEngine,
 } from './WhaleBehaviorEngine';
 
+import {
+  BehaviorTransitionTracker,
+} from './BehaviorTransitionTracker';
+
 export class MarketState {
   public readonly orderBookManager =
     new OrderBookManager();
@@ -55,4 +59,7 @@ export class MarketState {
 
  public readonly whaleBehaviorEngine =
   new WhaleBehaviorEngine();
-  }
+  
+public readonly behaviorTransitionTracker =
+  new BehaviorTransitionTracker();
+}

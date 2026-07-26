@@ -106,30 +106,43 @@ state.whaleScoreEngine.prune(
   result.active,
 );
 
-  for (
+for (
   const whale
   of result.active
 ) {
-  const behaviors =
+  const currentBehaviors =
     state.whaleBehaviorEngine.analyze(
-  whale,
-);
+      whale,
+    );
+
+  const enteredBehaviors =
+    state.behaviorTransitionTracker
+      .getEnteredBehaviors(
+        whale,
+        currentBehaviors,
+      );
 
   for (
     const behavior
-    of behaviors
+    of enteredBehaviors
   ) {
     console.log(
       `🧠 ${behavior.type} | ` +
       `${behavior.whale.side} | ` +
       `Confidence: ` +
-      `${behavior.confidence.toFixed(0)}% | ` +
+      `${behavior.confidence.toFixed(
+        0,
+      )}% | ` +
       `${behavior.reason}`,
     );
   }
 }
 
 state.whaleBehaviorEngine.prune(
+  result.active,
+);
+
+state.behaviorTransitionTracker.prune(
   result.active,
 );
 
