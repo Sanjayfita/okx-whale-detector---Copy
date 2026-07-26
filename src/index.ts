@@ -78,7 +78,6 @@ const candleUpdateHandler =
   },
 );
   candleUpdateHandler.reset();
-
     /*
      * src/index.ts currently uses this
      * separate score-engine map, so it
@@ -572,7 +571,7 @@ console.log(
       'BULLISH'
     ) {
       console.log(
-        `🟢 BULLISH |Pressure Strength: ` +
+        `🟢 BULLISH | Pressure Strength: ` +
         `${marketSignal.confidence.toFixed(
           1,
         )}%`,
@@ -582,14 +581,14 @@ console.log(
       'BEARISH'
     ) {
       console.log(
-        `🔴 BEARISH |Pressure Strength: ` +
+        `🔴 BEARISH | Pressure Strength: ` +
         `${marketSignal.confidence.toFixed(
           1,
         )}%`,
       );
     } else {
       console.log(
-        `⚪ NEUTRAL |Pressure Strength: ` +
+        `⚪ NEUTRAL | Pressure Strength: ` +
         `${marketSignal.confidence.toFixed(
           1,
         )}%`,
