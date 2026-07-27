@@ -2,6 +2,10 @@ import { OKXInstrumentClient } from './clients/okx/OKXInstrumentClient';
 import { OKXMarketDiscoveryClient } from './clients/okx/OKXMarketDiscoveryClient';
 import { appConfig } from './config/appConfig';
 import {
+  healthConfig,
+  validateHealthConfig,
+} from './config/healthConfig';
+import {
   marketDiscoveryConfig,
   validateMarketDiscoveryConfig,
 } from './config/marketDiscoveryConfig';
@@ -16,6 +20,7 @@ import {
 import { resolveSymbolConfig, SYMBOL_PROFILES } from './config/symbolProfiles';
 import { validateAppConfig } from './config/validateAppConfig';
 import { CandleUpdateHandler } from './core/CandleUpdateHandler';
+import { MarketHealthMonitor } from './core/MarketHealthMonitor';
 import { MarketState } from './core/MarketState';
 import { SubscriptionManager } from './core/SubscriptionManager';
 import { SummaryThrottle } from './core/SummaryThrottle';
@@ -23,6 +28,7 @@ import { MarketEngine } from './market/MarketEngine';
 
 const start = async (): Promise<void> => {
   validateAppConfig(appConfig);
+  validateHealthConfig(healthConfig);
   validateMarketDiscoveryConfig(marketDiscoveryConfig);
   validatePerformanceConfig(performanceConfig);
   validateSubscriptionConfig(subscriptionConfig);
@@ -73,13 +79,19 @@ const start = async (): Promise<void> => {
 
   const marketEngine = new MarketEngine(marketStates, summaryThrottle);
   const candleUpdateHandler = new CandleUpdateHandler(marketStates);
+  const healthMonitor = new MarketHealthMonitor(
+    activeProfiles.map((profile) => profile.symbol),
+    healthConfig,
+  );
 
   const subscriptionManager = new SubscriptionManager({
     maximumSymbolsPerConnection: subscriptionConfig.maximumSymbolsPerConnection,
     onOrderBook: (update) => {
+      healthMonitor.recordOrderBook(update.instId);
       marketEngine.processOrderBookUpdate(update);
     },
     onCandle: (candle) => {
+      healthMonitor.recordCandle(candle.instId);
       candleUpdateHandler.handle(candle);
     },
     onShardReconnect: (symbols) => {
@@ -94,6 +106,7 @@ const start = async (): Promise<void> => {
 
       candleUpdateHandler.resetSymbols(symbols);
       marketEngine.resetSymbols(symbols);
+      healthMonitor.resetSymbols(symbols);
 
       console.log(
         `✅ Reset ${symbols.length} markets. Waiting for fresh snapshots...`,
@@ -106,12 +119,16 @@ const start = async (): Promise<void> => {
   );
 
   subscriptionManager.start(activeInstruments);
+  healthMonitor.start();
 
   const shards = subscriptionManager.getShards();
 
   console.log(
     `Started ${shards.length} subscription shard${shards.length === 1 ? '' : 's'} ` +
       `with up to ${subscriptionConfig.maximumSymbolsPerConnection} markets each.`,
+  );
+  console.log(
+    `Started market health monitoring for ${activeProfiles.length} markets.`,
   );
 
   let isShuttingDown = false;
@@ -125,6 +142,7 @@ const start = async (): Promise<void> => {
 
     console.log(`Received ${signal}; closing OKX connections.`);
 
+    healthMonitor.stop();
     subscriptionManager.close();
   };
 
