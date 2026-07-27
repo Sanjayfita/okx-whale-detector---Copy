@@ -1,10 +1,14 @@
 import { OKXWebSocketClient } from './clients/okx/OKXWebSocketClient';
 import { OKXCandleWebSocketClient } from './clients/okx/OKXCandleWebSocketClient';
 import { OKXInstrumentClient } from './clients/okx/OKXInstrumentClient';
+import { OKXMarketDiscoveryClient } from './clients/okx/OKXMarketDiscoveryClient';
 import { appConfig } from './config/appConfig';
+import {
+  marketDiscoveryConfig,
+  validateMarketDiscoveryConfig,
+} from './config/marketDiscoveryConfig';
 import { resolveSymbolConfig, SYMBOL_PROFILES } from './config/symbolProfiles';
 import { validateAppConfig } from './config/validateAppConfig';
-import { WATCHLIST } from './config/symbols';
 import { MarketState } from './core/MarketState';
 import { SummaryThrottle } from './core/SummaryThrottle';
 import { CandleUpdateHandler } from './core/CandleUpdateHandler';
@@ -12,13 +16,27 @@ import { MarketEngine } from './market/MarketEngine';
 
 const start = async (): Promise<void> => {
   validateAppConfig(appConfig);
+  validateMarketDiscoveryConfig(marketDiscoveryConfig);
 
   console.log('OKX Whale Detector starting...');
+  console.log('Discovering eligible OKX markets...');
+
+  const discoveryClient = new OKXMarketDiscoveryClient();
+  const activeProfiles = await discoveryClient.discoverProfiles(
+    SYMBOL_PROFILES,
+    marketDiscoveryConfig,
+  );
+
+  console.log(
+    `Selected ${activeProfiles.length} markets ` +
+      `(${SYMBOL_PROFILES.length} required, ` +
+      `${activeProfiles.length - SYMBOL_PROFILES.length} discovered).`,
+  );
   console.log('Loading OKX instrument metadata...');
 
   const instrumentClient = new OKXInstrumentClient();
   const instruments =
-    await instrumentClient.loadMarketInstruments(SYMBOL_PROFILES);
+    await instrumentClient.loadMarketInstruments(activeProfiles);
 
   console.log(`Loaded metadata for ${instruments.size} instruments.`);
 
@@ -42,8 +60,8 @@ const start = async (): Promise<void> => {
   const createMarketState = (symbol: string): MarketState =>
     new MarketState(resolveSymbolConfig(symbol), requireInstrument(symbol));
 
-  for (const symbol of WATCHLIST) {
-    marketStates.set(symbol, createMarketState(symbol));
+  for (const profile of activeProfiles) {
+    marketStates.set(profile.symbol, createMarketState(profile.symbol));
   }
 
   const marketEngine = new MarketEngine(marketStates, summaryThrottle);
@@ -58,8 +76,8 @@ const start = async (): Promise<void> => {
       '🔄 OKX connection restored. ' + 'Resetting local market state...',
     );
 
-    for (const symbol of WATCHLIST) {
-      marketStates.set(symbol, createMarketState(symbol));
+    for (const profile of activeProfiles) {
+      marketStates.set(profile.symbol, createMarketState(profile.symbol));
     }
 
     candleUpdateHandler.reset();
@@ -74,7 +92,7 @@ const start = async (): Promise<void> => {
     marketEngine.processOrderBookUpdate(update);
   });
 
-  for (const profile of SYMBOL_PROFILES) {
+  for (const profile of activeProfiles) {
     const instrument = requireInstrument(profile.symbol);
 
     client.subscribeToOrderBook(instrument.instId, instrument.instType);
