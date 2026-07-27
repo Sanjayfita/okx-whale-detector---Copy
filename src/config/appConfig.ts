@@ -5,6 +5,36 @@ export interface AppConfig {
     strongAfterMs: number;
     movementPriceTolerancePercent: number;
   };
+  tracker: {
+    minimumNotionalQuote: number;
+    persistentAfterSeconds: number;
+    strongAfterSeconds: number;
+    minimumMovementSizeRatio: number;
+    maximumMovementSizeRatio: number;
+    movementToleranceHighPrice: number;
+    movementToleranceHigh: number;
+    movementToleranceMediumPrice: number;
+    movementToleranceMedium: number;
+    movementToleranceLowPrice: number;
+    movementToleranceLow: number;
+    movementToleranceVeryLow: number;
+    strengthMaximum: number;
+    strengthLargeNotional: number;
+    strengthLargeScore: number;
+    strengthMediumNotional: number;
+    strengthMediumScore: number;
+    strengthSmallNotional: number;
+    strengthSmallScore: number;
+    strengthBaseScore: number;
+    strengthOldAgeSeconds: number;
+    strengthOldAgeScore: number;
+    strengthMatureAgeSeconds: number;
+    strengthMatureAgeScore: number;
+    strengthPersistentAgeSeconds: number;
+    strengthPersistentAgeScore: number;
+    strengthYoungAgeSeconds: number;
+    strengthYoungAgeScore: number;
+  };
   events: {
     removalGraceMs: number;
     minimumChangePercent: number;
@@ -49,6 +79,36 @@ export const appConfig: AppConfig = {
     persistentAfterMs: 30_000,
     strongAfterMs: 120_000,
     movementPriceTolerancePercent: 0.1,
+  },
+  tracker: {
+    minimumNotionalQuote: 500_000,
+    persistentAfterSeconds: 30,
+    strongAfterSeconds: 60,
+    minimumMovementSizeRatio: 0.8,
+    maximumMovementSizeRatio: 1.2,
+    movementToleranceHighPrice: 50_000,
+    movementToleranceHigh: 100,
+    movementToleranceMediumPrice: 1_000,
+    movementToleranceMedium: 10,
+    movementToleranceLowPrice: 10,
+    movementToleranceLow: 0.5,
+    movementToleranceVeryLow: 0.01,
+    strengthMaximum: 100,
+    strengthLargeNotional: 10_000_000,
+    strengthLargeScore: 50,
+    strengthMediumNotional: 5_000_000,
+    strengthMediumScore: 40,
+    strengthSmallNotional: 1_000_000,
+    strengthSmallScore: 25,
+    strengthBaseScore: 10,
+    strengthOldAgeSeconds: 120,
+    strengthOldAgeScore: 50,
+    strengthMatureAgeSeconds: 60,
+    strengthMatureAgeScore: 35,
+    strengthPersistentAgeSeconds: 30,
+    strengthPersistentAgeScore: 20,
+    strengthYoungAgeSeconds: 10,
+    strengthYoungAgeScore: 10,
   },
   events: {
     removalGraceMs: 2_000,
