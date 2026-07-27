@@ -67,15 +67,17 @@ const main = async (): Promise<void> => {
   });
   const store = new ExternalSignalStore();
 
-  const [markets, trades] = await Promise.all([
-    client.getActiveMarkets(options.marketLimit),
-    client.getRecentTrades(options.minimumTradeUsd, options.tradeLimit),
-  ]);
+  const markets = await client.getActiveMarkets(options.marketLimit);
   const relevantMarkets = markets.filter((market) =>
     detector.isRelevantMarket(market),
   );
   const marketsByCondition = new Map(
     relevantMarkets.map((market) => [market.conditionId, market]),
+  );
+  const trades = await client.getRecentTradesForMarkets(
+    options.minimumTradeUsd,
+    relevantMarkets.map((market) => market.conditionId),
+    options.tradeLimit,
   );
 
   let matchedTrades = 0;
@@ -92,14 +94,18 @@ const main = async (): Promise<void> => {
   console.log('\nPOLYMARKET WHALE SCAN');
   console.log(`Active markets fetched: ${markets.length}`);
   console.log(`Relevant liquid markets: ${relevantMarkets.length}`);
-  console.log(`Recent large trades fetched: ${trades.length}`);
-  console.log(`Trades in relevant markets: ${matchedTrades}`);
+  console.log(`Relevant-market trades fetched: ${trades.length}`);
+  console.log(`Trades matched to discovered markets: ${matchedTrades}`);
   console.log(`Whale signals detected: ${signals.length}`);
 
   for (const signal of signals.slice(0, 20)) {
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`${signal.direction} | ${signal.asset ?? 'MACRO'}`);
-    console.log(`Notional: $${(signal.notionalUsd ?? 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}`);
+    console.log(
+      `Notional: $${(signal.notionalUsd ?? 0).toLocaleString('en-US', {
+        maximumFractionDigits: 2,
+      })}`,
+    );
     console.log(`Confidence: ${signal.confidence.toFixed(1)}%`);
     console.log(signal.description);
   }
@@ -110,7 +116,7 @@ const main = async (): Promise<void> => {
       options,
       activeMarketsFetched: markets.length,
       relevantMarkets: relevantMarkets.length,
-      recentTradesFetched: trades.length,
+      relevantMarketTradesFetched: trades.length,
       matchedTrades,
       whaleSignals: signals,
     };
