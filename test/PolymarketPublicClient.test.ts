@@ -11,6 +11,22 @@ const createMarket = (index: number) => ({
   volume: '100000',
 });
 
+const createTrade = (conditionId: string, timestamp: number) => ({
+  proxyWallet: '0x123',
+  side: 'BUY',
+  asset: 'asset-1',
+  conditionId,
+  size: 20_000,
+  price: 0.5,
+  timestamp,
+  title: 'Will Bitcoin rise?',
+  slug: 'will-bitcoin-rise',
+  eventSlug: 'bitcoin-event',
+  outcome: 'Yes',
+  outcomeIndex: 0,
+  transactionHash: `0x${timestamp}`,
+});
+
 describe('PolymarketPublicClient', () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -73,6 +89,76 @@ describe('PolymarketPublicClient', () => {
     expect(firstUrl.searchParams.get('offset')).toBe('0');
     expect(secondUrl.searchParams.get('limit')).toBe('50');
     expect(secondUrl.searchParams.get('offset')).toBe('100');
+  });
+
+  it('queries trades only for requested markets in batches', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([createTrade('condition-a', 100)]), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([createTrade('condition-c', 300)]), {
+          status: 200,
+        }),
+      );
+
+    const client = new PolymarketPublicClient({ tradeMarketBatchSize: 2 });
+    const trades = await client.getRecentTradesForMarkets(
+      5_000,
+      ['condition-a', 'condition-b', 'condition-c'],
+      10,
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const firstUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    const secondUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
+    expect(firstUrl.searchParams.get('market')).toBe(
+      'condition-a,condition-b',
+    );
+    expect(secondUrl.searchParams.get('market')).toBe('condition-c');
+    expect(firstUrl.searchParams.get('filterType')).toBe('CASH');
+    expect(firstUrl.searchParams.get('filterAmount')).toBe('5000');
+    expect(trades.map((trade) => trade.timestamp)).toEqual([300, 100]);
+  });
+
+  it('deduplicates market filters and caps merged trade results', async () => {
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            createTrade('condition-a', 100),
+            createTrade('condition-a', 200),
+          ]),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([createTrade('condition-b', 300)]), {
+          status: 200,
+        }),
+      );
+
+    const client = new PolymarketPublicClient({ tradeMarketBatchSize: 1 });
+    const trades = await client.getRecentTradesForMarkets(
+      5_000,
+      ['condition-a', 'condition-a', 'condition-b'],
+      2,
+    );
+
+    expect(trades.map((trade) => trade.timestamp)).toEqual([300, 200]);
+  });
+
+  it('returns no trades when no relevant markets exist', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    const client = new PolymarketPublicClient();
+
+    await expect(client.getRecentTradesForMarkets(5_000, [], 100)).resolves.toEqual(
+      [],
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('rejects invalid market limits', async () => {
