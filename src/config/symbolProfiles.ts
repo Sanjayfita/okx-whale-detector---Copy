@@ -1,8 +1,10 @@
 import { appConfig, type AppConfig } from './appConfig';
 import { validateAppConfig } from './validateAppConfig';
 
+type SymbolConfigSection = Exclude<keyof AppConfig, 'reporting'>;
+
 export type AppConfigOverride = {
-  [Section in keyof AppConfig]?: Partial<AppConfig[Section]>;
+  [Section in SymbolConfigSection]?: Partial<AppConfig[Section]>;
 };
 
 export interface SymbolProfile {
@@ -13,6 +15,7 @@ export interface SymbolProfile {
 /*
  * Symbols inherit appConfig by default.
  * Add only the values that genuinely need to differ for a market.
+ * Shared connection-wide reporting settings remain global.
  */
 export const SYMBOL_PROFILES: readonly SymbolProfile[] = [
   { symbol: 'BTC-USDT' },
@@ -33,7 +36,7 @@ const mergeConfig = (
   refill: { ...baseConfig.refill, ...override.refill },
   scoring: { ...baseConfig.scoring, ...override.scoring },
   market: { ...baseConfig.market, ...override.market },
-  reporting: { ...baseConfig.reporting, ...override.reporting },
+  reporting: { ...baseConfig.reporting },
   history: { ...baseConfig.history, ...override.history },
 });
 
