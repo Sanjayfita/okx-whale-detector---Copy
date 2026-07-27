@@ -6,6 +6,10 @@ import {
   validateMarketDiscoveryConfig,
 } from './config/marketDiscoveryConfig';
 import {
+  performanceConfig,
+  validatePerformanceConfig,
+} from './config/performanceConfig';
+import {
   subscriptionConfig,
   validateSubscriptionConfig,
 } from './config/subscriptionConfig';
@@ -20,6 +24,7 @@ import { MarketEngine } from './market/MarketEngine';
 const start = async (): Promise<void> => {
   validateAppConfig(appConfig);
   validateMarketDiscoveryConfig(marketDiscoveryConfig);
+  validatePerformanceConfig(performanceConfig);
   validateSubscriptionConfig(subscriptionConfig);
 
   console.log('OKX Whale Detector starting...');
