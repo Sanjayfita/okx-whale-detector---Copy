@@ -13,6 +13,7 @@ const spotInstrument = {
   baseCcy: 'BTC',
   quoteCcy: 'USDT',
   settleCcy: '',
+  ctType: '',
   ctVal: '',
   ctValCcy: '',
   ctMult: '',
@@ -25,6 +26,7 @@ const swapInstrument = {
   baseCcy: '',
   quoteCcy: '',
   settleCcy: 'USDT',
+  ctType: 'linear',
   ctVal: '0.001',
   ctValCcy: 'XAU',
   ctMult: '1',
@@ -76,7 +78,7 @@ describe('OKXInstrumentClient', () => {
     });
   });
 
-  it('derives swap base units from ctVal and ctMult', async () => {
+  it('derives linear swap base units from ctVal only', async () => {
     const loader: JsonLoader = async (url) => {
       const instType = new URL(url).searchParams.get('instType');
 
@@ -93,7 +95,7 @@ describe('OKXInstrumentClient', () => {
       instId: 'XAU-USDT-SWAP',
       instType: 'SWAP',
       quoteCurrency: 'USDT',
-      baseUnitsPerSize: 0.01,
+      baseUnitsPerSize: 0.001,
     });
   });
 
@@ -143,6 +145,18 @@ describe('OKXInstrumentClient', () => {
         { symbol: 'BTC-USDT', instrumentType: 'SPOT' },
       ]),
     ).rejects.toThrow('Instrument type mismatch for BTC-USDT');
+  });
+
+  it('rejects inverse swaps because their notional formula differs', async () => {
+    const client = new OKXInstrumentClient(async () =>
+      response([{ ...swapInstrument, ctType: 'inverse' }]),
+    );
+
+    await expect(
+      client.loadMarketInstruments([
+        { symbol: 'XAU-USDT-SWAP', instrumentType: 'SWAP' },
+      ]),
+    ).rejects.toThrow('Unsupported contract type');
   });
 
   it('rejects swap contract values denominated outside the base asset', async () => {
