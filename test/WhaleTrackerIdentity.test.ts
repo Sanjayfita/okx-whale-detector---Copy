@@ -87,4 +87,39 @@ describe('WhaleTracker stable wall identity', () => {
     const result = tracker.scan(createBook([createLevel(100.01, 10_000)]));
     expect(result.movedWhales).toHaveLength(1);
   });
+
+  it('reports the strongest whale on each side without changing identity', () => {
+    const tracker = new WhaleTracker();
+    const result = tracker.scan(
+      createBook(
+        [createLevel(100, 6_000), createLevel(99, 20_000)],
+        [createLevel(101, 7_000), createLevel(102, 30_000)],
+      ),
+    );
+
+    expect(result.strongestBid?.price).toBe(99);
+    expect(result.strongestAsk?.price).toBe(102);
+    expect(result.strongestBid?.wallId).toBe(
+      result.active.find((whale) => whale.price === 99)?.wallId,
+    );
+    expect(result.strongestAsk?.wallId).toBe(
+      result.active.find((whale) => whale.price === 102)?.wallId,
+    );
+  });
+
+  it('counts persistent and strong active walls after repeated scans', () => {
+    const tracker = new WhaleTracker();
+    const book = createBook(
+      [createLevel(100, 10_000)],
+      [createLevel(101, 10_000)],
+    );
+
+    tracker.scan(book);
+    vi.advanceTimersByTime(60_000);
+    const result = tracker.scan(book);
+
+    expect(result.persistentWalls).toBe(2);
+    expect(result.strongWalls).toBe(2);
+    expect(result.trackedWalls).toBe(2);
+  });
 });
