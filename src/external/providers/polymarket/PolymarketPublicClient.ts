@@ -54,7 +54,8 @@ export class PolymarketPublicClient {
     url.searchParams.set('active', 'true');
     url.searchParams.set('closed', 'false');
     url.searchParams.set('limit', String(limit));
-    url.searchParams.set('order', 'liquidity_num');
+    url.searchParams.set('offset', '0');
+    url.searchParams.set('order', 'liquidity');
     url.searchParams.set('ascending', 'false');
 
     const payload = await this.fetchJson<unknown[]>(url);
@@ -71,16 +72,20 @@ export class PolymarketPublicClient {
         return [];
       }
 
-      return [{
-        id: String(value.id ?? conditionId),
-        conditionId,
-        question,
-        slug: String(value.slug ?? ''),
-        liquidity: toFiniteNumber(value.liquidityNum ?? value.liquidity),
-        volume: toFiniteNumber(value.volumeNum ?? value.volume),
-        endDate: typeof value.endDate === 'string' ? value.endDate : undefined,
-        category: typeof value.category === 'string' ? value.category : undefined,
-      }];
+      return [
+        {
+          id: String(value.id ?? conditionId),
+          conditionId,
+          question,
+          slug: String(value.slug ?? ''),
+          liquidity: toFiniteNumber(value.liquidityNum ?? value.liquidity),
+          volume: toFiniteNumber(value.volumeNum ?? value.volume),
+          endDate:
+            typeof value.endDate === 'string' ? value.endDate : undefined,
+          category:
+            typeof value.category === 'string' ? value.category : undefined,
+        },
+      ];
     });
   }
 
@@ -90,6 +95,7 @@ export class PolymarketPublicClient {
   ): Promise<PolymarketTrade[]> {
     const url = new URL('/trades', this.config.dataBaseUrl);
     url.searchParams.set('limit', String(limit));
+    url.searchParams.set('offset', '0');
     url.searchParams.set('takerOnly', 'true');
     url.searchParams.set('filterType', 'CASH');
     url.searchParams.set('filterAmount', String(minimumCashAmount));
@@ -113,21 +119,23 @@ export class PolymarketPublicClient {
         return [];
       }
 
-      return [{
-        proxyWallet: String(value.proxyWallet ?? ''),
-        side,
-        asset: String(value.asset ?? ''),
-        conditionId,
-        size: toFiniteNumber(value.size),
-        price: toFiniteNumber(value.price),
-        timestamp: toFiniteNumber(value.timestamp),
-        title: String(value.title ?? ''),
-        slug: String(value.slug ?? ''),
-        eventSlug: String(value.eventSlug ?? ''),
-        outcome: String(value.outcome ?? ''),
-        outcomeIndex: toFiniteNumber(value.outcomeIndex),
-        transactionHash,
-      }];
+      return [
+        {
+          proxyWallet: String(value.proxyWallet ?? ''),
+          side,
+          asset: String(value.asset ?? ''),
+          conditionId,
+          size: toFiniteNumber(value.size),
+          price: toFiniteNumber(value.price),
+          timestamp: toFiniteNumber(value.timestamp),
+          title: String(value.title ?? ''),
+          slug: String(value.slug ?? ''),
+          eventSlug: String(value.eventSlug ?? ''),
+          outcome: String(value.outcome ?? ''),
+          outcomeIndex: toFiniteNumber(value.outcomeIndex),
+          transactionHash,
+        },
+      ];
     });
   }
 
@@ -145,8 +153,13 @@ export class PolymarketPublicClient {
       });
 
       if (!response.ok) {
+        const responseBody = await response.text();
+        const details = responseBody.trim()
+          ? ` | ${responseBody.trim().slice(0, 500)}`
+          : '';
+
         throw new Error(
-          `Polymarket request failed: ${response.status} ${response.statusText}`,
+          `Polymarket request failed: ${response.status} ${response.statusText} | ${url.toString()}${details}`,
         );
       }
 
