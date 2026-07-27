@@ -12,10 +12,7 @@ const DEFAULT_BASE_URL = 'https://www.okx.com';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const readString = (
-  record: Record<string, unknown>,
-  key: string,
-): string => {
+const readString = (record: Record<string, unknown>, key: string): string => {
   const value = record[key];
 
   return typeof value === 'string' ? value : '';
@@ -64,7 +61,9 @@ const parsePublicInstrument = (value: unknown): OKXPublicInstrument => {
   const instType = readString(value, 'instType');
 
   if (instType !== 'SPOT' && instType !== 'SWAP') {
-    throw new Error(`Unsupported OKX instrument type: ${instType || 'missing'}`);
+    throw new Error(
+      `Unsupported OKX instrument type: ${instType || 'missing'}`,
+    );
   }
 
   return {
@@ -127,9 +126,7 @@ const resolveBaseUnitsPerSize = (
   const baseUnitsPerSize = Number(instrument.ctVal);
 
   if (!Number.isFinite(baseUnitsPerSize) || baseUnitsPerSize <= 0) {
-    throw new Error(
-      `Invalid contract value metadata for ${instrument.instId}`,
-    );
+    throw new Error(`Invalid contract value metadata for ${instrument.instId}`);
   }
 
   return baseUnitsPerSize;

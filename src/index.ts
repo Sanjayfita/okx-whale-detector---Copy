@@ -2,10 +2,7 @@ import { OKXWebSocketClient } from './clients/okx/OKXWebSocketClient';
 import { OKXCandleWebSocketClient } from './clients/okx/OKXCandleWebSocketClient';
 import { OKXInstrumentClient } from './clients/okx/OKXInstrumentClient';
 import { appConfig } from './config/appConfig';
-import {
-  resolveSymbolConfig,
-  SYMBOL_PROFILES,
-} from './config/symbolProfiles';
+import { resolveSymbolConfig, SYMBOL_PROFILES } from './config/symbolProfiles';
 import { validateAppConfig } from './config/validateAppConfig';
 import { WATCHLIST } from './config/symbols';
 import { MarketState } from './core/MarketState';
@@ -20,9 +17,8 @@ const start = async (): Promise<void> => {
   console.log('Loading OKX instrument metadata...');
 
   const instrumentClient = new OKXInstrumentClient();
-  const instruments = await instrumentClient.loadMarketInstruments(
-    SYMBOL_PROFILES,
-  );
+  const instruments =
+    await instrumentClient.loadMarketInstruments(SYMBOL_PROFILES);
 
   console.log(`Loaded metadata for ${instruments.size} instruments.`);
 
