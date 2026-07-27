@@ -74,6 +74,7 @@ const parsePublicInstrument = (value: unknown): OKXPublicInstrument => {
     baseCcy: readString(value, 'baseCcy'),
     quoteCcy: readString(value, 'quoteCcy'),
     settleCcy: readString(value, 'settleCcy'),
+    ctType: readString(value, 'ctType'),
     ctVal: readString(value, 'ctVal'),
     ctValCcy: readString(value, 'ctValCcy'),
     ctMult: readString(value, 'ctMult'),
@@ -109,6 +110,13 @@ const resolveBaseUnitsPerSize = (
     return 1;
   }
 
+  if (instrument.ctType !== 'linear') {
+    throw new Error(
+      `Unsupported contract type for ${instrument.instId}: ` +
+        `${instrument.ctType || 'missing'}; expected linear`,
+    );
+  }
+
   if (instrument.ctValCcy !== baseCurrency) {
     throw new Error(
       `Unsupported contract value currency for ${instrument.instId}: ` +
@@ -116,11 +124,7 @@ const resolveBaseUnitsPerSize = (
     );
   }
 
-  const contractValue = Number(instrument.ctVal);
-  const contractMultiplier = instrument.ctMult
-    ? Number(instrument.ctMult)
-    : 1;
-  const baseUnitsPerSize = contractValue * contractMultiplier;
+  const baseUnitsPerSize = Number(instrument.ctVal);
 
   if (!Number.isFinite(baseUnitsPerSize) || baseUnitsPerSize <= 0) {
     throw new Error(
@@ -201,17 +205,16 @@ export class OKXInstrumentClient {
       profileSymbols.add(profile.symbol);
     }
 
-    const requestedTypes = [...new Set(profiles.map((profile) => profile.instrumentType))];
+    const requestedTypes = [
+      ...new Set(profiles.map((profile) => profile.instrumentType)),
+    ];
     const responses = await Promise.all(
-      requestedTypes.map(async (instType) => ({
-        instType,
-        instruments: await this.fetchByType(instType),
-      })),
+      requestedTypes.map((instType) => this.fetchByType(instType)),
     );
     const instrumentsById = new Map<string, OKXPublicInstrument>();
 
-    for (const response of responses) {
-      for (const instrument of response.instruments) {
+    for (const instruments of responses) {
+      for (const instrument of instruments) {
         instrumentsById.set(instrument.instId, instrument);
       }
     }
