@@ -19,16 +19,16 @@ export class MarketEngine {
     new Set<string>();
 
   constructor(
-  private readonly marketStates:
-    Map<string, MarketState>,
+    private readonly marketStates:
+      Map<string, MarketState>,
 
-  private readonly summaryThrottle:
-    SummaryThrottle,
+    private readonly summaryThrottle:
+      SummaryThrottle,
 
-  private readonly reporter:
-    MarketReporter =
-      new MarketReporter(),
-) {}
+    private readonly reporter:
+      MarketReporter =
+        new MarketReporter(),
+  ) {}
 
   public processOrderBookUpdate(
     update: OKXOrderBookUpdate,
@@ -37,202 +37,202 @@ export class MarketEngine {
       this.marketStates.get(
         update.instId,
       );
+
     if (
       !state
     ) {
       return;
     }
 
-
     const wasApplied =
-  state.orderBookManager.applyUpdate(
-    update.bids,
-    update.asks,
-    update.timestamp,
-    update.seqId,
-    update.prevSeqId,
-    update.action,
-  );
-
-if (!wasApplied) {
-  if (
-    !this.sequenceGapSymbols.has(
-      update.instId,
-    )
-  ) {
-    this.sequenceGapSymbols.add(
-      update.instId,
-    );
-
-    this.reporter.reportSequenceGap(
-  update.instId,
-);
-  }
-
-  return;
-}
-
-if (update.action === 'snapshot') {
-  this.sequenceGapSymbols.delete(
-    update.instId,
-  );
-}
-const orderBook =
-  state.orderBookManager
-    .getOrderBook();
-
-if (
-  !orderBook.initialized ||
-  orderBook.status !== 'SYNCED'
-) {
-  return;
-}
-
-    const result =
-  state.whaleTracker.scan(
-    orderBook,
-  );
-
-const currentPrice =
-  state.orderBookManager.getMidPrice();
-
-if (
-  currentPrice ===
-  undefined
-) {
-  return;
-}
-
-const scoredWhales =
-  state.whaleScoreEngine.scoreMany(
-    result.active,
-    currentPrice,
-  );
-
-for (
-  const whale
-  of result.active
-) {
-  const currentBehaviors =
-    state.whaleBehaviorEngine.analyze(
-      whale,
-    );
-
-  const enteredBehaviors =
-    state.behaviorTransitionTracker
-      .getEnteredBehaviors(
-        whale,
-        currentBehaviors,
+      state.orderBookManager.applyUpdate(
+        update.bids,
+        update.asks,
+        update.timestamp,
+        update.seqId,
+        update.prevSeqId,
+        update.action,
       );
-
-  for (
-  const behavior
-  of enteredBehaviors
-) {
-  this.reporter.reportBehavior(
-    behavior,
-  );
-}
-}
-
-state.whaleBehaviorEngine.prune(
-  result.active,
-);
-
-state.behaviorTransitionTracker.prune(
-  result.active,
-);
-
-const walls =
-  state.wallDetector.detect(
-    orderBook,
-  );
-    /*
-     * WHALE EVENTS
-     */
-
-    const whaleEvents =
-  state.whaleEventDetector.detect(
-    result.active,
-  );
-
-for (
-  const event
-  of whaleEvents
-) {
-  if (
-    event.type ===
-    'REMOVED'
-  ) {
-    const spoof =
-      state.whaleBehaviorEngine
-        .analyzeRemoval(
-          event.whale,
-        );
 
     if (
-      spoof
+      !wasApplied
     ) {
-      this.reporter.reportSpoof(
-        spoof,
+      if (
+        !this.sequenceGapSymbols.has(
+          update.instId,
+        )
+      ) {
+        this.sequenceGapSymbols.add(
+          update.instId,
+        );
+
+        this.reporter.reportSequenceGap(
+          update.instId,
+        );
+      }
+
+      return;
+    }
+
+    if (
+      update.action === 'snapshot'
+    ) {
+      this.sequenceGapSymbols.delete(
+        update.instId,
       );
     }
-  }
 
-  this.reporter.reportWhaleEvent(
-    event,
-  );
-}
+    const orderBook =
+      state.orderBookManager
+        .getOrderBook();
 
-for (
-  const whale
-  of result.active
-) {
-  const refill =
-    state.whaleRefillDetector.detect(
-      whale,
+    if (
+      !orderBook.initialized ||
+      orderBook.status !== 'SYNCED'
+    ) {
+      return;
+    }
+
+    const result =
+      state.whaleTracker.scan(
+        orderBook,
+      );
+
+    const currentPrice =
+      state.orderBookManager
+        .getMidPrice();
+
+    if (
+      currentPrice === undefined
+    ) {
+      return;
+    }
+
+    const scoredWhales =
+      state.whaleScoreEngine.scoreMany(
+        result.active,
+        currentPrice,
+      );
+
+    state.whaleScoreEngine.prune(
+      result.active,
     );
 
-  if (
-    !refill
-  ) {
-    continue;
-  }
+    for (
+      const whale
+      of result.active
+    ) {
+      const currentBehaviors =
+        state.whaleBehaviorEngine.analyze(
+          whale,
+        );
 
-  this.reporter.reportRefill(
-    refill,
-  );
-}
+      const enteredBehaviors =
+        state.behaviorTransitionTracker
+          .getEnteredBehaviors(
+            whale,
+            currentBehaviors,
+          );
 
-state.whaleRefillDetector.prune(
-  result.active,
-);
+      for (
+        const behavior
+        of enteredBehaviors
+      ) {
+        this.reporter.reportBehavior(
+          behavior,
+        );
+      }
+    }
 
-    /*
-     * MOVED WALL EVENTS
-     */
+    state.whaleBehaviorEngine.prune(
+      result.active,
+    );
 
-   for (
-  const moved
-  of result.movedWhales
-) {
-  this.reporter.reportMovedWhale(
-    moved,
-  );
-}
+    state.behaviorTransitionTracker.prune(
+      result.active,
+    );
 
+    const walls =
+      state.wallDetector.detect(
+        orderBook,
+      );
 
-    /*
-     * DISPLAY SUMMARY
-     */
+    const whaleEvents =
+      state.whaleEventDetector.detect(
+        result.active,
+      );
 
- if (
-  !this.summaryThrottle.shouldDisplay(
-    update.instId,
-  )
-) {
-  return;
-}
+    for (
+      const event
+      of whaleEvents
+    ) {
+      if (
+        event.type === 'REMOVED'
+      ) {
+        const spoof =
+          state.whaleBehaviorEngine
+            .analyzeRemoval(
+              event.whale,
+            );
+
+        if (
+          spoof
+        ) {
+          this.reporter.reportSpoof(
+            update.instId,
+            spoof,
+          );
+        }
+      }
+
+      this.reporter.reportWhaleEvent(
+        update.instId,
+        event,
+      );
+    }
+
+    for (
+      const whale
+      of result.active
+    ) {
+      const refill =
+        state.whaleRefillDetector.detect(
+          whale,
+        );
+
+      if (
+        !refill
+      ) {
+        continue;
+      }
+
+      this.reporter.reportRefill(
+        update.instId,
+        refill,
+      );
+    }
+
+    state.whaleRefillDetector.prune(
+      result.active,
+    );
+
+    for (
+      const moved
+      of result.movedWhales
+    ) {
+      this.reporter.reportMovedWhale(
+        update.instId,
+        moved,
+      );
+    }
+
+    if (
+      !this.summaryThrottle.shouldDisplay(
+        update.instId,
+      )
+    ) {
+      return;
+    }
 
     const bestBid =
       state.orderBookManager
@@ -242,35 +242,33 @@ state.whaleRefillDetector.prune(
       state.orderBookManager
         .getBestAsk();
 
-
     const marketSignal =
       state.marketAnalyzer.analyze(
         result.active,
-
-        currentPrice ??
-        0,
+        currentPrice,
       );
-this.reporter.reportSummary({
- symbol:
-    update.instId,
 
-   currentPrice,
+    this.reporter.reportSummary({
+      symbol:
+        update.instId,
 
-   bestBidPrice:
-    bestBid?.price,
+      currentPrice,
 
-   bestAskPrice:
-    bestAsk?.price,
+      bestBidPrice:
+        bestBid?.price,
 
-   activeWhales:
-    result.active,
- 
-   walls,
+      bestAskPrice:
+        bestAsk?.price,
 
-   scoredWhales,
+      activeWhales:
+        result.active,
 
-   marketSignal,
-   });
+      walls,
+
+      scoredWhales,
+
+      marketSignal,
+    });
   }
 
   public reset(): void {
