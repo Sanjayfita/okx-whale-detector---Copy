@@ -1,10 +1,7 @@
 import { OKXInstrumentClient } from './clients/okx/OKXInstrumentClient';
 import { OKXMarketDiscoveryClient } from './clients/okx/OKXMarketDiscoveryClient';
 import { appConfig } from './config/appConfig';
-import {
-  healthConfig,
-  validateHealthConfig,
-} from './config/healthConfig';
+import { healthConfig, validateHealthConfig } from './config/healthConfig';
 import {
   marketDiscoveryConfig,
   validateMarketDiscoveryConfig,

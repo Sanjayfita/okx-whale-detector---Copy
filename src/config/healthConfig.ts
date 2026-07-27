@@ -30,7 +30,9 @@ export const validateHealthConfig = (config: HealthConfig): void => {
   requirePositive('candleStaleAfterMs', config.candleStaleAfterMs);
 
   if (config.reportIntervalMs < config.checkIntervalMs) {
-    errors.push('reportIntervalMs must be greater than or equal to checkIntervalMs');
+    errors.push(
+      'reportIntervalMs must be greater than or equal to checkIntervalMs',
+    );
   }
 
   if (errors.length > 0) {

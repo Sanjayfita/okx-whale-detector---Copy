@@ -146,8 +146,14 @@ export class MarketHealthMonitor {
       return;
     }
 
-    this.checkTimer = setInterval(() => this.check(), this.config.checkIntervalMs);
-    this.reportTimer = setInterval(() => this.report(), this.config.reportIntervalMs);
+    this.checkTimer = setInterval(
+      () => this.check(),
+      this.config.checkIntervalMs,
+    );
+    this.reportTimer = setInterval(
+      () => this.report(),
+      this.config.reportIntervalMs,
+    );
 
     this.checkTimer.unref();
     this.reportTimer.unref();
@@ -165,7 +171,10 @@ export class MarketHealthMonitor {
     }
   }
 
-  public resetSymbols(symbols: readonly string[], now: number = Date.now()): void {
+  public resetSymbols(
+    symbols: readonly string[],
+    now: number = Date.now(),
+  ): void {
     for (const symbol of symbols) {
       if (!this.states.has(symbol)) {
         continue;

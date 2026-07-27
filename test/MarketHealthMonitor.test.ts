@@ -13,7 +13,13 @@ const config: HealthConfig = {
 
 describe('MarketHealthMonitor', () => {
   it('treats uninitialized symbols as warming during startup grace', () => {
-    const monitor = new MarketHealthMonitor(['BTC-USDT'], config, vi.fn(), vi.fn(), 1_000);
+    const monitor = new MarketHealthMonitor(
+      ['BTC-USDT'],
+      config,
+      vi.fn(),
+      vi.fn(),
+      1_000,
+    );
 
     expect(monitor.check(2_000)).toEqual({
       totalSymbols: 1,
@@ -25,7 +31,13 @@ describe('MarketHealthMonitor', () => {
   });
 
   it('reports a symbol healthy after both streams update', () => {
-    const monitor = new MarketHealthMonitor(['BTC-USDT'], config, vi.fn(), vi.fn(), 1_000);
+    const monitor = new MarketHealthMonitor(
+      ['BTC-USDT'],
+      config,
+      vi.fn(),
+      vi.fn(),
+      1_000,
+    );
 
     monitor.recordOrderBook('BTC-USDT', 2_000);
     monitor.recordCandle('BTC-USDT', 2_000);
@@ -35,7 +47,13 @@ describe('MarketHealthMonitor', () => {
 
   it('warns once when an order book becomes stale', () => {
     const warn = vi.fn();
-    const monitor = new MarketHealthMonitor(['BTC-USDT'], config, vi.fn(), warn, 0);
+    const monitor = new MarketHealthMonitor(
+      ['BTC-USDT'],
+      config,
+      vi.fn(),
+      warn,
+      0,
+    );
 
     monitor.recordOrderBook('BTC-USDT', 1_000);
     monitor.recordCandle('BTC-USDT', 1_000);
@@ -44,23 +62,39 @@ describe('MarketHealthMonitor', () => {
     monitor.check(5_000);
 
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Stale order book'));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Stale order book'),
+    );
   });
 
   it('warns when the candle stream becomes stale', () => {
     const warn = vi.fn();
-    const monitor = new MarketHealthMonitor(['ETH-USDT'], config, vi.fn(), warn, 0);
+    const monitor = new MarketHealthMonitor(
+      ['ETH-USDT'],
+      config,
+      vi.fn(),
+      warn,
+      0,
+    );
 
     monitor.recordOrderBook('ETH-USDT', 10_000);
     monitor.recordCandle('ETH-USDT', 1_000);
 
     expect(monitor.check(11_000).staleCandleSymbols).toEqual(['ETH-USDT']);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Stale candle stream'));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Stale candle stream'),
+    );
   });
 
   it('logs recovery when stale data resumes', () => {
     const log = vi.fn();
-    const monitor = new MarketHealthMonitor(['BTC-USDT'], config, log, vi.fn(), 0);
+    const monitor = new MarketHealthMonitor(
+      ['BTC-USDT'],
+      config,
+      log,
+      vi.fn(),
+      0,
+    );
 
     monitor.recordOrderBook('BTC-USDT', 1_000);
     monitor.recordCandle('BTC-USDT', 1_000);
@@ -72,7 +106,13 @@ describe('MarketHealthMonitor', () => {
 
   it('prints a compact health report', () => {
     const log = vi.fn();
-    const monitor = new MarketHealthMonitor(['BTC-USDT'], config, log, vi.fn(), 0);
+    const monitor = new MarketHealthMonitor(
+      ['BTC-USDT'],
+      config,
+      log,
+      vi.fn(),
+      0,
+    );
 
     monitor.recordOrderBook('BTC-USDT', 1_000);
     monitor.recordCandle('BTC-USDT', 1_000);
@@ -105,7 +145,13 @@ describe('MarketHealthMonitor', () => {
   });
 
   it('ignores updates for unregistered symbols', () => {
-    const monitor = new MarketHealthMonitor(['BTC-USDT'], config, vi.fn(), vi.fn(), 0);
+    const monitor = new MarketHealthMonitor(
+      ['BTC-USDT'],
+      config,
+      vi.fn(),
+      vi.fn(),
+      0,
+    );
 
     monitor.recordOrderBook('UNKNOWN-USDT', 1_000);
     monitor.recordCandle('UNKNOWN-USDT', 1_000);
