@@ -33,7 +33,9 @@ export const parseReplayOptions = (args: readonly string[]): ReplayOptions => {
 
     if (flag === '--speed') {
       if (!value || value.startsWith('--')) {
-        throw new Error('--speed requires instant, realtime, or a multiplier such as 10x');
+        throw new Error(
+          '--speed requires instant, realtime, or a multiplier such as 10x',
+        );
       }
       speed = parseReplaySpeed(value);
       index += 1;
@@ -55,7 +57,9 @@ export const parseReplaySpeed = (value: string): ReplaySpeed => {
   const multiplier = match?.[1] === undefined ? Number.NaN : Number(match[1]);
 
   if (!Number.isFinite(multiplier) || multiplier <= 0) {
-    throw new Error('Replay speed must be instant, realtime, or a positive multiplier such as 10x');
+    throw new Error(
+      'Replay speed must be instant, realtime, or a positive multiplier such as 10x',
+    );
   }
 
   return multiplier;
