@@ -60,4 +60,10 @@ export class CandleUpdateHandler {
 
     this.candleCounters.clear();
   }
+
+  public resetSymbols(symbols: readonly string[]): void {
+    for (const symbol of symbols) {
+      this.candleCounters.delete(symbol);
+    }
+  }
 }
