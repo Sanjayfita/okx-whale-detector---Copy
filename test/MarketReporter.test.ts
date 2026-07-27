@@ -61,6 +61,37 @@ const createWhale = (
   ...overrides,
 });
 
+const createNeutralSummary = (
+  symbol: string,
+  currentPrice: number,
+  bestBidPrice: number,
+  bestAskPrice: number,
+) => ({
+  symbol,
+  currentPrice,
+  bestBidPrice,
+  bestAskPrice,
+  activeWhales: [],
+  walls: [],
+  scoredWhales: [],
+  marketSignal: {
+    bias:
+      'NEUTRAL' as const,
+
+    confidence:
+      0,
+
+    reason:
+      'No active whale walls',
+
+    bidPressure:
+      0,
+
+    askPressure:
+      0,
+  },
+});
+
 describe(
   'MarketReporter',
   () => {
@@ -146,16 +177,30 @@ describe(
         const reporter =
           new MarketReporter();
 
-        reporter.reportWhaleEvent({
-          type:
-            'NEW',
+        reporter.reportWhaleEvent(
+          'BTC-USDT',
+          {
+            type:
+              'NEW',
 
-          whale:
-            createWhale({
-              notionalQuote:
-                1_234_567,
-            }),
-        });
+            whale:
+              createWhale({
+                price:
+                  64_665.149999999994,
+
+                notionalQuote:
+                  1_234_567,
+              }),
+          },
+        );
+
+        expect(
+          logSpy,
+        ).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'Price: 64665.15',
+          ),
+        );
 
         expect(
           logSpy,
@@ -168,7 +213,7 @@ describe(
     );
 
     it(
-      'reports moved whale prices',
+      'reports moved whale prices using symbol precision',
       () => {
         const reporter =
           new MarketReporter();
@@ -185,10 +230,10 @@ describe(
               'BID',
 
             price:
-              100.01,
+              1.0972499999999998,
 
             previousPrice:
-              100,
+              1.0968499999999999,
 
             previousSize:
               10_000,
@@ -210,6 +255,7 @@ describe(
           };
 
         reporter.reportMovedWhale(
+          'XRP-USDT',
           moved,
         );
 
@@ -217,8 +263,167 @@ describe(
           logSpy,
         ).toHaveBeenCalledWith(
           expect.stringContaining(
-            'Price: 100 → 100.01',
+            'Price: 1.0968 → 1.0972',
           ),
+        );
+      },
+    );
+
+    it(
+      'formats all configured symbols with their intended precision',
+      () => {
+        const reporter =
+          new MarketReporter();
+
+        const cases = [
+          {
+            symbol:
+              'BTC-USDT',
+            value:
+              64_665.149999999994,
+            expected:
+              '64665.15',
+          },
+          {
+            symbol:
+              'ETH-USDT',
+            value:
+              1_894.0149999999999,
+            expected:
+              '1894.02',
+          },
+          {
+            symbol:
+              'SOL-USDT',
+            value:
+              74.92500000000001,
+            expected:
+              '74.93',
+          },
+          {
+            symbol:
+              'XRP-USDT',
+            value:
+              1.0968499999999999,
+            expected:
+              '1.0968',
+          },
+          {
+            symbol:
+              'DOGE-USDT',
+            value:
+              0.07289500000000001,
+            expected:
+              '0.0729',
+          },
+        ];
+
+        for (
+          const testCase
+          of cases
+        ) {
+          logSpy.mockClear();
+
+          reporter.reportSummary(
+            createNeutralSummary(
+              testCase.symbol,
+              testCase.value,
+              testCase.value,
+              testCase.value,
+            ),
+          );
+
+          const output =
+            logSpy.mock.calls
+              .map(
+                call =>
+                  String(
+                    call[0],
+                  ),
+              )
+              .join(
+                '\n',
+              );
+
+          expect(
+            output,
+          ).toContain(
+            `Current Price: ${testCase.expected}`,
+          );
+        }
+      },
+    );
+
+    it(
+      'uses up to eight decimals for an unknown symbol',
+      () => {
+        const reporter =
+          new MarketReporter();
+
+        reporter.reportSummary(
+          createNeutralSummary(
+            'NEW-USDT',
+            0.123456789,
+            0.123456789,
+            0.123456789,
+          ),
+        );
+
+        const output =
+          logSpy.mock.calls
+            .map(
+              call =>
+                String(
+                  call[0],
+                ),
+            )
+            .join(
+              '\n',
+            );
+
+        expect(
+          output,
+        ).toContain(
+          'Current Price: 0.12345679',
+        );
+      },
+    );
+
+    it(
+      'reports unavailable bid and ask prices as N/A',
+      () => {
+        const reporter =
+          new MarketReporter();
+
+        reporter.reportSummary({
+          ...createNeutralSummary(
+            'BTC-USDT',
+            100.5,
+            100,
+            101,
+          ),
+          bestBidPrice:
+            undefined,
+          bestAskPrice:
+            undefined,
+        });
+
+        const output =
+          logSpy.mock.calls
+            .map(
+              call =>
+                String(
+                  call[0],
+                ),
+            )
+            .join(
+              '\n',
+            );
+
+        expect(
+          output,
+        ).toContain(
+          'Best Bid: N/A | Best Ask: N/A',
         );
       },
     );
@@ -229,45 +434,14 @@ describe(
         const reporter =
           new MarketReporter();
 
-        reporter.reportSummary({
-          symbol:
+        reporter.reportSummary(
+          createNeutralSummary(
             'BTC-USDT',
-
-          currentPrice:
             100.5,
-
-          bestBidPrice:
             100,
-
-          bestAskPrice:
             101,
-
-          activeWhales:
-            [],
-
-          walls:
-            [],
-
-          scoredWhales:
-            [],
-
-          marketSignal: {
-            bias:
-              'NEUTRAL',
-
-            confidence:
-              0,
-
-            reason:
-              'No active whale walls',
-
-            bidPressure:
-              0,
-
-            askPressure:
-              0,
-          },
-        });
+          ),
+        );
 
         const output =
           logSpy.mock.calls
