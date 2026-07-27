@@ -1,4 +1,4 @@
-import type { appConfig } from '../config/appConfig';
+import { appConfig } from '../config/appConfig';
 
 import { OrderBookManager } from './OrderBookManager';
 import { WhaleTracker } from './WhaleTracker';
@@ -25,7 +25,7 @@ export class MarketState {
   public readonly whaleBehaviorEngine = new WhaleBehaviorEngine();
   public readonly behaviorTransitionTracker = new BehaviorTransitionTracker();
 
-  public constructor(config: MarketStateConfig) {
+  public constructor(config: MarketStateConfig = appConfig) {
     this.whaleEventDetector = new WhaleEventDetector({
       removalGraceMs: config.events.removalGraceMs,
       minimumChangePercent: config.events.minimumChangePercent,
