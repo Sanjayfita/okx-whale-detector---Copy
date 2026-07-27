@@ -66,7 +66,11 @@ export const validateAppConfig = (config: AppConfig): void => {
     'whale.persistentAfterMs',
     config.whale.persistentAfterMs,
   );
-  requireFinitePositive(errors, 'whale.strongAfterMs', config.whale.strongAfterMs);
+  requireFinitePositive(
+    errors,
+    'whale.strongAfterMs',
+    config.whale.strongAfterMs,
+  );
   requirePercent(
     errors,
     'whale.movementPriceTolerancePercent',
@@ -74,7 +78,9 @@ export const validateAppConfig = (config: AppConfig): void => {
   );
 
   if (config.whale.strongAfterMs < config.whale.persistentAfterMs) {
-    errors.push('whale.strongAfterMs must be greater than or equal to whale.persistentAfterMs');
+    errors.push(
+      'whale.strongAfterMs must be greater than or equal to whale.persistentAfterMs',
+    );
   }
 
   requireFinitePositive(
@@ -103,7 +109,9 @@ export const validateAppConfig = (config: AppConfig): void => {
     config.tracker.maximumMovementSizeRatio,
   );
 
-  if (config.tracker.strongAfterSeconds < config.tracker.persistentAfterSeconds) {
+  if (
+    config.tracker.strongAfterSeconds < config.tracker.persistentAfterSeconds
+  ) {
     errors.push(
       'tracker.strongAfterSeconds must be greater than or equal to tracker.persistentAfterSeconds',
     );
@@ -119,13 +127,25 @@ export const validateAppConfig = (config: AppConfig): void => {
   }
 
   const trackerPositiveFields: Array<[string, number]> = [
-    ['tracker.movementToleranceHighPrice', config.tracker.movementToleranceHighPrice],
+    [
+      'tracker.movementToleranceHighPrice',
+      config.tracker.movementToleranceHighPrice,
+    ],
     ['tracker.movementToleranceHigh', config.tracker.movementToleranceHigh],
-    ['tracker.movementToleranceMediumPrice', config.tracker.movementToleranceMediumPrice],
+    [
+      'tracker.movementToleranceMediumPrice',
+      config.tracker.movementToleranceMediumPrice,
+    ],
     ['tracker.movementToleranceMedium', config.tracker.movementToleranceMedium],
-    ['tracker.movementToleranceLowPrice', config.tracker.movementToleranceLowPrice],
+    [
+      'tracker.movementToleranceLowPrice',
+      config.tracker.movementToleranceLowPrice,
+    ],
     ['tracker.movementToleranceLow', config.tracker.movementToleranceLow],
-    ['tracker.movementToleranceVeryLow', config.tracker.movementToleranceVeryLow],
+    [
+      'tracker.movementToleranceVeryLow',
+      config.tracker.movementToleranceVeryLow,
+    ],
     ['tracker.strengthMaximum', config.tracker.strengthMaximum],
     ['tracker.strengthLargeNotional', config.tracker.strengthLargeNotional],
     ['tracker.strengthLargeScore', config.tracker.strengthLargeScore],
@@ -136,13 +156,19 @@ export const validateAppConfig = (config: AppConfig): void => {
     ['tracker.strengthBaseScore', config.tracker.strengthBaseScore],
     ['tracker.strengthOldAgeSeconds', config.tracker.strengthOldAgeSeconds],
     ['tracker.strengthOldAgeScore', config.tracker.strengthOldAgeScore],
-    ['tracker.strengthMatureAgeSeconds', config.tracker.strengthMatureAgeSeconds],
+    [
+      'tracker.strengthMatureAgeSeconds',
+      config.tracker.strengthMatureAgeSeconds,
+    ],
     ['tracker.strengthMatureAgeScore', config.tracker.strengthMatureAgeScore],
     [
       'tracker.strengthPersistentAgeSeconds',
       config.tracker.strengthPersistentAgeSeconds,
     ],
-    ['tracker.strengthPersistentAgeScore', config.tracker.strengthPersistentAgeScore],
+    [
+      'tracker.strengthPersistentAgeScore',
+      config.tracker.strengthPersistentAgeScore,
+    ],
     ['tracker.strengthYoungAgeSeconds', config.tracker.strengthYoungAgeSeconds],
     ['tracker.strengthYoungAgeScore', config.tracker.strengthYoungAgeScore],
   ];
@@ -152,9 +178,18 @@ export const validateAppConfig = (config: AppConfig): void => {
   }
 
   requireDescending(errors, [
-    ['tracker.movementToleranceHighPrice', config.tracker.movementToleranceHighPrice],
-    ['tracker.movementToleranceMediumPrice', config.tracker.movementToleranceMediumPrice],
-    ['tracker.movementToleranceLowPrice', config.tracker.movementToleranceLowPrice],
+    [
+      'tracker.movementToleranceHighPrice',
+      config.tracker.movementToleranceHighPrice,
+    ],
+    [
+      'tracker.movementToleranceMediumPrice',
+      config.tracker.movementToleranceMediumPrice,
+    ],
+    [
+      'tracker.movementToleranceLowPrice',
+      config.tracker.movementToleranceLowPrice,
+    ],
   ]);
   requireDescending(errors, [
     ['tracker.strengthLargeNotional', config.tracker.strengthLargeNotional],
@@ -169,7 +204,10 @@ export const validateAppConfig = (config: AppConfig): void => {
   ]);
   requireDescending(errors, [
     ['tracker.strengthOldAgeSeconds', config.tracker.strengthOldAgeSeconds],
-    ['tracker.strengthMatureAgeSeconds', config.tracker.strengthMatureAgeSeconds],
+    [
+      'tracker.strengthMatureAgeSeconds',
+      config.tracker.strengthMatureAgeSeconds,
+    ],
     [
       'tracker.strengthPersistentAgeSeconds',
       config.tracker.strengthPersistentAgeSeconds,
@@ -179,7 +217,10 @@ export const validateAppConfig = (config: AppConfig): void => {
   requireDescending(errors, [
     ['tracker.strengthOldAgeScore', config.tracker.strengthOldAgeScore],
     ['tracker.strengthMatureAgeScore', config.tracker.strengthMatureAgeScore],
-    ['tracker.strengthPersistentAgeScore', config.tracker.strengthPersistentAgeScore],
+    [
+      'tracker.strengthPersistentAgeScore',
+      config.tracker.strengthPersistentAgeScore,
+    ],
     ['tracker.strengthYoungAgeScore', config.tracker.strengthYoungAgeScore],
   ]);
 
@@ -192,8 +233,16 @@ export const validateAppConfig = (config: AppConfig): void => {
     );
   }
 
-  requireFiniteNonNegative(errors, 'events.removalGraceMs', config.events.removalGraceMs);
-  requirePercent(errors, 'events.minimumChangePercent', config.events.minimumChangePercent);
+  requireFiniteNonNegative(
+    errors,
+    'events.removalGraceMs',
+    config.events.removalGraceMs,
+  );
+  requirePercent(
+    errors,
+    'events.minimumChangePercent',
+    config.events.minimumChangePercent,
+  );
   requireFinitePositive(
     errors,
     'events.minimumChangeNotional',
@@ -225,7 +274,11 @@ export const validateAppConfig = (config: AppConfig): void => {
     errors.push('behavior.repeatedIncreaseCount must be an integer');
   }
 
-  requirePercent(errors, 'refill.dropThresholdPercent', config.refill.dropThresholdPercent);
+  requirePercent(
+    errors,
+    'refill.dropThresholdPercent',
+    config.refill.dropThresholdPercent,
+  );
   requirePercent(
     errors,
     'refill.recoveryThresholdPercent',
@@ -239,7 +292,10 @@ export const validateAppConfig = (config: AppConfig): void => {
     ['scoring.maxPersistenceScore', config.scoring.maxPersistenceScore],
     ['scoring.maxStabilityScore', config.scoring.maxStabilityScore],
     ['scoring.persistenceWindowMs', config.scoring.persistenceWindowMs],
-    ['scoring.minimumScoredNotionalQuote', config.scoring.minimumScoredNotionalQuote],
+    [
+      'scoring.minimumScoredNotionalQuote',
+      config.scoring.minimumScoredNotionalQuote,
+    ],
     ['scoring.veryStrongThreshold', config.scoring.veryStrongThreshold],
     ['scoring.strongThreshold', config.scoring.strongThreshold],
     ['scoring.moderateThreshold', config.scoring.moderateThreshold],
@@ -269,19 +325,29 @@ export const validateAppConfig = (config: AppConfig): void => {
     errors.push('scoring.veryStrongThreshold must not exceed scoring.maxScore');
   }
 
-  requirePercent(errors, 'market.neutralBandPercent', config.market.neutralBandPercent);
+  requirePercent(
+    errors,
+    'market.neutralBandPercent',
+    config.market.neutralBandPercent,
+  );
   requireFinitePositive(
     errors,
     'reporting.summaryIntervalMs',
     config.reporting.summaryIntervalMs,
   );
-  requireFinitePositive(errors, 'history.candleLimit', config.history.candleLimit);
+  requireFinitePositive(
+    errors,
+    'history.candleLimit',
+    config.history.candleLimit,
+  );
 
   if (!Number.isInteger(config.history.candleLimit)) {
     errors.push('history.candleLimit must be an integer');
   }
 
   if (errors.length > 0) {
-    throw new Error(`Invalid application configuration:\n- ${errors.join('\n- ')}`);
+    throw new Error(
+      `Invalid application configuration:\n- ${errors.join('\n- ')}`,
+    );
   }
 };
