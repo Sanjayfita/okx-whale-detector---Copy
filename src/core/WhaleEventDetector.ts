@@ -1,11 +1,7 @@
 import type { Whale } from '../types/whale';
 
 export type WhaleEventType =
-  | 'NEW'
-  | 'REMOVED'
-  | 'INCREASED'
-  | 'DECREASED'
-  | 'MOVED';
+  'NEW' | 'REMOVED' | 'INCREASED' | 'DECREASED' | 'MOVED';
 
 export interface WhaleEvent {
   type: WhaleEventType;
