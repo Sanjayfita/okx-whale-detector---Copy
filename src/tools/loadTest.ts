@@ -6,6 +6,7 @@ import { ProcessingMonitor } from '../core/ProcessingMonitor';
 import { SummaryThrottle } from '../core/SummaryThrottle';
 import { MarketEngine } from '../market/MarketEngine';
 import { MarketReporter } from '../reporting/MarketReporter';
+import type { OrderBookLevel } from '../types/orderbook';
 
 class SilentMarketReporter extends MarketReporter {
   public override reportSequenceGap(): void {}
@@ -17,6 +18,13 @@ class SilentMarketReporter extends MarketReporter {
   public override reportWhaleScore(): void {}
   public override reportSummary(): void {}
 }
+
+const level = (price: number, size: number): OrderBookLevel => [
+  String(price),
+  String(size),
+  '0',
+  '1',
+];
 
 const updates = Number(process.argv[2] ?? 10_000);
 
@@ -52,18 +60,12 @@ const engine = new MarketEngine(
 const snapshot: OKXOrderBookUpdate = {
   instId: symbol,
   action: 'snapshot',
-  bids: Array.from({ length: 100 }, (_, index) => [
-    String(100 - index * 0.01),
-    String(index % 10 === 0 ? 6_000 : 100),
-    '0',
-    '1',
-  ]),
-  asks: Array.from({ length: 100 }, (_, index) => [
-    String(100.01 + index * 0.01),
-    String(index % 10 === 0 ? 6_000 : 100),
-    '0',
-    '1',
-  ]),
+  bids: Array.from({ length: 100 }, (_, index) =>
+    level(100 - index * 0.01, index % 10 === 0 ? 6_000 : 100),
+  ),
+  asks: Array.from({ length: 100 }, (_, index) =>
+    level(100.01 + index * 0.01, index % 10 === 0 ? 6_000 : 100),
+  ),
   timestamp: 1,
   seqId: 1,
   prevSeqId: -1,
@@ -75,11 +77,12 @@ const startedAt = performance.now();
 for (let index = 0; index < updates; index += 1) {
   const seqId = index + 2;
   const priceOffset = (index % 20) * 0.01;
+
   engine.processOrderBookUpdate({
     instId: symbol,
     action: 'update',
-    bids: [[String(99.9 - priceOffset), String(5_000 + (index % 500)), '0', '1']],
-    asks: [[String(100.1 + priceOffset), String(5_000 + (index % 700)), '0', '1']],
+    bids: [level(99.9 - priceOffset, 5_000 + (index % 500))],
+    asks: [level(100.1 + priceOffset, 5_000 + (index % 700))],
     timestamp: seqId,
     seqId,
     prevSeqId: seqId - 1,
