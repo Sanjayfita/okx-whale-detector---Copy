@@ -8,7 +8,7 @@ import { MarketState } from '../core/MarketState';
 import { SummaryThrottle } from '../core/SummaryThrottle';
 import { MarketEngine } from '../market/MarketEngine';
 import {
-  calculateReplayDelayMs,
+  calculateAnchoredReplayDelayMs,
   parseReplayOptions,
   type ReplaySpeed,
 } from '../recording/replayOptions';
@@ -38,7 +38,8 @@ const replay = async (): Promise<void> => {
 
   let orderBookCount = 0;
   let candleCount = 0;
-  let previousRecordedAt: number | undefined;
+  let firstReplayRecordAt: number | undefined;
+  let playbackStartedAt: number | undefined;
   const startedAt = performance.now();
   const input = createInterface({
     input: createReadStream(options.filePath, { encoding: 'utf8' }),
@@ -79,13 +80,16 @@ const replay = async (): Promise<void> => {
       throw new Error(`Recording is missing instrument metadata for ${symbol}`);
     }
 
-    const delayMs = calculateReplayDelayMs(
-      previousRecordedAt,
+    firstReplayRecordAt ??= record.recordedAt;
+    playbackStartedAt ??= performance.now();
+
+    const delayMs = calculateAnchoredReplayDelayMs(
+      firstReplayRecordAt,
       record.recordedAt,
+      performance.now() - playbackStartedAt,
       options.speed,
     );
     await wait(delayMs);
-    previousRecordedAt = record.recordedAt;
 
     if (record.type === 'orderBook') {
       engine.processOrderBookUpdate(record.update);
