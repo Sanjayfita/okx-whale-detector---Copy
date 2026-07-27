@@ -15,7 +15,10 @@ export const validateRecordingConfig = (config: RecordingConfig): void => {
     throw new Error('recording.enabled must be a boolean');
   }
 
-  if (typeof config.directory !== 'string' || config.directory.trim().length === 0) {
+  if (
+    typeof config.directory !== 'string' ||
+    config.directory.trim().length === 0
+  ) {
     throw new Error('recording.directory must be a non-empty string');
   }
 };

@@ -29,7 +29,10 @@ export class MarketDataRecorder {
 
     const timestamp = now.toISOString().replace(/[:.]/g, '-');
     this.filePath = path.join(directory, `okx-session-${timestamp}.ndjson`);
-    this.stream = createWriteStream(this.filePath, { flags: 'wx', encoding: 'utf8' });
+    this.stream = createWriteStream(this.filePath, {
+      flags: 'wx',
+      encoding: 'utf8',
+    });
 
     const recordedAt = now.getTime();
     for (const instrument of instruments) {

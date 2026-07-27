@@ -49,7 +49,10 @@ describe('recording validation', () => {
   it('rejects a missing timestamp', () => {
     expect(() =>
       parseRecordingRecord(
-        JSON.stringify({ type: 'instrument', instrument: { instId: 'BTC-USDT' } }),
+        JSON.stringify({
+          type: 'instrument',
+          instrument: { instId: 'BTC-USDT' },
+        }),
       ),
     ).toThrow('timestamp');
   });
