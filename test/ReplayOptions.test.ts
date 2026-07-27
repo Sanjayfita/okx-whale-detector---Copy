@@ -8,11 +8,13 @@ import {
 } from '../src/recording/replayOptions';
 
 describe('replay options', () => {
-  it('defaults to instant replay for all symbols', () => {
+  it('defaults to instant replay for all symbols without a report', () => {
     expect(parseReplayOptions(['session.ndjson'])).toEqual({
       filePath: 'session.ndjson',
       speed: 'instant',
       symbol: undefined,
+      report: false,
+      reportPath: undefined,
     });
   });
 
@@ -29,6 +31,34 @@ describe('replay options', () => {
       filePath: 'session.ndjson',
       symbol: 'BTC-USDT',
       speed: 10,
+      report: false,
+      reportPath: undefined,
+    });
+  });
+
+  it('enables a report with the default output path', () => {
+    expect(parseReplayOptions(['session.ndjson', '--report'])).toEqual({
+      filePath: 'session.ndjson',
+      speed: 'instant',
+      symbol: undefined,
+      report: true,
+      reportPath: undefined,
+    });
+  });
+
+  it('accepts a custom report path', () => {
+    expect(
+      parseReplayOptions([
+        'session.ndjson',
+        '--report',
+        'reports/custom.json',
+      ]),
+    ).toEqual({
+      filePath: 'session.ndjson',
+      speed: 'instant',
+      symbol: undefined,
+      report: true,
+      reportPath: 'reports/custom.json',
     });
   });
 
