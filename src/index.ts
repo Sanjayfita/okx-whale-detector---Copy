@@ -70,8 +70,7 @@ const start = async (): Promise<void> => {
   const candleUpdateHandler = new CandleUpdateHandler(marketStates);
 
   const subscriptionManager = new SubscriptionManager({
-    maximumSymbolsPerConnection:
-      subscriptionConfig.maximumSymbolsPerConnection,
+    maximumSymbolsPerConnection: subscriptionConfig.maximumSymbolsPerConnection,
     onOrderBook: (update) => {
       marketEngine.processOrderBookUpdate(update);
     },

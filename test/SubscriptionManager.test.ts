@@ -229,7 +229,9 @@ describe('SubscriptionManager', () => {
     manager.start(instruments.slice(0, 9));
     manager.close();
 
-    expect(orderBookClients.every((client) => client.closeCount === 1)).toBe(true);
+    expect(orderBookClients.every((client) => client.closeCount === 1)).toBe(
+      true,
+    );
     expect(candleClients.every((client) => client.closeCount === 1)).toBe(true);
     expect(manager.getShards()).toEqual([]);
   });

@@ -75,7 +75,9 @@ export class SubscriptionManager {
 
     for (const instrument of instruments) {
       if (seenSymbols.has(instrument.instId)) {
-        throw new Error(`Duplicate subscription instrument: ${instrument.instId}`);
+        throw new Error(
+          `Duplicate subscription instrument: ${instrument.instId}`,
+        );
       }
 
       seenSymbols.add(instrument.instId);
