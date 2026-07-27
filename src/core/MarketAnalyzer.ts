@@ -1,7 +1,24 @@
 import type { Whale } from '../types/whale';
 import type { MarketBias, MarketSignal } from '../types/signal';
 
+export interface MarketAnalyzerConfig {
+  neutralBandPercent: number;
+}
+
+const DEFAULT_CONFIG: MarketAnalyzerConfig = {
+  neutralBandPercent: 10,
+};
+
 export class MarketAnalyzer {
+  private readonly config: MarketAnalyzerConfig;
+
+  public constructor(config: Partial<MarketAnalyzerConfig> = {}) {
+    this.config = {
+      ...DEFAULT_CONFIG,
+      ...config,
+    };
+  }
+
   public analyze(activeWhales: Whale[], currentPrice: number): MarketSignal {
     if (activeWhales.length === 0) {
       return {
@@ -21,16 +38,7 @@ export class MarketAnalyzer {
     for (const whale of activeWhales) {
       const distancePercent =
         Math.abs((whale.price - currentPrice) / currentPrice) * 100;
-
-      /*
-       * Closer whale walls receive more weight.
-       *
-       * Example:
-       * 0.1% away  = very strong influence
-       * 1.0% away  = weaker influence
-       */
       const distanceWeight = 1 / (1 + distancePercent);
-
       const weightedPressure = whale.notionalQuote * distanceWeight;
 
       if (whale.side === 'BID') {
@@ -55,21 +63,15 @@ export class MarketAnalyzer {
     }
 
     const bidRatio = bidPressure / totalPressure;
-
     const askRatio = askPressure / totalPressure;
-
     let bias: MarketBias;
     let confidence: number;
     let reason: string;
-
     const bidPressurePercent = bidRatio * 100;
-
     const askPressurePercent = askRatio * 100;
-
     const netPressure = bidPressurePercent - askPressurePercent;
-
-    const neutralBandPercent = 10;
     const absoluteNetPressure = Math.abs(netPressure);
+    const neutralBandPercent = this.config.neutralBandPercent;
 
     if (absoluteNetPressure < neutralBandPercent) {
       bias = 'NEUTRAL';
@@ -79,7 +81,6 @@ export class MarketAnalyzer {
       reason = 'Whale pressure is within the neutral band';
     } else {
       bias = netPressure > 0 ? 'BULLISH' : 'BEARISH';
-
       confidence = Math.round(
         Math.min(
           100,
@@ -88,7 +89,6 @@ export class MarketAnalyzer {
             100,
         ),
       );
-
       reason =
         netPressure > 0
           ? 'Bid whale pressure exceeds the neutral band'
