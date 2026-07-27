@@ -29,5 +29,11 @@ export default tseslint.config(
       'prefer-const': 'error',
     },
   },
+  {
+    files: ['test/**/*.ts'],
+    rules: {
+      'no-loss-of-precision': 'off',
+    },
+  },
   prettierConfig,
 );
