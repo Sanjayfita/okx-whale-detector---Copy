@@ -59,7 +59,7 @@ export interface WhaleAbsorptionConfig {
 }
 
 const DEFAULT_CONFIG: WhaleAbsorptionConfig = {
-  proximityPercent: 0.10,
+  proximityPercent: 0.1,
 
   minimumAggressiveNotionalQuote: 100_000,
 
@@ -82,10 +82,7 @@ export class WhaleAbsorptionDetector {
     };
   }
 
-  public updateWhales(
-    whales: Whale[],
-    timestamp: number = Date.now(),
-  ): void {
+  public updateWhales(whales: Whale[], timestamp: number = Date.now()): void {
     const currentKeys = new Set<string>();
 
     for (const whale of whales) {
@@ -128,9 +125,7 @@ export class WhaleAbsorptionDetector {
     }
   }
 
-  public processTrade(
-    trade: AggressiveTrade,
-  ): WhaleAbsorptionEvent[] {
+  public processTrade(trade: AggressiveTrade): WhaleAbsorptionEvent[] {
     const events: WhaleAbsorptionEvent[] = [];
 
     for (const wall of this.trackedWalls.values()) {
@@ -162,33 +157,24 @@ export class WhaleAbsorptionDetector {
     wall: TrackedWall,
     trade: AggressiveTrade,
   ): WhaleAbsorptionEvent | null {
-    const priceChangePercent =
-      Math.abs(
-        ((wall.lastPrice - wall.firstPrice) / wall.firstPrice) * 100,
-      );
+    const priceChangePercent = Math.abs(
+      ((wall.lastPrice - wall.firstPrice) / wall.firstPrice) * 100,
+    );
 
     const aggressiveVolumeRatio =
-      wall.aggressiveNotionalQuote /
-      wall.whale.notionalQuote;
+      wall.aggressiveNotionalQuote / wall.whale.notionalQuote;
 
     if (
-      wall.aggressiveNotionalQuote <
-      this.config.minimumAggressiveNotionalQuote
+      wall.aggressiveNotionalQuote < this.config.minimumAggressiveNotionalQuote
     ) {
       return null;
     }
 
-    if (
-      aggressiveVolumeRatio <
-      this.config.minimumAggressiveVolumeRatio
-    ) {
+    if (aggressiveVolumeRatio < this.config.minimumAggressiveVolumeRatio) {
       return null;
     }
 
-    if (
-      priceChangePercent >
-      this.config.maximumPriceMovementPercent
-    ) {
+    if (priceChangePercent > this.config.maximumPriceMovementPercent) {
       return null;
     }
 
@@ -198,9 +184,7 @@ export class WhaleAbsorptionDetector {
     );
 
     const type: AbsorptionType =
-      wall.whale.side === 'BID'
-        ? 'BID_ABSORPTION'
-        : 'ASK_ABSORPTION';
+      wall.whale.side === 'BID' ? 'BID_ABSORPTION' : 'ASK_ABSORPTION';
 
     return {
       type,
@@ -209,7 +193,7 @@ export class WhaleAbsorptionDetector {
 
       price: wall.whale.price,
 
-    whaleNotionalQuote: wall.whale.notionalQuote,
+      whaleNotionalQuote: wall.whale.notionalQuote,
 
       aggressiveSide: trade.side,
 
@@ -230,18 +214,12 @@ export class WhaleAbsorptionDetector {
     };
   }
 
-  private isTradeNearWall(
-    trade: AggressiveTrade,
-    whale: Whale,
-  ): boolean {
-    const distancePercent =
-      Math.abs(
-        ((trade.price - whale.price) / whale.price) * 100,
-      );
-
-    return (
-      distancePercent <= this.config.proximityPercent
+  private isTradeNearWall(trade: AggressiveTrade, whale: Whale): boolean {
+    const distancePercent = Math.abs(
+      ((trade.price - whale.price) / whale.price) * 100,
     );
+
+    return distancePercent <= this.config.proximityPercent;
   }
 
   private isAggressiveTradeAgainstWall(
@@ -259,26 +237,17 @@ export class WhaleAbsorptionDetector {
     aggressiveVolumeRatio: number,
     priceChangePercent: number,
   ): number {
-    const volumeScore = Math.min(
-      aggressiveVolumeRatio / 2,
-      1,
-    );
+    const volumeScore = Math.min(aggressiveVolumeRatio / 2, 1);
 
     const stabilityScore = Math.max(
       0,
-      1 -
-        priceChangePercent /
-          this.config.maximumPriceMovementPercent,
+      1 - priceChangePercent / this.config.maximumPriceMovementPercent,
     );
 
-    return Math.round(
-      (volumeScore * 0.7 + stabilityScore * 0.3) * 100,
-    );
+    return Math.round((volumeScore * 0.7 + stabilityScore * 0.3) * 100);
   }
 
-  private resetAggression(
-    wall: TrackedWall,
-  ): void {
+  private resetAggression(wall: TrackedWall): void {
     wall.aggressiveVolume = 0;
 
     wall.aggressiveNotionalQuote = 0;

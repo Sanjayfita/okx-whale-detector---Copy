@@ -1,79 +1,49 @@
-import { OKXCandle } from
-  '../clients/okx/OKXCandleWebSocketClient';
+import { OKXCandle } from '../clients/okx/OKXCandleWebSocketClient';
 
 export class CandleHistory {
   private readonly candles: OKXCandle[] = [];
 
-  constructor(
-    private readonly maxSize: number = 100,
-  ) {}
+  constructor(private readonly maxSize: number = 100) {}
 
-  public add(
-    candle: OKXCandle,
-  ): void {
-    const lastCandle =
-      this.candles[
-        this.candles.length - 1
-      ];
+  public add(candle: OKXCandle): void {
+    const lastCandle = this.candles[this.candles.length - 1];
 
     /*
      * If this is an update to the
      * currently forming candle,
      * replace the previous version.
      */
-    if (
-      lastCandle &&
-      lastCandle.timestamp ===
-        candle.timestamp
-    ) {
-      this.candles[
-        this.candles.length - 1
-      ] = candle;
+    if (lastCandle && lastCandle.timestamp === candle.timestamp) {
+      this.candles[this.candles.length - 1] = candle;
 
       return;
     }
 
-    this.candles.push(
-      candle,
-    );
+    this.candles.push(candle);
 
     /*
      * Keep only the latest
      * maxSize candles.
      */
-    if (
-      this.candles.length >
-      this.maxSize
-    ) {
+    if (this.candles.length > this.maxSize) {
       this.candles.shift();
     }
   }
 
   public getAll(): OKXCandle[] {
-    return [
-      ...this.candles,
-    ];
+    return [...this.candles];
   }
 
-  public getLatest():
-    | OKXCandle
-    | undefined {
-    return this.candles[
-      this.candles.length - 1
-    ];
+  public getLatest(): OKXCandle | undefined {
+    return this.candles[this.candles.length - 1];
   }
 
   public getSize(): number {
     return this.candles.length;
   }
 
-  public isReady(
-    minimumCandles: number,
-  ): boolean {
-    return (
-      this.candles.length >=
-      minimumCandles
-    );
+  public isReady(minimumCandles: number): boolean {
+    return this.candles.length >= minimumCandles;
   }
 
   public clear(): void {

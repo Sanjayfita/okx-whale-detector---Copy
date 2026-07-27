@@ -1,223 +1,117 @@
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockState =
-  vi.hoisted(() => {
-    type Listener = (
-      ...args: unknown[]
-    ) => void;
+const mockState = vi.hoisted(() => {
+  type Listener = (...args: unknown[]) => void;
 
-    class MockWebSocket {
-      public static readonly CONNECTING =
-        0;
+  class MockWebSocket {
+    public static readonly CONNECTING = 0;
 
-      public static readonly OPEN =
-        1;
+    public static readonly OPEN = 1;
 
-      public static readonly CLOSING =
-        2;
+    public static readonly CLOSING = 2;
 
-      public static readonly CLOSED =
-        3;
+    public static readonly CLOSED = 3;
 
-      public readyState =
-        MockWebSocket.CONNECTING;
+    public readyState = MockWebSocket.CONNECTING;
 
-      public readonly sentMessages:
-        string[] = [];
+    public readonly sentMessages: string[] = [];
 
-      public closeCallCount =
-        0;
+    public closeCallCount = 0;
 
-      private readonly listeners =
-        new Map<
-          string,
-          Listener[]
-        >();
+    private readonly listeners = new Map<string, Listener[]>();
 
-      private readonly onceListeners =
-        new Map<
-          string,
-          Listener[]
-        >();
+    private readonly onceListeners = new Map<string, Listener[]>();
 
-      public constructor(
-        public readonly url:
-          string,
+    public constructor(
+      public readonly url: string,
 
-        public readonly options?:
-          unknown,
-      ) {
-        state.sockets.push(
-          this,
-        );
-      }
-
-      public on(
-        event: string,
-        listener: Listener,
-      ): this {
-        const listeners =
-          this.listeners.get(
-            event,
-          ) ?? [];
-
-        listeners.push(
-          listener,
-        );
-
-        this.listeners.set(
-          event,
-          listeners,
-        );
-
-        return this;
-      }
-
-      public once(
-        event: string,
-        listener: Listener,
-      ): this {
-        const listeners =
-          this.onceListeners.get(
-            event,
-          ) ?? [];
-
-        listeners.push(
-          listener,
-        );
-
-        this.onceListeners.set(
-          event,
-          listeners,
-        );
-
-        return this;
-      }
-
-      public send(
-        data: string,
-      ): void {
-        this.sentMessages.push(
-          data,
-        );
-      }
-
-      public close(): void {
-        this.closeCallCount += 1;
-
-        this.readyState =
-          MockWebSocket.CLOSED;
-
-        this.emit(
-          'close',
-        );
-      }
-
-      public triggerOpen(): void {
-        this.readyState =
-          MockWebSocket.OPEN;
-
-        this.emit(
-          'open',
-        );
-      }
-
-      public triggerClose(): void {
-        this.readyState =
-          MockWebSocket.CLOSED;
-
-        this.emit(
-          'close',
-        );
-      }
-
-      public triggerMessage(
-        data: string,
-      ): void {
-        this.emit(
-          'message',
-          data,
-        );
-      }
-
-      private emit(
-        event: string,
-        ...args: unknown[]
-      ): void {
-        const regularListeners =
-          this.listeners.get(
-            event,
-          ) ?? [];
-
-        for (
-          const listener
-          of regularListeners
-        ) {
-          listener(
-            ...args,
-          );
-        }
-
-        const oneTimeListeners =
-          this.onceListeners.get(
-            event,
-          ) ?? [];
-
-        this.onceListeners.delete(
-          event,
-        );
-
-        for (
-          const listener
-          of oneTimeListeners
-        ) {
-          listener(
-            ...args,
-          );
-        }
-      }
+      public readonly options?: unknown,
+    ) {
+      state.sockets.push(this);
     }
 
-    const state = {
-      sockets:
-        [] as MockWebSocket[],
-      MockWebSocket,
-    };
+    public on(event: string, listener: Listener): this {
+      const listeners = this.listeners.get(event) ?? [];
 
-    return state;
-  });
+      listeners.push(listener);
 
-type MockSocket =
-  InstanceType<
-    typeof mockState.MockWebSocket
-  >;
+      this.listeners.set(event, listeners);
 
-vi.mock(
-  'ws',
-  () => ({
-    default:
-      mockState.MockWebSocket,
-  }),
-);
+      return this;
+    }
 
-import {
-  OKXWebSocketClient,
-} from '../src/clients/okx/OKXWebSocketClient';
+    public once(event: string, listener: Listener): this {
+      const listeners = this.onceListeners.get(event) ?? [];
 
-const WATCHLIST = [
-  'BTC-USDT',
-  'ETH-USDT',
-  'SOL-USDT',
-  'XRP-USDT',
-  'DOGE-USDT',
-];
+      listeners.push(listener);
+
+      this.onceListeners.set(event, listeners);
+
+      return this;
+    }
+
+    public send(data: string): void {
+      this.sentMessages.push(data);
+    }
+
+    public close(): void {
+      this.closeCallCount += 1;
+
+      this.readyState = MockWebSocket.CLOSED;
+
+      this.emit('close');
+    }
+
+    public triggerOpen(): void {
+      this.readyState = MockWebSocket.OPEN;
+
+      this.emit('open');
+    }
+
+    public triggerClose(): void {
+      this.readyState = MockWebSocket.CLOSED;
+
+      this.emit('close');
+    }
+
+    public triggerMessage(data: string): void {
+      this.emit('message', data);
+    }
+
+    private emit(event: string, ...args: unknown[]): void {
+      const regularListeners = this.listeners.get(event) ?? [];
+
+      for (const listener of regularListeners) {
+        listener(...args);
+      }
+
+      const oneTimeListeners = this.onceListeners.get(event) ?? [];
+
+      this.onceListeners.delete(event);
+
+      for (const listener of oneTimeListeners) {
+        listener(...args);
+      }
+    }
+  }
+
+  const state = {
+    sockets: [] as MockWebSocket[],
+    MockWebSocket,
+  };
+
+  return state;
+});
+
+type MockSocket = InstanceType<typeof mockState.MockWebSocket>;
+
+vi.mock('ws', () => ({
+  default: mockState.MockWebSocket,
+}));
+
+import { OKXWebSocketClient } from '../src/clients/okx/OKXWebSocketClient';
+
+const WATCHLIST = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'XRP-USDT', 'DOGE-USDT'];
 
 interface SubscribeMessage {
   op: string;
@@ -229,333 +123,176 @@ interface SubscribeMessage {
   }>;
 }
 
-const getSubscriptions = (
-  socket: MockSocket,
-): SubscribeMessage[] =>
+const getSubscriptions = (socket: MockSocket): SubscribeMessage[] =>
   socket.sentMessages
-    .filter(
-      message =>
-        message !==
-        'ping',
-    )
-    .map(
-      message =>
-        JSON.parse(
-          message,
-        ) as SubscribeMessage,
-    );
+    .filter((message) => message !== 'ping')
+    .map((message) => JSON.parse(message) as SubscribeMessage);
 
-const requireSocket = (
-  index: number,
-): MockSocket => {
-  const socket =
-    mockState.sockets[index];
+const requireSocket = (index: number): MockSocket => {
+  const socket = mockState.sockets[index];
 
   if (!socket) {
-    throw new Error(
-      `Expected mock socket at index ${index}`,
-    );
+    throw new Error(`Expected mock socket at index ${index}`);
   }
 
   return socket;
 };
 
-describe(
-  'OKXWebSocketClient lifecycle',
-  () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
+describe('OKXWebSocketClient lifecycle', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
 
-      mockState.sockets.length =
-        0;
+    mockState.sockets.length = 0;
 
-      vi.spyOn(
-        console,
-        'log',
-      ).mockImplementation(
-        () => undefined,
-      );
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
-      vi.spyOn(
-        console,
-        'warn',
-      ).mockImplementation(
-        () => undefined,
-      );
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 
-      vi.spyOn(
-        console,
-        'error',
-      ).mockImplementation(
-        () => undefined,
-      );
-    });
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+  });
 
-    afterEach(() => {
-      vi.clearAllTimers();
-      vi.useRealTimers();
-      vi.restoreAllMocks();
-    });
+  afterEach(() => {
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
 
-    it(
-      'creates one socket and sends all five subscriptions after open',
-      () => {
-        const client =
-          new OKXWebSocketClient();
+  it('creates one socket and sends all five subscriptions after open', () => {
+    const client = new OKXWebSocketClient();
 
-        expect(
-          mockState.sockets,
-        ).toHaveLength(1);
+    expect(mockState.sockets).toHaveLength(1);
 
-        const socket =
-          requireSocket(0);
+    const socket = requireSocket(0);
 
-        for (
-          const symbol
-          of WATCHLIST
-        ) {
-          client.subscribeToOrderBook(
-            symbol,
-            'SPOT',
-          );
-        }
+    for (const symbol of WATCHLIST) {
+      client.subscribeToOrderBook(symbol, 'SPOT');
+    }
 
-        expect(
-          getSubscriptions(
-            socket,
-          ),
-        ).toHaveLength(0);
+    expect(getSubscriptions(socket)).toHaveLength(0);
 
-        socket.triggerOpen();
+    socket.triggerOpen();
 
-        const subscriptions =
-          getSubscriptions(
-            socket,
-          );
+    const subscriptions = getSubscriptions(socket);
 
-        expect(
-          subscriptions,
-        ).toHaveLength(5);
+    expect(subscriptions).toHaveLength(5);
 
-        expect(
-          subscriptions.map(
-            message =>
-              message.args[0]
-                ?.instId,
-          ),
-        ).toEqual(
-          WATCHLIST,
-        );
-
-        expect(
-          subscriptions.every(
-            message =>
-              message.args[0]
-                ?.channel ===
-              'books',
-          ),
-        ).toBe(true);
-
-        client.close();
-      },
+    expect(subscriptions.map((message) => message.args[0]?.instId)).toEqual(
+      WATCHLIST,
     );
 
-    it(
-      'creates one reconnect socket after the first backoff delay',
-      () => {
-        const client =
-          new OKXWebSocketClient();
+    expect(
+      subscriptions.every((message) => message.args[0]?.channel === 'books'),
+    ).toBe(true);
 
-        const firstSocket =
-          requireSocket(0);
+    client.close();
+  });
 
-        firstSocket.triggerOpen();
-        firstSocket.triggerClose();
+  it('creates one reconnect socket after the first backoff delay', () => {
+    const client = new OKXWebSocketClient();
 
-        expect(
-          mockState.sockets,
-        ).toHaveLength(1);
+    const firstSocket = requireSocket(0);
 
-        vi.advanceTimersByTime(
-          999,
-        );
+    firstSocket.triggerOpen();
+    firstSocket.triggerClose();
 
-        expect(
-          mockState.sockets,
-        ).toHaveLength(1);
+    expect(mockState.sockets).toHaveLength(1);
 
-        vi.advanceTimersByTime(
-          1,
-        );
+    vi.advanceTimersByTime(999);
 
-        expect(
-          mockState.sockets,
-        ).toHaveLength(2);
+    expect(mockState.sockets).toHaveLength(1);
 
-        client.close();
-      },
-    );
+    vi.advanceTimersByTime(1);
 
-    it(
-      'does not schedule multiple reconnects for repeated close events',
-      () => {
-        const client =
-          new OKXWebSocketClient();
+    expect(mockState.sockets).toHaveLength(2);
 
-        const firstSocket =
-          requireSocket(0);
+    client.close();
+  });
 
-        firstSocket.triggerOpen();
+  it('does not schedule multiple reconnects for repeated close events', () => {
+    const client = new OKXWebSocketClient();
 
-        firstSocket.triggerClose();
-        firstSocket.triggerClose();
-        firstSocket.triggerClose();
+    const firstSocket = requireSocket(0);
 
-        vi.advanceTimersByTime(
-          1_000,
-        );
+    firstSocket.triggerOpen();
 
-        expect(
-          mockState.sockets,
-        ).toHaveLength(2);
+    firstSocket.triggerClose();
+    firstSocket.triggerClose();
+    firstSocket.triggerClose();
 
-        client.close();
-      },
-    );
+    vi.advanceTimersByTime(1_000);
 
-    it(
-      'runs reconnect callback and replays subscriptions after reopen',
-      () => {
-        const client =
-          new OKXWebSocketClient();
+    expect(mockState.sockets).toHaveLength(2);
 
-        for (
-          const symbol
-          of WATCHLIST
-        ) {
-          client.subscribeToOrderBook(
-            symbol,
-            'SPOT',
-          );
-        }
+    client.close();
+  });
 
-        const reconnectCallback =
-          vi.fn();
+  it('runs reconnect callback and replays subscriptions after reopen', () => {
+    const client = new OKXWebSocketClient();
 
-        client.onReconnect(
-          reconnectCallback,
-        );
+    for (const symbol of WATCHLIST) {
+      client.subscribeToOrderBook(symbol, 'SPOT');
+    }
 
-        const firstSocket =
-          requireSocket(0);
+    const reconnectCallback = vi.fn();
 
-        firstSocket.triggerOpen();
+    client.onReconnect(reconnectCallback);
 
-        expect(
-          getSubscriptions(
-            firstSocket,
-          ),
-        ).toHaveLength(5);
+    const firstSocket = requireSocket(0);
 
-        firstSocket.triggerClose();
+    firstSocket.triggerOpen();
 
-        vi.advanceTimersByTime(
-          1_000,
-        );
+    expect(getSubscriptions(firstSocket)).toHaveLength(5);
 
-        const secondSocket =
-          requireSocket(1);
+    firstSocket.triggerClose();
 
-        expect(
-          reconnectCallback,
-        ).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1_000);
 
-        expect(
-          getSubscriptions(
-            secondSocket,
-          ),
-        ).toHaveLength(0);
+    const secondSocket = requireSocket(1);
 
-        secondSocket.triggerOpen();
+    expect(reconnectCallback).not.toHaveBeenCalled();
 
-        expect(
-          reconnectCallback,
-        ).toHaveBeenCalledTimes(
-          1,
-        );
+    expect(getSubscriptions(secondSocket)).toHaveLength(0);
 
-        expect(
-          getSubscriptions(
-            secondSocket,
-          ),
-        ).toHaveLength(5);
+    secondSocket.triggerOpen();
 
-        expect(
-          getSubscriptions(
-            secondSocket,
-          ).map(
-            message =>
-              message.args[0]
-                ?.instId,
-          ),
-        ).toEqual(
-          WATCHLIST,
-        );
+    expect(reconnectCallback).toHaveBeenCalledTimes(1);
 
-        client.close();
-      },
-    );
+    expect(getSubscriptions(secondSocket)).toHaveLength(5);
 
-    it(
-      'sends heartbeat ping while the socket is open',
-      () => {
-        const client =
-          new OKXWebSocketClient();
+    expect(
+      getSubscriptions(secondSocket).map((message) => message.args[0]?.instId),
+    ).toEqual(WATCHLIST);
 
-        const socket =
-          requireSocket(0);
+    client.close();
+  });
 
-        socket.triggerOpen();
+  it('sends heartbeat ping while the socket is open', () => {
+    const client = new OKXWebSocketClient();
 
-        vi.advanceTimersByTime(
-          20_000,
-        );
+    const socket = requireSocket(0);
 
-        expect(
-          socket.sentMessages,
-        ).toContain(
-          'ping',
-        );
+    socket.triggerOpen();
 
-        client.close();
-      },
-    );
+    vi.advanceTimersByTime(20_000);
 
-    it(
-      'does not reconnect after intentional close',
-      () => {
-        const client =
-          new OKXWebSocketClient();
+    expect(socket.sentMessages).toContain('ping');
 
-        const socket =
-          requireSocket(0);
+    client.close();
+  });
 
-        socket.triggerOpen();
+  it('does not reconnect after intentional close', () => {
+    const client = new OKXWebSocketClient();
 
-        client.close();
+    const socket = requireSocket(0);
 
-        expect(
-          socket.closeCallCount,
-        ).toBe(1);
+    socket.triggerOpen();
 
-        vi.advanceTimersByTime(
-          60_000,
-        );
+    client.close();
 
-        expect(
-          mockState.sockets,
-        ).toHaveLength(1);
-      },
-    );
-  },
-);
+    expect(socket.closeCallCount).toBe(1);
+
+    vi.advanceTimersByTime(60_000);
+
+    expect(mockState.sockets).toHaveLength(1);
+  });
+});

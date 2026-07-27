@@ -1,14 +1,12 @@
-export type WhaleSide =
-  | 'BID'
-  | 'ASK';
+export type WhaleSide = 'BID' | 'ASK';
 
 export interface Whale {
-  wallId: string
+  wallId: string;
   side: WhaleSide;
   price: number;
   size: number;
   notionalQuote: number;
-quoteCurrency: 'USDT';
+  quoteCurrency: 'USDT';
   detectedAt: number;
 
   firstSeenAt?: number;
@@ -29,12 +27,7 @@ export interface WhaleThresholds {
 }
 
 export type WhaleChangeType =
-  | 'NEW'
-  | 'INCREASED'
-  | 'REDUCED'
-  | 'REFILLED'
-  | 'MOVED'
-  | 'REMOVED';
+  'NEW' | 'INCREASED' | 'REDUCED' | 'REFILLED' | 'MOVED' | 'REMOVED';
 
 export interface WhaleChange {
   wallId: string;

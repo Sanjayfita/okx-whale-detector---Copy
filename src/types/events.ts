@@ -34,6 +34,4 @@ export interface Event<T extends EventType = EventType> {
   payload: EventPayloads[T];
 }
 
-export type EventHandler<T extends EventType> = (
-  event: Event<T>,
-) => void;
+export type EventHandler<T extends EventType> = (event: Event<T>) => void;

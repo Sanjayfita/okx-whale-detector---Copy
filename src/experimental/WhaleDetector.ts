@@ -14,10 +14,7 @@ export class WhaleDetector {
     this.minimumNotionalQuote = minimumNotionalQuote;
   }
 
-  public detect(
-    bids: OrderBookLevel[],
-    asks: OrderBookLevel[],
-  ): WhaleOrder[] {
+  public detect(bids: OrderBookLevel[], asks: OrderBookLevel[]): WhaleOrder[] {
     const whales: WhaleOrder[] = [];
 
     for (const bid of bids) {
@@ -25,7 +22,6 @@ export class WhaleDetector {
       const size = Number(bid[1]);
       const notionalQuote = price * size;
 
-      
       if (notionalQuote >= this.minimumNotionalQuote) {
         whales.push({
           side: 'BID',

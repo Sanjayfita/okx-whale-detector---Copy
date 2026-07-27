@@ -1,22 +1,15 @@
 export const appConfig = {
   whale: {
-    minimumNotionalQuote:
-      500_000,
-    persistentAfterMs:
-      30_000,
-    strongAfterMs:
-      120_000,
+    minimumNotionalQuote: 500_000,
+    persistentAfterMs: 30_000,
+    strongAfterMs: 120_000,
   },
   events: {
-    removalGraceMs:
-      2_000,
-    minimumChangePercent:
-      10,
-    minimumChangeNotional:
-      100_000,
+    removalGraceMs: 2_000,
+    minimumChangePercent: 10,
+    minimumChangeNotional: 100_000,
   },
   reporting: {
-    summaryIntervalMs:
-      5_000,
+    summaryIntervalMs: 5_000,
   },
 } as const;

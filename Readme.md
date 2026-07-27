@@ -57,4 +57,3 @@ Edit `src/config/symbols.ts`.
 ## Security
 
 This project currently uses public market data and does not require an OKX API key. Do not add withdrawal-capable credentials.
-

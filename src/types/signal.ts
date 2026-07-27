@@ -15,10 +15,7 @@ export interface Signal {
   timestamp: number;
 }
 
-export type MarketBias =
-  | 'BULLISH'
-  | 'BEARISH'
-  | 'NEUTRAL';
+export type MarketBias = 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 
 export interface MarketSignal {
   bias: MarketBias;

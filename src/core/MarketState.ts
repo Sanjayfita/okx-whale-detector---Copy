@@ -1,65 +1,41 @@
-import { OrderBookManager } from
-  './OrderBookManager';
+import { OrderBookManager } from './OrderBookManager';
 
-import { WhaleTracker } from
-  './WhaleTracker';
+import { WhaleTracker } from './WhaleTracker';
 
-import { WhaleEventDetector } from
-  './WhaleEventDetector';
+import { WhaleEventDetector } from './WhaleEventDetector';
 
-import { WallDetector } from
-  './WallDetector';
+import { WallDetector } from './WallDetector';
 
-import { MarketAnalyzer } from
-  './MarketAnalyzer';
+import { MarketAnalyzer } from './MarketAnalyzer';
 
-import { CandleHistory } from
-  './CandleHistory';
+import { CandleHistory } from './CandleHistory';
 
-import {
-  WhaleRefillDetector,
-} from './WhaleRefillDetector';
+import { WhaleRefillDetector } from './WhaleRefillDetector';
 
-import {
-  WhaleScoreEngine,
-} from './WhaleScoreEngine';
+import { WhaleScoreEngine } from './WhaleScoreEngine';
 
-import {
-  WhaleBehaviorEngine,
-} from './WhaleBehaviorEngine';
+import { WhaleBehaviorEngine } from './WhaleBehaviorEngine';
 
-import {
-  BehaviorTransitionTracker,
-} from './BehaviorTransitionTracker';
+import { BehaviorTransitionTracker } from './BehaviorTransitionTracker';
 
 export class MarketState {
-  public readonly orderBookManager =
-    new OrderBookManager();
+  public readonly orderBookManager = new OrderBookManager();
 
-  public readonly whaleTracker =
-    new WhaleTracker();
+  public readonly whaleTracker = new WhaleTracker();
 
-  public readonly whaleScoreEngine =
-    new WhaleScoreEngine();
+  public readonly whaleScoreEngine = new WhaleScoreEngine();
 
-  public readonly whaleEventDetector =
-    new WhaleEventDetector();
+  public readonly whaleEventDetector = new WhaleEventDetector();
 
-  public readonly wallDetector =
-    new WallDetector();
+  public readonly wallDetector = new WallDetector();
 
-  public readonly marketAnalyzer =
-    new MarketAnalyzer();
+  public readonly marketAnalyzer = new MarketAnalyzer();
 
-  public readonly candleHistory =
-    new CandleHistory(100);
+  public readonly candleHistory = new CandleHistory(100);
 
-  public readonly whaleRefillDetector =
-    new WhaleRefillDetector();
+  public readonly whaleRefillDetector = new WhaleRefillDetector();
 
- public readonly whaleBehaviorEngine =
-  new WhaleBehaviorEngine();
-  
-public readonly behaviorTransitionTracker =
-  new BehaviorTransitionTracker();
+  public readonly whaleBehaviorEngine = new WhaleBehaviorEngine();
+
+  public readonly behaviorTransitionTracker = new BehaviorTransitionTracker();
 }

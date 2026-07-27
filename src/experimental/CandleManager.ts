@@ -1,11 +1,7 @@
-import type {
-  Candle,
-  CandleInterval,
-} from '../types/candle';
+import type { Candle, CandleInterval } from '../types/candle';
 
 export class CandleManager {
-  private readonly candles =
-    new Map<CandleInterval, Candle[]>();
+  private readonly candles = new Map<CandleInterval, Candle[]>();
 
   private readonly maxCandles = 200;
 
@@ -26,28 +22,20 @@ export class CandleManager {
     }
   }
 
-  public addCandle(
-    interval: CandleInterval,
-    candle: Candle,
-  ): void {
-    const history =
-      this.candles.get(interval);
+  public addCandle(interval: CandleInterval, candle: Candle): void {
+    const history = this.candles.get(interval);
 
     if (!history) {
       return;
     }
 
-    const last =
-      history[history.length - 1];
+    const last = history[history.length - 1];
 
     /*
      * If the candle has the same timestamp,
      * update the current candle.
      */
-    if (
-      last &&
-      last.timestamp === candle.timestamp
-    ) {
+    if (last && last.timestamp === candle.timestamp) {
       history[history.length - 1] = candle;
       return;
     }
@@ -57,38 +45,22 @@ export class CandleManager {
     /*
      * Keep memory under control.
      */
-    if (
-      history.length >
-      this.maxCandles
-    ) {
+    if (history.length > this.maxCandles) {
       history.shift();
     }
   }
 
-  public getCandles(
-    interval: CandleInterval,
-  ): Candle[] {
+  public getCandles(interval: CandleInterval): Candle[] {
     return this.candles.get(interval) ?? [];
   }
 
-  public getLatest(
-    interval: CandleInterval,
-  ): Candle | undefined {
-    const history =
-      this.getCandles(interval);
+  public getLatest(interval: CandleInterval): Candle | undefined {
+    const history = this.getCandles(interval);
 
-    return history[
-      history.length - 1
-    ];
+    return history[history.length - 1];
   }
 
-  public getConfirmedCandles(
-    interval: CandleInterval,
-  ): Candle[] {
-    return this.getCandles(interval)
-      .filter(
-        (candle) =>
-          candle.confirmed,
-      );
+  public getConfirmedCandles(interval: CandleInterval): Candle[] {
+    return this.getCandles(interval).filter((candle) => candle.confirmed);
   }
 }

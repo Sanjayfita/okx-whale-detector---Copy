@@ -27,31 +27,22 @@ export interface MarketSnapshot {
 export class MarketEngine {
   public readonly symbol: string;
 
-  private readonly orderBookManager:
-    OrderBookManager;
+  private readonly orderBookManager: OrderBookManager;
 
-  private readonly whaleTracker:
-    WhaleTracker;
+  private readonly whaleTracker: WhaleTracker;
 
-  private readonly marketAnalyzer:
-    MarketAnalyzer;
+  private readonly marketAnalyzer: MarketAnalyzer;
 
-  private latestSnapshot:
-    MarketSnapshot | null = null;
+  private latestSnapshot: MarketSnapshot | null = null;
 
-  public constructor(
-    symbol: string,
-  ) {
+  public constructor(symbol: string) {
     this.symbol = symbol;
 
-    this.orderBookManager =
-      new OrderBookManager();
+    this.orderBookManager = new OrderBookManager();
 
-    this.whaleTracker =
-      new WhaleTracker();
+    this.whaleTracker = new WhaleTracker();
 
-    this.marketAnalyzer =
-      new MarketAnalyzer();
+    this.marketAnalyzer = new MarketAnalyzer();
   }
 
   public processOrderBook(
@@ -62,50 +53,33 @@ export class MarketEngine {
     prevSeqId: number,
     action: 'snapshot' | 'update',
   ): MarketSnapshot {
-    const wasApplied =
-      this.orderBookManager.applyUpdate(
-        bids,
-        asks,
-        timestamp,
-        seqId,
-        prevSeqId,
-        action,
-      );
+    const wasApplied = this.orderBookManager.applyUpdate(
+      bids,
+      asks,
+      timestamp,
+      seqId,
+      prevSeqId,
+      action,
+    );
 
     if (!wasApplied) {
-      throw new Error(
-        `Order-book sequence gap for ${this.symbol}`,
-      );
+      throw new Error(`Order-book sequence gap for ${this.symbol}`);
     }
 
-    const result =
-      this.whaleTracker.scan(
-        this.orderBookManager.getOrderBook(),
-      );
+    const result = this.whaleTracker.scan(this.orderBookManager.getOrderBook());
 
-    const bestBid =
-      this.orderBookManager.getBestBid();
+    const bestBid = this.orderBookManager.getBestBid();
 
-    const bestAsk =
-      this.orderBookManager.getBestAsk();
+    const bestAsk = this.orderBookManager.getBestAsk();
 
-    const marketSignal =
-      this.marketAnalyzer.analyze(
-        result.active,
-        bestBid?.price ?? 0,
-      );
+    const marketSignal = this.marketAnalyzer.analyze(
+      result.active,
+      bestBid?.price ?? 0,
+    );
 
-    const bidWhales =
-      result.active.filter(
-        whale =>
-          whale.side === 'BID',
-      );
+    const bidWhales = result.active.filter((whale) => whale.side === 'BID');
 
-    const askWhales =
-      result.active.filter(
-        whale =>
-          whale.side === 'ASK',
-      );
+    const askWhales = result.active.filter((whale) => whale.side === 'ASK');
 
     const snapshot: MarketSnapshot = {
       symbol: this.symbol,
@@ -118,30 +92,23 @@ export class MarketEngine {
       bidWhales,
       askWhales,
 
-      bidPressure:
-        marketSignal.bidPressure,
+      bidPressure: marketSignal.bidPressure,
 
-      askPressure:
-        marketSignal.askPressure,
+      askPressure: marketSignal.askPressure,
 
-      bias:
-        marketSignal.bias,
+      bias: marketSignal.bias,
 
-      confidence:
-        marketSignal.confidence,
+      confidence: marketSignal.confidence,
 
-      reason:
-        marketSignal.reason,
+      reason: marketSignal.reason,
     };
 
-    this.latestSnapshot =
-      snapshot;
+    this.latestSnapshot = snapshot;
 
     return snapshot;
   }
 
-  public getSnapshot():
-    MarketSnapshot | null {
+  public getSnapshot(): MarketSnapshot | null {
     return this.latestSnapshot;
   }
 }

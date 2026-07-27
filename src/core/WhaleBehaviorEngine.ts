@@ -1,11 +1,7 @@
 import type { Whale } from '../types/whale';
 
 export type WhaleBehaviorType =
-  | 'SPOOF'
-  | 'PERSISTENT'
-  | 'REFILLING'
-  | 'ACCUMULATION'
-  | 'DISTRIBUTION';
+  'SPOOF' | 'PERSISTENT' | 'REFILLING' | 'ACCUMULATION' | 'DISTRIBUTION';
 
 export interface WhaleBehavior {
   type: WhaleBehaviorType;
@@ -38,117 +34,67 @@ interface WhaleBehaviorHistory {
 }
 
 export class WhaleBehaviorEngine {
-  private readonly history =
-    new Map<string, WhaleBehaviorHistory>();
+  private readonly history = new Map<string, WhaleBehaviorHistory>();
 
-  private readonly SPOOF_MAX_AGE_SECONDS =
-    3;
+  private readonly SPOOF_MAX_AGE_SECONDS = 3;
 
-  private readonly PERSISTENT_MIN_AGE_SECONDS =
-    30;
+  private readonly PERSISTENT_MIN_AGE_SECONDS = 30;
 
+  public prune(activeWhales: Whale[]): void {
+    const activeKeys = new Set(activeWhales.map((whale) => this.getKey(whale)));
 
-public prune(
-  activeWhales: Whale[],
-): void {
-  const activeKeys =
-    new Set(
-      activeWhales.map(
-        whale =>
-          this.getKey(whale),
-      ),
-    );
-
-  for (const key of this.history.keys()) {
-    if (!activeKeys.has(key)) {
-      this.history.delete(key);
+    for (const key of this.history.keys()) {
+      if (!activeKeys.has(key)) {
+        this.history.delete(key);
+      }
     }
   }
-}
 
- public analyze(
-  whale: Whale,
-): WhaleBehavior[] {
-    const now =
-      Date.now();
+  public analyze(whale: Whale): WhaleBehavior[] {
+    const now = Date.now();
 
-    const key =
-      this.getKey(
-        whale,
-      );
+    const key = this.getKey(whale);
 
-    let history =
-      this.history.get(
-        key,
-      );
+    let history = this.history.get(key);
 
-    if (
-      !history
-    ) {
+    if (!history) {
       history = {
-        firstSeenAt:
-          whale.firstSeenAt ??
-          now,
+        firstSeenAt: whale.firstSeenAt ?? now,
 
-        lastSeenAt:
-          now,
+        lastSeenAt: now,
 
-        highestNotionalQuote:
-          whale.notionalQuote,
+        highestNotionalQuote: whale.notionalQuote,
 
-        lowestNotionalQuote:
-          whale.notionalQuote,
+        lowestNotionalQuote: whale.notionalQuote,
 
-        previousNotionalQuote:
-          whale.notionalQuote,
+        previousNotionalQuote: whale.notionalQuote,
 
-        increaseCount:
-          0,
+        increaseCount: 0,
 
-        decreaseCount:
-          0,
+        decreaseCount: 0,
 
-        lastPrice:
-          whale.price,
+        lastPrice: whale.price,
       };
 
-      this.history.set(
-        key,
-        history,
-      );
+      this.history.set(key, history);
     }
 
-    const behaviors:
-      WhaleBehavior[] = [];
+    const behaviors: WhaleBehavior[] = [];
 
     const ageSeconds =
-      whale.ageSeconds ??
-      Math.floor(
-        (
-          now -
-          history.firstSeenAt
-        ) /
-        1000,
-      );
+      whale.ageSeconds ?? Math.floor((now - history.firstSeenAt) / 1000);
 
-    const previousNotional =
-      history.previousNotionalQuote;
+    const previousNotional = history.previousNotionalQuote;
 
     /*
      * Track size changes
      */
 
-    if (
-      whale.notionalQuote >
-      previousNotional
-    ) {
+    if (whale.notionalQuote > previousNotional) {
       history.increaseCount++;
     }
 
-    if (
-      whale.notionalQuote <
-      previousNotional
-    ) {
+    if (whale.notionalQuote < previousNotional) {
       history.decreaseCount++;
     }
 
@@ -164,28 +110,17 @@ public prune(
      * PERSISTENT WALL
      */
 
-    if (
-      ageSeconds >=
-      this.PERSISTENT_MIN_AGE_SECONDS
-    ) {
+    if (ageSeconds >= this.PERSISTENT_MIN_AGE_SECONDS) {
       behaviors.push({
-        type:
-          'PERSISTENT',
+        type: 'PERSISTENT',
 
         whale,
 
-        confidence:
-          Math.min(
-            100,
-            50 +
-            ageSeconds,
-          ),
+        confidence: Math.min(100, 50 + ageSeconds),
 
-        reason:
-          `Whale has remained active for ${ageSeconds}s`,
+        reason: `Whale has remained active for ${ageSeconds}s`,
 
-        detectedAt:
-          now,
+        detectedAt: now,
       });
     }
 
@@ -193,39 +128,25 @@ public prune(
      * REFILLING
      */
 
-    
-
     /*
      * ACCUMULATION
      */
 
     if (
-      whale.side ===
-      'BID' &&
+      whale.side === 'BID' &&
       history.increaseCount >= 3 &&
-      whale.notionalQuote >
-      history.lowestNotionalQuote *
-      1.2
+      whale.notionalQuote > history.lowestNotionalQuote * 1.2
     ) {
       behaviors.push({
-        type:
-          'ACCUMULATION',
+        type: 'ACCUMULATION',
 
         whale,
 
-        confidence:
-          Math.min(
-            100,
-            60 +
-            history.increaseCount *
-            5,
-          ),
+        confidence: Math.min(100, 60 + history.increaseCount * 5),
 
-        reason:
-          'Bid liquidity is repeatedly increasing',
+        reason: 'Bid liquidity is repeatedly increasing',
 
-        detectedAt:
-          now,
+        detectedAt: now,
       });
     }
 
@@ -234,32 +155,20 @@ public prune(
      */
 
     if (
-      whale.side ===
-      'ASK' &&
+      whale.side === 'ASK' &&
       history.increaseCount >= 3 &&
-      whale.notionalQuote >
-      history.lowestNotionalQuote *
-      1.2
+      whale.notionalQuote > history.lowestNotionalQuote * 1.2
     ) {
       behaviors.push({
-        type:
-          'DISTRIBUTION',
+        type: 'DISTRIBUTION',
 
         whale,
 
-        confidence:
-          Math.min(
-            100,
-            60 +
-            history.increaseCount *
-            5,
-          ),
+        confidence: Math.min(100, 60 + history.increaseCount * 5),
 
-        reason:
-          'Ask liquidity is repeatedly increasing',
+        reason: 'Ask liquidity is repeatedly increasing',
 
-        detectedAt:
-          now,
+        detectedAt: now,
       });
     }
 
@@ -267,58 +176,41 @@ public prune(
      * Update history
      */
 
-    history.lastSeenAt =
-      now;
+    history.lastSeenAt = now;
 
-    history.highestNotionalQuote =
-      Math.max(
-        history.highestNotionalQuote,
-        whale.notionalQuote,
-      );
+    history.highestNotionalQuote = Math.max(
+      history.highestNotionalQuote,
+      whale.notionalQuote,
+    );
 
-    history.lowestNotionalQuote =
-      Math.min(
-        history.lowestNotionalQuote,
-        whale.notionalQuote,
-      );
+    history.lowestNotionalQuote = Math.min(
+      history.lowestNotionalQuote,
+      whale.notionalQuote,
+    );
 
-    history.previousNotionalQuote =
-      whale.notionalQuote;
+    history.previousNotionalQuote = whale.notionalQuote;
 
-    history.lastPrice =
-      whale.price;
+    history.lastPrice = whale.price;
 
     return behaviors;
   }
 
-  public analyzeRemoval(
-    whale: Whale,
-  ): WhaleBehavior | undefined {
-    const now =
-      Date.now();
+  public analyzeRemoval(whale: Whale): WhaleBehavior | undefined {
+    const now = Date.now();
 
-    const ageSeconds =
-      whale.ageSeconds ??
-      0;
+    const ageSeconds = whale.ageSeconds ?? 0;
 
-    if (
-      ageSeconds <=
-      this.SPOOF_MAX_AGE_SECONDS
-    ) {
+    if (ageSeconds <= this.SPOOF_MAX_AGE_SECONDS) {
       return {
-        type:
-          'SPOOF',
+        type: 'SPOOF',
 
         whale,
 
-        confidence:
-          85,
+        confidence: 85,
 
-        reason:
-          `Large whale disappeared after only ${ageSeconds}s`,
+        reason: `Large whale disappeared after only ${ageSeconds}s`,
 
-        detectedAt:
-          now,
+        detectedAt: now,
       };
     }
 
@@ -329,9 +221,7 @@ public prune(
     this.history.clear();
   }
 
-  private getKey(
-  whale: Whale,
-): string {
-  return whale.wallId;
-}
+  private getKey(whale: Whale): string {
+    return whale.wallId;
+  }
 }

@@ -1,10 +1,6 @@
 import type { Whale } from '../types/whale';
 
-export type WhaleStrength =
-  | 'WEAK'
-  | 'MODERATE'
-  | 'STRONG'
-  | 'VERY_STRONG';
+export type WhaleStrength = 'WEAK' | 'MODERATE' | 'STRONG' | 'VERY_STRONG';
 
 export interface WhaleScore {
   whale: Whale;
@@ -47,8 +43,7 @@ interface WhaleHistory {
 export class WhaleScoreEngine {
   private readonly config: WhaleScoreEngineConfig;
 
-  private readonly history =
-    new Map<string, WhaleHistory>();
+  private readonly history = new Map<string, WhaleHistory>();
 
   constructor(
     config: WhaleScoreEngineConfig = {
@@ -64,148 +59,103 @@ export class WhaleScoreEngine {
   ) {
     this.config = config;
   }
-public prune(
-  activeWhales: Whale[],
-): void {
-  const activeKeys =
-    new Set(
-      activeWhales.map(
-        whale =>
-          this.getKey(whale),
-      ),
-    );
+  public prune(activeWhales: Whale[]): void {
+    const activeKeys = new Set(activeWhales.map((whale) => this.getKey(whale)));
 
-  for (const key of this.history.keys()) {
-    if (!activeKeys.has(key)) {
-      this.history.delete(key);
+    for (const key of this.history.keys()) {
+      if (!activeKeys.has(key)) {
+        this.history.delete(key);
+      }
     }
   }
-}
-  public score(
-    whale: Whale,
-    currentPrice: number,
-  ): WhaleScore {
-    const now =
-      Date.now();
+  public score(whale: Whale, currentPrice: number): WhaleScore {
+    const now = Date.now();
 
-    const key =
-      this.getKey(whale);
+    const key = this.getKey(whale);
 
-    let history =
-      this.history.get(key);
+    let history = this.history.get(key);
 
     if (!history) {
       history = {
         firstSeen: now,
         lastSeen: now,
 
-        highestNotional:
-          whale.notionalQuote,
+        highestNotional: whale.notionalQuote,
 
-        lowestNotional:
-          whale.notionalQuote,
+        lowestNotional: whale.notionalQuote,
 
-        lastPrice:
-          whale.price,
+        lastPrice: whale.price,
       };
 
-      this.history.set(
-        key,
-        history,
-      );
+      this.history.set(key, history);
     }
 
-    history.lastSeen =
-      now;
+    history.lastSeen = now;
 
-    history.highestNotional =
-      Math.max(
-        history.highestNotional,
-        whale.notionalQuote,
-      );
+    history.highestNotional = Math.max(
+      history.highestNotional,
+      whale.notionalQuote,
+    );
 
-    history.lowestNotional =
-      Math.min(
-        history.lowestNotional,
-        whale.notionalQuote,
-      );
+    history.lowestNotional = Math.min(
+      history.lowestNotional,
+      whale.notionalQuote,
+    );
 
     /*
      * 1. SIZE SCORE
      */
 
-    const sizeScore =
-      this.calculateSizeScore(
-        whale.notionalQuote,
-      );
+    const sizeScore = this.calculateSizeScore(whale.notionalQuote);
 
     /*
      * 2. DISTANCE SCORE
      */
 
-    const distanceScore =
-      this.calculateDistanceScore(
-        whale.price,
-        currentPrice,
-      );
+    const distanceScore = this.calculateDistanceScore(
+      whale.price,
+      currentPrice,
+    );
 
     /*
      * 3. PERSISTENCE SCORE
      */
 
-    const ageMs =
-      now -
-      history.firstSeen;
+    const ageMs = now - history.firstSeen;
 
     const persistenceScore =
       Math.min(
-        ageMs /
-        this.config.persistenceWindowMs,
+        ageMs / this.config.persistenceWindowMs,
 
         1,
-      ) *
-      this.config.maxPersistenceScore;
+      ) * this.config.maxPersistenceScore;
 
     /*
      * 4. STABILITY SCORE
      */
 
-    const stabilityScore =
-  this.calculateStabilityScore(
-    history,
-  );
+    const stabilityScore = this.calculateStabilityScore(history);
 
     const rawScore =
-      sizeScore +
-      distanceScore +
-      persistenceScore +
-      stabilityScore;
+      sizeScore + distanceScore + persistenceScore + stabilityScore;
 
-    const totalScore =
-      Math.min(
-        Math.round(
-          rawScore,
-        ),
+    const totalScore = Math.min(
+      Math.round(rawScore),
 
-        this.config.maxScore,
-      );
+      this.config.maxScore,
+    );
 
-    const strength =
-      this.getStrength(
-        totalScore,
-      );
+    const strength = this.getStrength(totalScore);
 
-    const explanation =
-      this.buildExplanation(
-        totalScore,
-        sizeScore,
-        distanceScore,
-        persistenceScore,
-        stabilityScore,
-      );
+    const explanation = this.buildExplanation(
+      totalScore,
+      sizeScore,
+      distanceScore,
+      persistenceScore,
+      stabilityScore,
+    );
 
-    history.lastPrice =
-      whale.price;
+    history.lastPrice = whale.price;
 
     return {
       whale,
@@ -215,66 +165,33 @@ public prune(
       strength,
 
       components: {
-        sizeScore:
-          Math.round(
-            sizeScore,
-          ),
+        sizeScore: Math.round(sizeScore),
 
-        distanceScore:
-          Math.round(
-            distanceScore,
-          ),
+        distanceScore: Math.round(distanceScore),
 
-        persistenceScore:
-          Math.round(
-            persistenceScore,
-          ),
+        persistenceScore: Math.round(persistenceScore),
 
-        stabilityScore:
-          Math.round(
-            stabilityScore,
-          ),
+        stabilityScore: Math.round(stabilityScore),
       },
 
       explanation,
     };
   }
 
-  public scoreMany(
-    whales: Whale[],
-    currentPrice: number,
-  ): WhaleScore[] {
-    return whales.map(
-      whale =>
-        this.score(
-          whale,
-          currentPrice,
-        ),
-    );
+  public scoreMany(whales: Whale[], currentPrice: number): WhaleScore[] {
+    return whales.map((whale) => this.score(whale, currentPrice));
   }
 
-  private calculateSizeScore(
-    notionalQuote: number,
-  ): number {
+  private calculateSizeScore(notionalQuote: number): number {
     /*
      * $500k = small whale
      * $1M   = strong whale
      * $5M+  = maximum score
      */
 
-    const score =
-      Math.log10(
-        Math.max(
-          notionalQuote,
-          500_000,
-        ) /
-        500_000,
-      ) * 30;
+    const score = Math.log10(Math.max(notionalQuote, 500_000) / 500_000) * 30;
 
-    return Math.min(
-      score,
-      this.config.maxSizeScore,
-    );
+    return Math.min(score, this.config.maxSizeScore);
   }
 
   private calculateDistanceScore(
@@ -282,14 +199,7 @@ public prune(
     currentPrice: number,
   ): number {
     const distancePercent =
-      Math.abs(
-        (
-          whalePrice -
-          currentPrice
-        ) /
-        currentPrice,
-      ) *
-      100;
+      Math.abs((whalePrice - currentPrice) / currentPrice) * 100;
 
     /*
      * 0.00% away = 25 points
@@ -298,73 +208,40 @@ public prune(
      * 5.00% away = ~4 points
      */
 
-    const score =
-      this.config.maxDistanceScore /
-      (
-        1 +
-        distancePercent
-      );
+    const score = this.config.maxDistanceScore / (1 + distancePercent);
 
-    return Math.min(
-      score,
-      this.config.maxDistanceScore,
-    );
+    return Math.min(score, this.config.maxDistanceScore);
   }
 
- private calculateStabilityScore(
-  history: WhaleHistory,
-): number {
-    if (
-      history.highestNotional ===
-      0
-    ) {
+  private calculateStabilityScore(history: WhaleHistory): number {
+    if (history.highestNotional === 0) {
       return 0;
     }
 
-    const range =
-      history.highestNotional -
-      history.lowestNotional;
+    const range = history.highestNotional - history.lowestNotional;
 
-    const volatility =
-      range /
-      history.highestNotional;
+    const volatility = range / history.highestNotional;
 
     /*
      * Stable whale = high score
      * Constantly changing whale = lower score
      */
 
-    const stability =
-      1 -
-      Math.min(
-        volatility,
-        1,
-      );
+    const stability = 1 - Math.min(volatility, 1);
 
-    return (
-      stability *
-      this.config.maxStabilityScore
-    );
+    return stability * this.config.maxStabilityScore;
   }
 
-  private getStrength(
-    score: number,
-  ): WhaleStrength {
-    if (
-      score >= 80
-    ) {
+  private getStrength(score: number): WhaleStrength {
+    if (score >= 80) {
       return 'VERY_STRONG';
     }
 
-    if (
-      score >= 60
-    ) {
+    if (score >= 60) {
       return 'STRONG';
     }
 
-    if (
-      score >= 35
-    ) {
+    if (score >= 35) {
       return 'MODERATE';
     }
 
@@ -380,54 +257,32 @@ public prune(
   ): string[] {
     const explanation: string[] = [];
 
-    if (
-      sizeScore >= 20
-    ) {
-      explanation.push(
-        'Large order size',
-      );
+    if (sizeScore >= 20) {
+      explanation.push('Large order size');
     }
 
-    if (
-      distanceScore >= 20
-    ) {
-      explanation.push(
-        'Close to market price',
-      );
+    if (distanceScore >= 20) {
+      explanation.push('Close to market price');
     }
 
-    if (
-      persistenceScore >= 15
-    ) {
-      explanation.push(
-        'Persistent order book presence',
-      );
+    if (persistenceScore >= 15) {
+      explanation.push('Persistent order book presence');
     }
 
-    if (
-      stabilityScore >= 15
-    ) {
-      explanation.push(
-        'Stable liquidity',
-      );
+    if (stabilityScore >= 15) {
+      explanation.push('Stable liquidity');
     }
 
-    if (
-      totalScore < 35
-    ) {
-      explanation.push(
-        'Low-confidence whale',
-      );
+    if (totalScore < 35) {
+      explanation.push('Low-confidence whale');
     }
 
     return explanation;
   }
 
-  private getKey(
-  whale: Whale,
-): string {
-  return whale.wallId;
-}
+  private getKey(whale: Whale): string {
+    return whale.wallId;
+  }
 
   public reset(): void {
     this.history.clear();

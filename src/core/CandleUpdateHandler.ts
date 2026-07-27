@@ -1,35 +1,20 @@
-import type {
-  OKXCandle,
-} from '../clients/okx/OKXCandleWebSocketClient';
+import type { OKXCandle } from '../clients/okx/OKXCandleWebSocketClient';
 
-import type {
-  MarketState,
-} from './MarketState';
+import type { MarketState } from './MarketState';
 
-export type CandleLogger = (
-  message: string,
-) => void;
+export type CandleLogger = (message: string) => void;
 
 export class CandleUpdateHandler {
-  private readonly candleCounters =
-    new Map<string, number>();
+  private readonly candleCounters = new Map<string, number>();
 
   constructor(
-    private readonly marketStates:
-      Map<string, MarketState>,
+    private readonly marketStates: Map<string, MarketState>,
 
-    private readonly logger:
-      CandleLogger =
-        console.log,
+    private readonly logger: CandleLogger = console.log,
   ) {}
 
-  public handle(
-    candle: OKXCandle,
-  ): void {
-    const state =
-      this.marketStates.get(
-        candle.instId,
-      );
+  public handle(candle: OKXCandle): void {
+    const state = this.marketStates.get(candle.instId);
 
     if (!state) {
       return;
@@ -40,22 +25,11 @@ export class CandleUpdateHandler {
      * CandleHistory, even when it is
      * not printed.
      */
-    state.candleHistory.add(
-      candle,
-    );
+    state.candleHistory.add(candle);
 
-    const count =
-      (
-        this.candleCounters.get(
-          candle.instId,
-        ) ??
-        0
-      ) + 1;
+    const count = (this.candleCounters.get(candle.instId) ?? 0) + 1;
 
-    this.candleCounters.set(
-      candle.instId,
-      count,
-    );
+    this.candleCounters.set(candle.instId, count);
 
     /*
      * Print only every tenth update
@@ -67,23 +41,19 @@ export class CandleUpdateHandler {
 
     this.logger(
       `🕯️ ${candle.instId} 1m | ` +
-      `O: ${candle.open} | ` +
-      `H: ${candle.high} | ` +
-      `L: ${candle.low} | ` +
-      `C: ${candle.close} | ` +
-      `Closed: ${candle.confirm} | ` +
-      `History: ` +
-      `${state.candleHistory.getSize()}`,
+        `O: ${candle.open} | ` +
+        `H: ${candle.high} | ` +
+        `L: ${candle.low} | ` +
+        `C: ${candle.close} | ` +
+        `Closed: ${candle.confirm} | ` +
+        `History: ` +
+        `${state.candleHistory.getSize()}`,
     );
   }
 
-  public reset(
-    symbol?: string,
-  ): void {
+  public reset(symbol?: string): void {
     if (symbol !== undefined) {
-      this.candleCounters.delete(
-        symbol,
-      );
+      this.candleCounters.delete(symbol);
 
       return;
     }

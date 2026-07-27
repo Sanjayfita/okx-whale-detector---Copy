@@ -1,186 +1,106 @@
-import type {
-  Whale,
-} from '../types/whale';
+import type { Whale } from '../types/whale';
 
 export type WhaleEventType =
-  | 'NEW'
-  | 'REMOVED'
-  | 'INCREASED'
-  | 'DECREASED'
-  | 'MOVED';
+  'NEW' | 'REMOVED' | 'INCREASED' | 'DECREASED' | 'MOVED';
 
 export interface WhaleEvent {
-  type:
-    WhaleEventType;
+  type: WhaleEventType;
 
-  whale:
-    Whale;
+  whale: Whale;
 
-  previous?:
-    Whale;
+  previous?: Whale;
 }
 
 interface TrackedWhale {
-  whale:
-    Whale;
+  whale: Whale;
 
-  lastSeen:
-    number;
+  lastSeen: number;
 }
 
 export class WhaleEventDetector {
-  private readonly previousWhales =
-    new Map<
-      string,
-      TrackedWhale
-    >();
+  private readonly previousWhales = new Map<string, TrackedWhale>();
 
-  private readonly removalGracePeriodMs =
-    2_000;
+  private readonly removalGracePeriodMs = 2_000;
 
-  public detect(
-    currentWhales:
-      Whale[],
-  ): WhaleEvent[] {
-    const now =
-      Date.now();
+  public detect(currentWhales: Whale[]): WhaleEvent[] {
+    const now = Date.now();
 
-    const events:
-      WhaleEvent[] = [];
+    const events: WhaleEvent[] = [];
 
-    const activeIds =
-      new Set<string>();
+    const activeIds = new Set<string>();
 
-    for (
-      const whale
-      of currentWhales
-    ) {
-      activeIds.add(
-        whale.wallId,
-      );
+    for (const whale of currentWhales) {
+      activeIds.add(whale.wallId);
 
-      const previous =
-        this.previousWhales.get(
-          whale.wallId,
-        );
+      const previous = this.previousWhales.get(whale.wallId);
 
       if (!previous) {
         events.push({
-          type:
-            'NEW',
+          type: 'NEW',
 
           whale,
         });
 
-        this.previousWhales.set(
-          whale.wallId,
-          {
-            whale,
-            lastSeen:
-              now,
-          },
-        );
+        this.previousWhales.set(whale.wallId, {
+          whale,
+          lastSeen: now,
+        });
 
         continue;
       }
 
-      if (
-        previous.whale.price !==
-        whale.price
-      ) {
+      if (previous.whale.price !== whale.price) {
         events.push({
-          type:
-            'MOVED',
+          type: 'MOVED',
 
           whale,
 
-          previous:
-            previous.whale,
+          previous: previous.whale,
         });
       }
 
-      const change =
-        whale.notionalQuote -
-        previous.whale
-          .notionalQuote;
+      const change = whale.notionalQuote - previous.whale.notionalQuote;
 
       const changePercent =
-        previous.whale
-          .notionalQuote === 0
+        previous.whale.notionalQuote === 0
           ? 0
-          : Math.abs(
-              change /
-              previous.whale
-                .notionalQuote,
-            ) * 100;
+          : Math.abs(change / previous.whale.notionalQuote) * 100;
 
-      if (
-        changePercent >= 10 &&
-        Math.abs(
-          change,
-        ) >= 100_000
-      ) {
+      if (changePercent >= 10 && Math.abs(change) >= 100_000) {
         events.push({
-          type:
-            change > 0
-              ? 'INCREASED'
-              : 'DECREASED',
+          type: change > 0 ? 'INCREASED' : 'DECREASED',
 
           whale,
 
-          previous:
-            previous.whale,
+          previous: previous.whale,
         });
       }
 
-      this.previousWhales.set(
-        whale.wallId,
-        {
-          whale,
+      this.previousWhales.set(whale.wallId, {
+        whale,
 
-          lastSeen:
-            now,
-        },
-      );
+        lastSeen: now,
+      });
     }
 
-    for (
-      const [
-        wallId,
-        tracked,
-      ]
-      of this.previousWhales
-    ) {
-      if (
-        activeIds.has(
-          wallId,
-        )
-      ) {
+    for (const [wallId, tracked] of this.previousWhales) {
+      if (activeIds.has(wallId)) {
         continue;
       }
 
-      const timeSinceLastSeen =
-        now -
-        tracked.lastSeen;
+      const timeSinceLastSeen = now - tracked.lastSeen;
 
-      if (
-        timeSinceLastSeen <
-        this.removalGracePeriodMs
-      ) {
+      if (timeSinceLastSeen < this.removalGracePeriodMs) {
         continue;
       }
 
       events.push({
-        type:
-          'REMOVED',
+        type: 'REMOVED',
 
-        whale:
-          tracked.whale,
+        whale: tracked.whale,
       });
 
-      this.previousWhales.delete(
-        wallId,
-      );
+      this.previousWhales.delete(wallId);
     }
 
     return events;

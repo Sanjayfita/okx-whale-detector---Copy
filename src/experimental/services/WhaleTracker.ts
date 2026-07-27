@@ -20,8 +20,7 @@ export interface WhaleTrackerConfig {
 export class WhaleTracker {
   private readonly config: WhaleTrackerConfig;
 
-  private readonly whales =
-    new Map<string, TrackedWhale>();
+  private readonly whales = new Map<string, TrackedWhale>();
 
   constructor(
     config: WhaleTrackerConfig = {
@@ -32,173 +31,104 @@ export class WhaleTracker {
     this.config = config;
   }
 
-  public update(
-    incomingWhales: Whale[],
-  ): WhaleChange[] {
-    const now =
-      Date.now();
+  public update(incomingWhales: Whale[]): WhaleChange[] {
+    const now = Date.now();
 
     const changes: WhaleChange[] = [];
 
-    const matchedKeys =
-      new Set<string>();
+    const matchedKeys = new Set<string>();
 
-    for (
-      const incoming
-      of incomingWhales
-    ) {
-      const match =
-        this.findMatchingWhale(
-          incoming,
-        );
+    for (const incoming of incomingWhales) {
+      const match = this.findMatchingWhale(incoming);
 
       if (match) {
-        const previous =
-          { ...match.whale };
+        const previous = { ...match.whale };
 
-        const change =
-          this.updateExistingWhale(
-            match.whale,
-            incoming,
-            now,
-          );
+        const change = this.updateExistingWhale(match.whale, incoming, now);
 
-        matchedKeys.add(
-          match.key,
-        );
+        matchedKeys.add(match.key);
 
-       if (
-  change
-) {
-  changes.push({
-    type:
-      change,
+        if (change) {
+          changes.push({
+            type: change,
 
-    side:
-      incoming.side,
+            side: incoming.side,
 
-    price:
-      incoming.price,
+            price: incoming.price,
 
-    previousSize:
-      previous.size,
+            previousSize: previous.size,
 
-    currentSize:
-      incoming.size,
+            currentSize: incoming.size,
 
-    sizeDifference:
-      incoming.size -
-      previous.size,
+            sizeDifference: incoming.size - previous.size,
 
-    previousNotionalQuote:
-      previous.notionalQuote,
+            previousNotionalQuote: previous.notionalQuote,
 
-    currentNotionalQuote:
-      incoming.notionalQuote,
+            currentNotionalQuote: incoming.notionalQuote,
 
-    timestamp:
-      now,
-  });
-}
+            timestamp: now,
+          });
+        }
 
         continue;
       }
 
-      const tracked =
-        this.createTrackedWhale(
-          incoming,
-          now,
-        );
+      const tracked = this.createTrackedWhale(incoming, now);
 
-      const key =
-        this.getInternalKey(
-          tracked,
-        );
+      const key = this.getInternalKey(tracked);
 
-      this.whales.set(
-        key,
-        tracked,
-      );
+      this.whales.set(key, tracked);
 
-      matchedKeys.add(
-        key,
-      );
+      matchedKeys.add(key);
 
       changes.push({
         type: 'NEW',
 
-        side:
-          tracked.side,
+        side: tracked.side,
 
-        price:
-          tracked.price,
+        price: tracked.price,
 
-        previousSize:
-          0,
+        previousSize: 0,
 
-        currentSize:
-          tracked.size,
+        currentSize: tracked.size,
 
-        sizeDifference:
-          tracked.size,
+        sizeDifference: tracked.size,
 
-        previousNotionalQuote:
-          0,
+        previousNotionalQuote: 0,
 
-        currentNotionalQuote:
-          tracked.notionalQuote,
+        currentNotionalQuote: tracked.notionalQuote,
 
-        timestamp:
-          now,
+        timestamp: now,
       });
     }
 
-    for (
-      const [key, whale]
-      of this.whales
-    ) {
-      if (
-        matchedKeys.has(key)
-      ) {
+    for (const [key, whale] of this.whales) {
+      if (matchedKeys.has(key)) {
         continue;
       }
 
-      if (
-        now -
-        whale.lastSeenAt >=
-        this.config.removalTimeoutMs
-      ) {
+      if (now - whale.lastSeenAt >= this.config.removalTimeoutMs) {
         changes.push({
           type: 'REMOVED',
 
-          side:
-            whale.side,
+          side: whale.side,
 
-          price:
-            whale.price,
+          price: whale.price,
 
-          previousSize:
-            whale.size,
+          previousSize: whale.size,
 
-          currentSize:
-            0,
+          currentSize: 0,
 
-          sizeDifference:
-            -whale.size,
+          sizeDifference: -whale.size,
 
-          previousNotionalQuote:
-            whale.notionalQuote,
+          previousNotionalQuote: whale.notionalQuote,
 
-          currentNotionalQuote:
-            0,
+          currentNotionalQuote: 0,
 
-          timestamp:
-            now,
+          timestamp: now,
         });
 
-        this.whales.delete(
-          key,
-        );
+        this.whales.delete(key);
       }
     }
 
@@ -206,56 +136,30 @@ export class WhaleTracker {
   }
 
   public getActiveWhales(): Whale[] {
-    return Array.from(
-      this.whales.values(),
-    );
+    return Array.from(this.whales.values());
   }
 
-  public getActiveWhalesBySide(
-    side: WhaleSide,
-  ): Whale[] {
-    return this.getActiveWhales()
-      .filter(
-        whale =>
-          whale.side === side,
-      );
+  public getActiveWhalesBySide(side: WhaleSide): Whale[] {
+    return this.getActiveWhales().filter((whale) => whale.side === side);
   }
 
   public clear(): void {
     this.whales.clear();
   }
 
-  private findMatchingWhale(
-    incoming: Whale,
-  ): {
+  private findMatchingWhale(incoming: Whale): {
     key: string;
     whale: TrackedWhale;
   } | null {
-    for (
-      const [key, whale]
-      of this.whales
-    ) {
-      if (
-        whale.side !==
-        incoming.side
-      ) {
+    for (const [key, whale] of this.whales) {
+      if (whale.side !== incoming.side) {
         continue;
       }
 
       const distancePercent =
-        Math.abs(
-          (
-            incoming.price -
-            whale.price
-          ) /
-          whale.price,
-        ) *
-        100;
+        Math.abs((incoming.price - whale.price) / whale.price) * 100;
 
-      if (
-        distancePercent <=
-        this.config.priceTolerancePercent
-      ) {
+      if (distancePercent <= this.config.priceTolerancePercent) {
         return {
           key,
           whale,
@@ -271,96 +175,59 @@ export class WhaleTracker {
     incoming: Whale,
     now: number,
   ): WhaleChangeType | null {
-    const previousPrice =
-      whale.price;
+    const previousPrice = whale.price;
 
-    const previousNotional =
-      whale.notionalQuote;
+    const previousNotional = whale.notionalQuote;
 
-    whale.price =
-      incoming.price;
+    whale.price = incoming.price;
 
-    whale.size =
-      incoming.size;
+    whale.size = incoming.size;
 
-    whale.notionalQuote =
-      incoming.notionalQuote;
+    whale.notionalQuote = incoming.notionalQuote;
 
-    whale.lastSeenAt =
-      now;
+    whale.lastSeenAt = now;
 
-    whale.ageSeconds =
-      Math.floor(
-        (
-          now -
-          whale.firstSeenAt
-        ) /
-        1000,
-      );
+    whale.ageSeconds = Math.floor((now - whale.firstSeenAt) / 1000);
 
-    whale.updateCount +=
-      1;
+    whale.updateCount += 1;
 
-    whale.maxNotionalQuote =
-      Math.max(
-        whale.maxNotionalQuote,
-        incoming.notionalQuote,
-      );
+    whale.maxNotionalQuote = Math.max(
+      whale.maxNotionalQuote,
+      incoming.notionalQuote,
+    );
 
-    if (
-      previousPrice !==
-      incoming.price
-    ) {
+    if (previousPrice !== incoming.price) {
       return 'MOVED';
     }
 
-    if (
-      incoming.notionalQuote >
-      previousNotional
-    ) {
+    if (incoming.notionalQuote > previousNotional) {
       return 'INCREASED';
     }
 
-    if (
-      incoming.notionalQuote <
-      previousNotional
-    ) {
+    if (incoming.notionalQuote < previousNotional) {
       return 'REDUCED';
     }
 
     return null;
   }
 
-  private createTrackedWhale(
-    whale: Whale,
-    now: number,
-  ): TrackedWhale {
+  private createTrackedWhale(whale: Whale, now: number): TrackedWhale {
     return {
       ...whale,
 
-      firstSeenAt:
-        now,
+      firstSeenAt: now,
 
-      lastSeenAt:
-        now,
+      lastSeenAt: now,
 
-      updateCount:
-        1,
+      updateCount: 1,
 
-      maxNotionalQuote:
-        whale.notionalQuote,
+      maxNotionalQuote: whale.notionalQuote,
 
-      ageSeconds:
-        0,
+      ageSeconds: 0,
     };
   }
 
-  private getInternalKey(
-    whale: Whale,
-  ): string {
-    return (
-      `${whale.side}:` +
-      `${whale.price}`
-    );
+  private getInternalKey(whale: Whale): string {
+    return `${whale.side}:` + `${whale.price}`;
   }
 }

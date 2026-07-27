@@ -9,10 +9,7 @@ export interface WhaleAnalysis {
 }
 
 export class WhaleAnalyzer {
-  public analyze(
-    orderBook: OrderBook,
-    whales: Whale[],
-  ): WhaleAnalysis[] {
+  public analyze(orderBook: OrderBook, whales: Whale[]): WhaleAnalysis[] {
     const bestBid = this.getBestBid(orderBook);
     const bestAsk = this.getBestAsk(orderBook);
 
@@ -26,12 +23,11 @@ export class WhaleAnalyzer {
       .map((whale) => {
         const distanceUSD = whale.price - midPrice;
 
-        const distancePercent =
-          (distanceUSD / midPrice) * 100;
+        const distancePercent = (distanceUSD / midPrice) * 100;
 
         let strength: WhaleAnalysis['strength'];
 
-      if (whale.notionalQuote >= 1_000_000) {
+        if (whale.notionalQuote >= 1_000_000) {
           strength = 'HIGH';
         } else if (whale.notionalQuote >= 750_000) {
           strength = 'MEDIUM';
@@ -47,19 +43,15 @@ export class WhaleAnalyzer {
         };
       })
       .sort(
-        (a, b) =>
-          Math.abs(a.distancePercent) -
-          Math.abs(b.distancePercent),
+        (a, b) => Math.abs(a.distancePercent) - Math.abs(b.distancePercent),
       );
   }
 
   private getBestBid(orderBook: OrderBook) {
-    return [...orderBook.bids.values()]
-      .sort((a, b) => b.price - a.price)[0];
+    return [...orderBook.bids.values()].sort((a, b) => b.price - a.price)[0];
   }
 
   private getBestAsk(orderBook: OrderBook) {
-    return [...orderBook.asks.values()]
-      .sort((a, b) => a.price - b.price)[0];
+    return [...orderBook.asks.values()].sort((a, b) => a.price - b.price)[0];
   }
 }

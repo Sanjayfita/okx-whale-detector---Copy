@@ -1,40 +1,22 @@
 import { OKXWebSocketClient } from './clients/okx/OKXWebSocketClient';
-import { OKXCandleWebSocketClient,} from './clients/okx/OKXCandleWebSocketClient';
+import { OKXCandleWebSocketClient } from './clients/okx/OKXCandleWebSocketClient';
 import { WATCHLIST } from './config/symbols';
 import { MarketState } from './core/MarketState';
-import {
-  SummaryThrottle,
-} from './core/SummaryThrottle';  
-import {
-  CandleUpdateHandler,
-} from './core/CandleUpdateHandler';
-import {
-  MarketEngine,
-} from './market/MarketEngine';
+import { SummaryThrottle } from './core/SummaryThrottle';
+import { CandleUpdateHandler } from './core/CandleUpdateHandler';
+import { MarketEngine } from './market/MarketEngine';
 
-console.log(
-  'OKX Whale Detector starting...',
-);
+console.log('OKX Whale Detector starting...');
 
+const client = new OKXWebSocketClient();
 
-const client =
-  new OKXWebSocketClient();
+const candleClient = new OKXCandleWebSocketClient();
 
-const candleClient =
-  new OKXCandleWebSocketClient();
+const marketStates = new Map<string, MarketState>();
 
-const marketStates =
-  new Map<string, MarketState>();
+const summaryThrottle = new SummaryThrottle(5_000);
 
-const summaryThrottle =
-  new SummaryThrottle(
-    5_000,
-  );
-
-for (
-  const symbol
-  of WATCHLIST
-) {
+for (const symbol of WATCHLIST) {
   marketStates.set(
     symbol,
 
@@ -42,36 +24,20 @@ for (
   );
 }
 
-const marketEngine =
-  new MarketEngine(
-    marketStates,
-    summaryThrottle,
-  );
+const marketEngine = new MarketEngine(marketStates, summaryThrottle);
 
-  const candleUpdateHandler =
-  new CandleUpdateHandler(
-    marketStates,
-  );
+const candleUpdateHandler = new CandleUpdateHandler(marketStates);
 
-
-  candleClient.onCandle(
-  candle => {
-    candleUpdateHandler.handle(
-      candle,
-    );
-  },
-);
+candleClient.onCandle((candle) => {
+  candleUpdateHandler.handle(candle);
+});
 
 client.onReconnect(() => {
   console.warn(
-    '🔄 OKX connection restored. ' +
-    'Resetting local market state...',
+    '🔄 OKX connection restored. ' + 'Resetting local market state...',
   );
 
-  for (
-    const symbol
-    of WATCHLIST
-  ) {
+  for (const symbol of WATCHLIST) {
     /*
      * A new MarketState resets:
      * - OrderBookManager
@@ -83,78 +49,50 @@ client.onReconnect(() => {
      * - internal WhaleScoreEngine
      * - MarketAnalyzer
      */
-    marketStates.set(
-      symbol,
-      new MarketState(),
-    );
+    marketStates.set(symbol, new MarketState());
   }
-    /*
-     * src/index.ts currently uses this
-     * separate score-engine map, so it
-     * must also be replaced.
-     */
-candleUpdateHandler.reset(); 
+  /*
+   * src/index.ts currently uses this
+   * separate score-engine map, so it
+   * must also be replaced.
+   */
+  candleUpdateHandler.reset();
   marketEngine.reset();
 
-
   console.log(
-    '✅ Local market state reset. ' +
-    'Waiting for fresh snapshots...',
+    '✅ Local market state reset. ' + 'Waiting for fresh snapshots...',
   );
 });
 
+client.onOrderBook((update) => {
+  marketEngine.processOrderBookUpdate(update);
+});
 
-client.onOrderBook(
-  update => {
-    marketEngine.processOrderBookUpdate(
-      update,
-    );
-  },
-);
-
-for (
-  const symbol
-  of WATCHLIST
-) {
+for (const symbol of WATCHLIST) {
   client.subscribeToOrderBook(
     symbol,
 
     'SPOT',
   );
 
-
-  candleClient.subscribeToCandle(
-    symbol,
-  );
+  candleClient.subscribeToCandle(symbol);
 }
 
 let isShuttingDown = false;
 
-const shutdown = (
-  signal: NodeJS.Signals,
-): void => {
+const shutdown = (signal: NodeJS.Signals): void => {
   if (isShuttingDown) {
     return;
   }
 
   isShuttingDown = true;
 
-  console.log(
-    `Received ${signal}; closing OKX connections.`,
-  );
+  console.log(`Received ${signal}; closing OKX connections.`);
 
   client.close();
   candleClient.close();
 };
 
-process.once(
-  'SIGINT',
-  () =>
-    shutdown('SIGINT'),
-);
+process.once('SIGINT', () => shutdown('SIGINT'));
 
-process.once(
-  'SIGTERM',
-  () =>
-    shutdown('SIGTERM'),
-);
+process.once('SIGTERM', () => shutdown('SIGTERM'));

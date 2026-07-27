@@ -5,8 +5,7 @@ export type OrderBookLevel = [
   orderCount: string,
 ];
 
-export type QuoteCurrency =
-  'USDT';
+export type QuoteCurrency = 'USDT';
 
 export interface OrderLevel {
   price: number;
@@ -21,17 +20,13 @@ export interface OrderLevel {
    */
   notionalQuote: number;
 
-  quoteCurrency:
-    QuoteCurrency;
+  quoteCurrency: QuoteCurrency;
 
   updatedAt: number;
 }
 
 export type OrderBookStatus =
-  | 'INITIALIZING'
-  | 'SYNCED'
-  | 'INVALID'
-  | 'RESYNCING';
+  'INITIALIZING' | 'SYNCED' | 'INVALID' | 'RESYNCING';
 
 export interface OrderBook {
   bids: Map<number, OrderLevel>;
