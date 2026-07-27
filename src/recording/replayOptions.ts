@@ -4,6 +4,8 @@ export interface ReplayOptions {
   filePath: string;
   symbol?: string;
   speed: ReplaySpeed;
+  report: boolean;
+  reportPath?: string;
 }
 
 export const parseReplayOptions = (args: readonly string[]): ReplayOptions => {
@@ -11,12 +13,14 @@ export const parseReplayOptions = (args: readonly string[]): ReplayOptions => {
 
   if (!filePath) {
     throw new Error(
-      'Usage: npm run replay -- <recording.ndjson> [--symbol BTC-USDT] [--speed instant|realtime|10x]',
+      'Usage: npm run replay -- <recording.ndjson> [--symbol BTC-USDT] [--speed instant|realtime|10x] [--report [report.json]]',
     );
   }
 
   let symbol: string | undefined;
   let speed: ReplaySpeed = 'instant';
+  let report = false;
+  let reportPath: string | undefined;
 
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index];
@@ -42,10 +46,19 @@ export const parseReplayOptions = (args: readonly string[]): ReplayOptions => {
       continue;
     }
 
+    if (flag === '--report') {
+      report = true;
+      if (value && !value.startsWith('--')) {
+        reportPath = value;
+        index += 1;
+      }
+      continue;
+    }
+
     throw new Error(`Unknown replay option: ${flag}`);
   }
 
-  return { filePath, symbol, speed };
+  return { filePath, symbol, speed, report, reportPath };
 };
 
 export const parseReplaySpeed = (value: string): ReplaySpeed => {
