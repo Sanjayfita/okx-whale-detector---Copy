@@ -340,9 +340,18 @@ export const validateAppConfig = (config: AppConfig): void => {
     'history.candleLimit',
     config.history.candleLimit,
   );
+  requireFinitePositive(
+    errors,
+    'history.orderBookLevelLimit',
+    config.history.orderBookLevelLimit,
+  );
 
   if (!Number.isInteger(config.history.candleLimit)) {
     errors.push('history.candleLimit must be an integer');
+  }
+
+  if (!Number.isInteger(config.history.orderBookLevelLimit)) {
+    errors.push('history.orderBookLevelLimit must be an integer');
   }
 
   if (errors.length > 0) {
