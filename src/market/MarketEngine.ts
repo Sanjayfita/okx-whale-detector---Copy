@@ -29,15 +29,17 @@ export class MarketEngine {
         return;
       }
 
-      const wasApplied = this.pipelineProfiler.measure('orderBook.applyUpdate', () =>
-        state.orderBookManager.applyUpdate(
-          update.bids,
-          update.asks,
-          update.timestamp,
-          update.seqId,
-          update.prevSeqId,
-          update.action,
-        ),
+      const wasApplied = this.pipelineProfiler.measure(
+        'orderBook.applyUpdate',
+        () =>
+          state.orderBookManager.applyUpdate(
+            update.bids,
+            update.asks,
+            update.timestamp,
+            update.seqId,
+            update.prevSeqId,
+            update.action,
+          ),
       );
 
       if (!wasApplied) {
@@ -68,11 +70,17 @@ export class MarketEngine {
         return;
       }
 
-      const scoredWhales = this.pipelineProfiler.measure('whaleScore.scoreAndPrune', () => {
-        const scored = state.whaleScoreEngine.scoreMany(result.active, currentPrice);
-        state.whaleScoreEngine.prune(result.active);
-        return scored;
-      });
+      const scoredWhales = this.pipelineProfiler.measure(
+        'whaleScore.scoreAndPrune',
+        () => {
+          const scored = state.whaleScoreEngine.scoreMany(
+            result.active,
+            currentPrice,
+          );
+          state.whaleScoreEngine.prune(result.active);
+          return scored;
+        },
+      );
 
       this.pipelineProfiler.measure('behavior.analyzeAndPrune', () => {
         for (const whale of result.active) {

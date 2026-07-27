@@ -29,10 +29,7 @@ export class OrderBookManager {
       throw new Error('instrument.baseUnitsPerSize must be greater than 0');
     }
 
-    if (
-      !Number.isInteger(maximumLevelsPerSide) ||
-      maximumLevelsPerSide <= 0
-    ) {
+    if (!Number.isInteger(maximumLevelsPerSide) || maximumLevelsPerSide <= 0) {
       throw new Error('maximumLevelsPerSide must be a positive integer');
     }
   }

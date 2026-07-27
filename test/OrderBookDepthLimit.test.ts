@@ -3,12 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { OrderBookManager } from '../src/core/OrderBookManager';
 import type { OrderBookLevel } from '../src/types/orderbook';
 
-const level = (price: number): OrderBookLevel => [
-  String(price),
-  '1',
-  '0',
-  '1',
-];
+const level = (price: number): OrderBookLevel => [String(price), '1', '0', '1'];
 
 describe('OrderBookManager depth limit', () => {
   it('retains the highest bids and lowest asks', () => {
@@ -23,12 +18,12 @@ describe('OrderBookManager depth limit', () => {
       'snapshot',
     );
 
-    expect([...manager.getOrderBook().bids.keys()].sort((a, b) => b - a)).toEqual([
-      100, 99, 98,
-    ]);
-    expect([...manager.getOrderBook().asks.keys()].sort((a, b) => a - b)).toEqual([
-      101, 102, 103,
-    ]);
+    expect(
+      [...manager.getOrderBook().bids.keys()].sort((a, b) => b - a),
+    ).toEqual([100, 99, 98]);
+    expect(
+      [...manager.getOrderBook().asks.keys()].sort((a, b) => a - b),
+    ).toEqual([101, 102, 103]);
   });
 
   it('prunes runaway incremental levels while preserving the best prices', () => {
@@ -52,12 +47,12 @@ describe('OrderBookManager depth limit', () => {
       'update',
     );
 
-    expect([...manager.getOrderBook().bids.keys()].sort((a, b) => b - a)).toEqual([
-      101, 100,
-    ]);
-    expect([...manager.getOrderBook().asks.keys()].sort((a, b) => a - b)).toEqual([
-      100.5, 101,
-    ]);
+    expect(
+      [...manager.getOrderBook().bids.keys()].sort((a, b) => b - a),
+    ).toEqual([101, 100]);
+    expect(
+      [...manager.getOrderBook().asks.keys()].sort((a, b) => a - b),
+    ).toEqual([100.5, 101]);
   });
 
   it('rejects an invalid depth limit', () => {

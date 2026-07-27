@@ -82,12 +82,8 @@ for (let index = 0; index < updates; index += 1) {
   engine.processOrderBookUpdate({
     instId: symbol,
     action: 'update',
-    bids: [
-      level(100 - depthIndex * 0.01, 5_000 + (index % 500)),
-    ],
-    asks: [
-      level(100.01 + depthIndex * 0.01, 5_000 + (index % 700)),
-    ],
+    bids: [level(100 - depthIndex * 0.01, 5_000 + (index % 500))],
+    asks: [level(100.01 + depthIndex * 0.01, 5_000 + (index % 700))],
     timestamp: seqId,
     seqId,
     prevSeqId: seqId - 1,
@@ -100,9 +96,13 @@ const orderBook = marketStates.get(symbol)?.orderBookManager.getOrderBook();
 
 console.log('\nDETERMINISTIC LOAD TEST');
 console.log(`Updates: ${updates.toLocaleString('en-US')}`);
-console.log(`Book depth: ${orderBook?.bids.size ?? 0} bids / ${orderBook?.asks.size ?? 0} asks`);
+console.log(
+  `Book depth: ${orderBook?.bids.size ?? 0} bids / ${orderBook?.asks.size ?? 0} asks`,
+);
 console.log(`Elapsed: ${elapsedMs.toFixed(2)}ms`);
-console.log(`Throughput: ${(updates / (elapsedMs / 1_000)).toFixed(2)} updates/s`);
+console.log(
+  `Throughput: ${(updates / (elapsedMs / 1_000)).toFixed(2)} updates/s`,
+);
 console.log('\nPIPELINE PROFILE');
 
 for (const stage of profile) {
