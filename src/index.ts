@@ -1,5 +1,6 @@
 import { OKXWebSocketClient } from './clients/okx/OKXWebSocketClient';
 import { OKXCandleWebSocketClient } from './clients/okx/OKXCandleWebSocketClient';
+import { appConfig } from './config/appConfig';
 import { WATCHLIST } from './config/symbols';
 import { MarketState } from './core/MarketState';
 import { SummaryThrottle } from './core/SummaryThrottle';
@@ -9,23 +10,17 @@ import { MarketEngine } from './market/MarketEngine';
 console.log('OKX Whale Detector starting...');
 
 const client = new OKXWebSocketClient();
-
 const candleClient = new OKXCandleWebSocketClient();
-
 const marketStates = new Map<string, MarketState>();
-
-const summaryThrottle = new SummaryThrottle(5_000);
+const summaryThrottle = new SummaryThrottle(
+  appConfig.reporting.summaryIntervalMs,
+);
 
 for (const symbol of WATCHLIST) {
-  marketStates.set(
-    symbol,
-
-    new MarketState(),
-  );
+  marketStates.set(symbol, new MarketState(appConfig));
 }
 
 const marketEngine = new MarketEngine(marketStates, summaryThrottle);
-
 const candleUpdateHandler = new CandleUpdateHandler(marketStates);
 
 candleClient.onCandle((candle) => {
@@ -49,13 +44,9 @@ client.onReconnect(() => {
      * - internal WhaleScoreEngine
      * - MarketAnalyzer
      */
-    marketStates.set(symbol, new MarketState());
+    marketStates.set(symbol, new MarketState(appConfig));
   }
-  /*
-   * src/index.ts currently uses this
-   * separate score-engine map, so it
-   * must also be replaced.
-   */
+
   candleUpdateHandler.reset();
   marketEngine.reset();
 
@@ -69,12 +60,7 @@ client.onOrderBook((update) => {
 });
 
 for (const symbol of WATCHLIST) {
-  client.subscribeToOrderBook(
-    symbol,
-
-    'SPOT',
-  );
-
+  client.subscribeToOrderBook(symbol, 'SPOT');
   candleClient.subscribeToCandle(symbol);
 }
 
@@ -94,5 +80,4 @@ const shutdown = (signal: NodeJS.Signals): void => {
 };
 
 process.once('SIGINT', () => shutdown('SIGINT'));
-
 process.once('SIGTERM', () => shutdown('SIGTERM'));
