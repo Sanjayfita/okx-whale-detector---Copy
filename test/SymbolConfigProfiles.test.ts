@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import { appConfig } from '../src/config/appConfig';
 import {
-  resolveMarketInstrument,
   resolveSymbolConfig,
   SYMBOL_PROFILES,
   type SymbolProfile,
@@ -12,6 +11,17 @@ import { WATCHLIST } from '../src/config/symbols';
 describe('symbol configuration profiles', () => {
   it('derives the watchlist from the configured profiles', () => {
     expect(WATCHLIST).toEqual(SYMBOL_PROFILES.map((profile) => profile.symbol));
+  });
+
+  it('declares spot and swap instrument types without contract values', () => {
+    expect(
+      SYMBOL_PROFILES.find((profile) => profile.symbol === 'BTC-USDT')
+        ?.instrumentType,
+    ).toBe('SPOT');
+    expect(
+      SYMBOL_PROFILES.find((profile) => profile.symbol === 'XAU-USDT-SWAP')
+        ?.instrumentType,
+    ).toBe('SWAP');
   });
 
   it('uses global defaults when a symbol has no override', () => {
@@ -26,6 +36,7 @@ describe('symbol configuration profiles', () => {
     const profiles: readonly SymbolProfile[] = [
       {
         symbol: 'SOL-USDT',
+        instrumentType: 'SPOT',
         config: {
           tracker: {
             minimumNotionalQuote: 250_000,
@@ -51,6 +62,7 @@ describe('symbol configuration profiles', () => {
     const profiles: readonly SymbolProfile[] = [
       {
         symbol: 'DOGE-USDT',
+        instrumentType: 'SPOT',
         config: {
           tracker: {
             minimumNotionalQuote: 100_000,
@@ -78,6 +90,7 @@ describe('symbol configuration profiles', () => {
     const profiles: readonly SymbolProfile[] = [
       {
         symbol: 'ETH-USDT',
+        instrumentType: 'SPOT',
         config: {
           tracker: {
             minimumMovementSizeRatio: 2,
@@ -89,48 +102,6 @@ describe('symbol configuration profiles', () => {
 
     expect(() => resolveSymbolConfig('ETH-USDT', profiles)).toThrow(
       'tracker.minimumMovementSizeRatio',
-    );
-  });
-
-  it('defaults ordinary symbols to spot size units', () => {
-    expect(resolveMarketInstrument('BTC-USDT')).toEqual({
-      instId: 'BTC-USDT',
-      instType: 'SPOT',
-      quoteCurrency: 'USDT',
-      baseUnitsPerSize: 1,
-    });
-  });
-
-  it('resolves gold and silver as contract-sized swap instruments', () => {
-    expect(resolveMarketInstrument('XAU-USDT-SWAP')).toEqual({
-      instId: 'XAU-USDT-SWAP',
-      instType: 'SWAP',
-      quoteCurrency: 'USDT',
-      baseUnitsPerSize: 0.001,
-    });
-
-    expect(resolveMarketInstrument('XAG-USDT-SWAP')).toEqual({
-      instId: 'XAG-USDT-SWAP',
-      instType: 'SWAP',
-      quoteCurrency: 'USDT',
-      baseUnitsPerSize: 0.01,
-    });
-  });
-
-  it('rejects a non-positive contract size', () => {
-    const profiles: readonly SymbolProfile[] = [
-      {
-        symbol: 'BAD-USDT-SWAP',
-        instrument: {
-          instType: 'SWAP',
-          quoteCurrency: 'USDT',
-          baseUnitsPerSize: 0,
-        },
-      },
-    ];
-
-    expect(() => resolveMarketInstrument('BAD-USDT-SWAP', profiles)).toThrow(
-      'baseUnitsPerSize',
     );
   });
 });
