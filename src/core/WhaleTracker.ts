@@ -86,12 +86,14 @@ interface TrackedWall {
   maxNotionalQuote: number;
   updateCount: number;
   lastPrice: number;
+  seenScan: number;
 }
 
 export class WhaleTracker {
   private readonly trackedWalls = new Map<string, TrackedWall>();
   private readonly config: WhaleTrackerConfig;
   private nextWallId = 1;
+  private scanNumber = 0;
 
   public constructor(config: WhaleTrackerConfig = DEFAULT_CONFIG) {
     this.config = config;
@@ -99,11 +101,11 @@ export class WhaleTracker {
 
   public scan(orderBook: OrderBook): WhaleScanResult {
     const now = Date.now();
+    const currentScan = (this.scanNumber += 1);
     const currentWhales: Whale[] = [];
     const newWhales: Whale[] = [];
     const removedWhales: Whale[] = [];
     const movedWhales: WhaleChange[] = [];
-    const currentKeys = new Set<string>();
     let totalBidNotionalQuote = 0;
     let totalAskNotionalQuote = 0;
 
@@ -117,7 +119,6 @@ export class WhaleTracker {
         }
 
         const key = this.createWallKey(side, level.price);
-        currentKeys.add(key);
         const existing = this.trackedWalls.get(key);
 
         if (!existing) {
@@ -130,42 +131,41 @@ export class WhaleTracker {
             maxNotionalQuote: level.notionalQuote,
             updateCount: 1,
             lastPrice: level.price,
+            seenScan: currentScan,
           });
           currentWhales.push(whale);
           newWhales.push(whale);
-          if (side === 'BID') {
-            totalBidNotionalQuote += level.notionalQuote;
-          } else {
-            totalAskNotionalQuote += level.notionalQuote;
-          }
-          continue;
+        } else {
+          existing.lastSeenAt = now;
+          existing.updateCount += 1;
+          existing.maxNotionalQuote = Math.max(
+            existing.maxNotionalQuote,
+            level.notionalQuote,
+          );
+          existing.lastPrice = level.price;
+          existing.seenScan = currentScan;
+
+          const ageSeconds = Math.floor((now - existing.firstSeenAt) / 1_000);
+          const whale: Whale = {
+            wallId: existing.whale.wallId,
+            side,
+            price: level.price,
+            size: level.size,
+            notionalQuote: level.notionalQuote,
+            quoteCurrency: level.quoteCurrency,
+            detectedAt: level.updatedAt,
+            firstSeenAt: existing.firstSeenAt,
+            lastSeenAt: existing.lastSeenAt,
+            ageSeconds,
+            updateCount: existing.updateCount,
+            maxNotionalQuote: existing.maxNotionalQuote,
+            strength: this.calculateStrength(level.notionalQuote, ageSeconds),
+          };
+
+          existing.whale = whale;
+          currentWhales.push(whale);
         }
 
-        existing.lastSeenAt = now;
-        existing.updateCount += 1;
-        existing.maxNotionalQuote = Math.max(
-          existing.maxNotionalQuote,
-          level.notionalQuote,
-        );
-        existing.lastPrice = level.price;
-        const ageSeconds = Math.floor((now - existing.firstSeenAt) / 1000);
-        const whale: Whale = {
-          wallId: existing.whale.wallId,
-          side,
-          price: level.price,
-          size: level.size,
-          notionalQuote: level.notionalQuote,
-          quoteCurrency: level.quoteCurrency,
-          detectedAt: level.updatedAt,
-          firstSeenAt: existing.firstSeenAt,
-          lastSeenAt: existing.lastSeenAt,
-          ageSeconds,
-          updateCount: existing.updateCount,
-          maxNotionalQuote: existing.maxNotionalQuote,
-          strength: this.calculateStrength(level.notionalQuote, ageSeconds),
-        };
-        existing.whale = whale;
-        currentWhales.push(whale);
         if (side === 'BID') {
           totalBidNotionalQuote += level.notionalQuote;
         } else {
@@ -183,10 +183,12 @@ export class WhaleTracker {
     }> = [];
 
     for (const [key, trackedWall] of this.trackedWalls) {
-      if (!currentKeys.has(key)) {
-        disappearedWalls.push({ key, trackedWall });
-        this.trackedWalls.delete(key);
+      if (trackedWall.seenScan === currentScan) {
+        continue;
       }
+
+      disappearedWalls.push({ key, trackedWall });
+      this.trackedWalls.delete(key);
     }
 
     const movedRemovedWhales = new Set<Whale>();
@@ -201,6 +203,7 @@ export class WhaleTracker {
 
         const priceDifference = Math.abs(candidate.price - removed.price);
         const sizeRatio = candidate.size / removed.size;
+
         return (
           priceDifference <= this.getMovementPriceTolerance(removed.price) &&
           sizeRatio >= this.config.minimumMovementSizeRatio &&
@@ -214,7 +217,7 @@ export class WhaleTracker {
 
       const oldTrackedWall = disappeared.trackedWall;
       const movedKey = this.createWallKey(moved.side, moved.price);
-      const ageSeconds = Math.floor((now - oldTrackedWall.firstSeenAt) / 1000);
+      const ageSeconds = Math.floor((now - oldTrackedWall.firstSeenAt) / 1_000);
       const updateCount = oldTrackedWall.updateCount + 1;
       const maxNotionalQuote = Math.max(
         oldTrackedWall.maxNotionalQuote,
@@ -239,6 +242,7 @@ export class WhaleTracker {
         maxNotionalQuote,
         updateCount,
         lastPrice: moved.price,
+        seenScan: currentScan,
       });
       movedRemovedWhales.add(removed);
       movedNewWhales.add(moved);
@@ -270,13 +274,31 @@ export class WhaleTracker {
 
     let persistentWalls = 0;
     let strongWalls = 0;
-    for (const trackedWall of this.trackedWalls.values()) {
-      const ageSeconds = Math.floor((now - trackedWall.firstSeenAt) / 1000);
-      if (ageSeconds >= this.config.persistentAfterSeconds) {
+    let strongestBid: Whale | undefined;
+    let strongestAsk: Whale | undefined;
+
+    for (const whale of currentWhales) {
+      if (whale.ageSeconds >= this.config.persistentAfterSeconds) {
         persistentWalls += 1;
       }
-      if (ageSeconds >= this.config.strongAfterSeconds) {
+      if (whale.ageSeconds >= this.config.strongAfterSeconds) {
         strongWalls += 1;
+      }
+
+      if (
+        whale.side === 'BID' &&
+        (!strongestBid ||
+          (whale.strength ?? 0) > (strongestBid.strength ?? 0))
+      ) {
+        strongestBid = whale;
+      }
+
+      if (
+        whale.side === 'ASK' &&
+        (!strongestAsk ||
+          (whale.strength ?? 0) > (strongestAsk.strength ?? 0))
+      ) {
+        strongestAsk = whale;
       }
     }
 
@@ -288,8 +310,8 @@ export class WhaleTracker {
       strongWalls,
       totalBidNotionalQuote,
       totalAskNotionalQuote,
-      strongestBid: this.findStrongest(currentWhales, 'BID'),
-      strongestAsk: this.findStrongest(currentWhales, 'ASK'),
+      strongestBid,
+      strongestAsk,
       newWhales: finalNewWhales,
       removedWhales,
       movedWhales,
@@ -305,6 +327,7 @@ export class WhaleTracker {
   public reset(): void {
     this.trackedWalls.clear();
     this.nextWallId = 1;
+    this.scanNumber = 0;
   }
 
   private createWhale(side: WhaleSide, level: OrderLevel, now: number): Whale {
@@ -337,6 +360,7 @@ export class WhaleTracker {
 
   private calculateStrength(notionalQuote: number, ageSeconds: number): number {
     let score: number;
+
     if (notionalQuote >= this.config.strengthLargeNotional) {
       score = this.config.strengthLargeScore;
     } else if (notionalQuote >= this.config.strengthMediumNotional) {
@@ -358,12 +382,6 @@ export class WhaleTracker {
     }
 
     return Math.min(score, this.config.strengthMaximum);
-  }
-
-  private findStrongest(whales: Whale[], side: WhaleSide): Whale | undefined {
-    return whales
-      .filter((whale) => whale.side === side)
-      .sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0))[0];
   }
 
   private getMovementPriceTolerance(price: number): number {
