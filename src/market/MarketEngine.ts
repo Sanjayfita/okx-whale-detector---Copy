@@ -1,13 +1,9 @@
 import type { OKXOrderBookUpdate } from '../clients/okx/OKXWebSocketClient';
-
-import type { MarketState } from '../core/MarketState';
-
-import { ProcessingMonitor } from '../core/ProcessingMonitor';
-
-import { SummaryThrottle } from '../core/SummaryThrottle';
-
 import { performanceConfig } from '../config/performanceConfig';
-
+import type { MarketState } from '../core/MarketState';
+import { PipelineProfiler } from '../core/PipelineProfiler';
+import { ProcessingMonitor } from '../core/ProcessingMonitor';
+import { SummaryThrottle } from '../core/SummaryThrottle';
 import { MarketReporter } from '../reporting/MarketReporter';
 
 export class MarketEngine {
@@ -15,14 +11,12 @@ export class MarketEngine {
 
   constructor(
     private readonly marketStates: Map<string, MarketState>,
-
     private readonly summaryThrottle: SummaryThrottle,
-
     private readonly reporter: MarketReporter = new MarketReporter(),
-
     private readonly processingMonitor: ProcessingMonitor = new ProcessingMonitor(
       performanceConfig,
     ),
+    private readonly pipelineProfiler: PipelineProfiler = new PipelineProfiler(),
   ) {}
 
   public processOrderBookUpdate(update: OKXOrderBookUpdate): void {
@@ -35,19 +29,20 @@ export class MarketEngine {
         return;
       }
 
-      const wasApplied = state.orderBookManager.applyUpdate(
-        update.bids,
-        update.asks,
-        update.timestamp,
-        update.seqId,
-        update.prevSeqId,
-        update.action,
+      const wasApplied = this.pipelineProfiler.measure('orderBook.applyUpdate', () =>
+        state.orderBookManager.applyUpdate(
+          update.bids,
+          update.asks,
+          update.timestamp,
+          update.seqId,
+          update.prevSeqId,
+          update.action,
+        ),
       );
 
       if (!wasApplied) {
         if (!this.sequenceGapSymbols.has(update.instId)) {
           this.sequenceGapSymbols.add(update.instId);
-
           this.reporter.reportSequenceGap(update.instId);
         }
 
@@ -64,66 +59,70 @@ export class MarketEngine {
         return;
       }
 
-      const result = state.whaleTracker.scan(orderBook);
-
+      const result = this.pipelineProfiler.measure('whaleTracker.scan', () =>
+        state.whaleTracker.scan(orderBook),
+      );
       const currentPrice = state.orderBookManager.getMidPrice();
 
       if (currentPrice === undefined) {
         return;
       }
 
-      const scoredWhales = state.whaleScoreEngine.scoreMany(
-        result.active,
-        currentPrice,
-      );
+      const scoredWhales = this.pipelineProfiler.measure('whaleScore.scoreAndPrune', () => {
+        const scored = state.whaleScoreEngine.scoreMany(result.active, currentPrice);
+        state.whaleScoreEngine.prune(result.active);
+        return scored;
+      });
 
-      state.whaleScoreEngine.prune(result.active);
+      this.pipelineProfiler.measure('behavior.analyzeAndPrune', () => {
+        for (const whale of result.active) {
+          const currentBehaviors = state.whaleBehaviorEngine.analyze(whale);
+          const enteredBehaviors =
+            state.behaviorTransitionTracker.getEnteredBehaviors(
+              whale,
+              currentBehaviors,
+            );
 
-      for (const whale of result.active) {
-        const currentBehaviors = state.whaleBehaviorEngine.analyze(whale);
-
-        const enteredBehaviors =
-          state.behaviorTransitionTracker.getEnteredBehaviors(
-            whale,
-            currentBehaviors,
-          );
-
-        for (const behavior of enteredBehaviors) {
-          this.reporter.reportBehavior(behavior);
-        }
-      }
-
-      state.whaleBehaviorEngine.prune(result.active);
-
-      state.behaviorTransitionTracker.prune(result.active);
-
-      const walls = state.wallDetector.detect(orderBook);
-
-      const whaleEvents = state.whaleEventDetector.detect(result.active);
-
-      for (const event of whaleEvents) {
-        if (event.type === 'REMOVED') {
-          const spoof = state.whaleBehaviorEngine.analyzeRemoval(event.whale);
-
-          if (spoof) {
-            this.reporter.reportSpoof(update.instId, spoof);
+          for (const behavior of enteredBehaviors) {
+            this.reporter.reportBehavior(behavior);
           }
         }
 
-        this.reporter.reportWhaleEvent(update.instId, event);
-      }
+        state.whaleBehaviorEngine.prune(result.active);
+        state.behaviorTransitionTracker.prune(result.active);
+      });
 
-      for (const whale of result.active) {
-        const refill = state.whaleRefillDetector.detect(whale);
+      const walls = this.pipelineProfiler.measure('wallDetector.detect', () =>
+        state.wallDetector.detect(orderBook),
+      );
 
-        if (!refill) {
-          continue;
+      this.pipelineProfiler.measure('whaleEvents.detectAndReport', () => {
+        const whaleEvents = state.whaleEventDetector.detect(result.active);
+
+        for (const event of whaleEvents) {
+          if (event.type === 'REMOVED') {
+            const spoof = state.whaleBehaviorEngine.analyzeRemoval(event.whale);
+
+            if (spoof) {
+              this.reporter.reportSpoof(update.instId, spoof);
+            }
+          }
+
+          this.reporter.reportWhaleEvent(update.instId, event);
+        }
+      });
+
+      this.pipelineProfiler.measure('refill.detectAndPrune', () => {
+        for (const whale of result.active) {
+          const refill = state.whaleRefillDetector.detect(whale);
+
+          if (refill) {
+            this.reporter.reportRefill(update.instId, refill);
+          }
         }
 
-        this.reporter.reportRefill(update.instId, refill);
-      }
-
-      state.whaleRefillDetector.prune(result.active);
+        state.whaleRefillDetector.prune(result.active);
+      });
 
       for (const moved of result.movedWhales) {
         this.reporter.reportMovedWhale(update.instId, moved);
@@ -133,31 +132,24 @@ export class MarketEngine {
         return;
       }
 
-      const bestBid = state.orderBookManager.getBestBid();
+      this.pipelineProfiler.measure('summary.analyzeAndReport', () => {
+        const bestBid = state.orderBookManager.getBestBid();
+        const bestAsk = state.orderBookManager.getBestAsk();
+        const marketSignal = state.marketAnalyzer.analyze(
+          result.active,
+          currentPrice,
+        );
 
-      const bestAsk = state.orderBookManager.getBestAsk();
-
-      const marketSignal = state.marketAnalyzer.analyze(
-        result.active,
-        currentPrice,
-      );
-
-      this.reporter.reportSummary({
-        symbol: update.instId,
-
-        currentPrice,
-
-        bestBidPrice: bestBid?.price,
-
-        bestAskPrice: bestAsk?.price,
-
-        activeWhales: result.active,
-
-        walls,
-
-        scoredWhales,
-
-        marketSignal,
+        this.reporter.reportSummary({
+          symbol: update.instId,
+          currentPrice,
+          bestBidPrice: bestBid?.price,
+          bestAskPrice: bestAsk?.price,
+          activeWhales: result.active,
+          walls,
+          scoredWhales,
+          marketSignal,
+        });
       });
     } finally {
       this.processingMonitor.record(
@@ -167,10 +159,15 @@ export class MarketEngine {
     }
   }
 
+  public getPipelineProfile() {
+    return this.pipelineProfiler.getSnapshot();
+  }
+
   public reset(): void {
     this.sequenceGapSymbols.clear();
     this.summaryThrottle.reset();
     this.processingMonitor.reset();
+    this.pipelineProfiler.reset();
   }
 
   public resetSymbols(symbols: readonly string[]): void {
