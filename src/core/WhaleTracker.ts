@@ -289,16 +289,14 @@ export class WhaleTracker {
 
       if (
         whale.side === 'BID' &&
-        (!strongestBid ||
-          (whale.strength ?? 0) > (strongestBid.strength ?? 0))
+        (!strongestBid || (whale.strength ?? 0) > (strongestBid.strength ?? 0))
       ) {
         strongestBid = whale;
       }
 
       if (
         whale.side === 'ASK' &&
-        (!strongestAsk ||
-          (whale.strength ?? 0) > (strongestAsk.strength ?? 0))
+        (!strongestAsk || (whale.strength ?? 0) > (strongestAsk.strength ?? 0))
       ) {
         strongestAsk = whale;
       }
