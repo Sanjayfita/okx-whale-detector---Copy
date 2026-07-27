@@ -278,10 +278,12 @@ export class WhaleTracker {
     let strongestAsk: Whale | undefined;
 
     for (const whale of currentWhales) {
-      if (whale.ageSeconds >= this.config.persistentAfterSeconds) {
+      const ageSeconds = whale.ageSeconds ?? 0;
+
+      if (ageSeconds >= this.config.persistentAfterSeconds) {
         persistentWalls += 1;
       }
-      if (whale.ageSeconds >= this.config.strongAfterSeconds) {
+      if (ageSeconds >= this.config.strongAfterSeconds) {
         strongWalls += 1;
       }
 
