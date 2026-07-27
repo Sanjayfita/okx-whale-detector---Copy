@@ -37,10 +37,42 @@ const DEFAULT_CONFIG: PolymarketPublicClientConfig = {
   requestTimeoutMs: 15_000,
 };
 
+const MARKET_PAGE_SIZE = 100;
+
 const toFiniteNumber = (value: unknown): number => {
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+const parseMarkets = (payload: readonly unknown[]): PolymarketMarket[] =>
+  payload.flatMap((market) => {
+    if (!market || typeof market !== 'object') {
+      return [];
+    }
+
+    const value = market as Record<string, unknown>;
+    const conditionId = String(value.conditionId ?? '');
+    const question = String(value.question ?? '');
+
+    if (!conditionId || !question) {
+      return [];
+    }
+
+    return [
+      {
+        id: String(value.id ?? conditionId),
+        conditionId,
+        question,
+        slug: String(value.slug ?? ''),
+        liquidity: toFiniteNumber(value.liquidityNum ?? value.liquidity),
+        volume: toFiniteNumber(value.volumeNum ?? value.volume),
+        endDate:
+          typeof value.endDate === 'string' ? value.endDate : undefined,
+        category:
+          typeof value.category === 'string' ? value.category : undefined,
+      },
+    ];
+  });
 
 export class PolymarketPublicClient {
   private readonly config: PolymarketPublicClientConfig;
@@ -50,43 +82,31 @@ export class PolymarketPublicClient {
   }
 
   public async getActiveMarkets(limit = 500): Promise<PolymarketMarket[]> {
-    const url = new URL('/markets', this.config.gammaBaseUrl);
-    url.searchParams.set('active', 'true');
-    url.searchParams.set('closed', 'false');
-    url.searchParams.set('limit', String(limit));
-    url.searchParams.set('offset', '0');
-    url.searchParams.set('order', 'liquidity');
-    url.searchParams.set('ascending', 'false');
+    if (!Number.isInteger(limit) || limit <= 0) {
+      throw new Error('Polymarket market limit must be a positive integer');
+    }
 
-    const payload = await this.fetchJson<unknown[]>(url);
-    return payload.flatMap((market) => {
-      if (!market || typeof market !== 'object') {
-        return [];
+    const markets: PolymarketMarket[] = [];
+
+    for (let offset = 0; offset < limit; offset += MARKET_PAGE_SIZE) {
+      const pageLimit = Math.min(MARKET_PAGE_SIZE, limit - offset);
+      const url = new URL('/markets', this.config.gammaBaseUrl);
+      url.searchParams.set('active', 'true');
+      url.searchParams.set('closed', 'false');
+      url.searchParams.set('limit', String(pageLimit));
+      url.searchParams.set('offset', String(offset));
+      url.searchParams.set('order', 'liquidity');
+      url.searchParams.set('ascending', 'false');
+
+      const payload = await this.fetchJson<unknown[]>(url);
+      markets.push(...parseMarkets(payload));
+
+      if (payload.length < pageLimit) {
+        break;
       }
+    }
 
-      const value = market as Record<string, unknown>;
-      const conditionId = String(value.conditionId ?? '');
-      const question = String(value.question ?? '');
-
-      if (!conditionId || !question) {
-        return [];
-      }
-
-      return [
-        {
-          id: String(value.id ?? conditionId),
-          conditionId,
-          question,
-          slug: String(value.slug ?? ''),
-          liquidity: toFiniteNumber(value.liquidityNum ?? value.liquidity),
-          volume: toFiniteNumber(value.volumeNum ?? value.volume),
-          endDate:
-            typeof value.endDate === 'string' ? value.endDate : undefined,
-          category:
-            typeof value.category === 'string' ? value.category : undefined,
-        },
-      ];
-    });
+    return markets.slice(0, limit);
   }
 
   public async getRecentTrades(
