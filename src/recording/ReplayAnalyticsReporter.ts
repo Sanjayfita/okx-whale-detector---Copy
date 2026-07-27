@@ -43,17 +43,11 @@ export class ReplayAnalyticsReporter extends MarketReporter {
       (this.totals.behaviorEvents[behavior.type] ?? 0) + 1;
   }
 
-  public override reportSpoof(
-    _symbol: string,
-    _spoof: WhaleBehavior,
-  ): void {
+  public override reportSpoof(_symbol: string, _spoof: WhaleBehavior): void {
     this.totals.spoofEvents += 1;
   }
 
-  public override reportWhaleEvent(
-    _symbol: string,
-    event: WhaleEvent,
-  ): void {
+  public override reportWhaleEvent(_symbol: string, event: WhaleEvent): void {
     this.totals.whaleEvents[event.type] += 1;
   }
 
@@ -64,10 +58,7 @@ export class ReplayAnalyticsReporter extends MarketReporter {
     this.totals.refillEvents += 1;
   }
 
-  public override reportMovedWhale(
-    _symbol: string,
-    _moved: WhaleChange,
-  ): void {
+  public override reportMovedWhale(_symbol: string, _moved: WhaleChange): void {
     this.totals.movedWhales += 1;
   }
 

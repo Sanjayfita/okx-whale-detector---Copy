@@ -48,11 +48,7 @@ describe('replay options', () => {
 
   it('accepts a custom report path', () => {
     expect(
-      parseReplayOptions([
-        'session.ndjson',
-        '--report',
-        'reports/custom.json',
-      ]),
+      parseReplayOptions(['session.ndjson', '--report', 'reports/custom.json']),
     ).toEqual({
       filePath: 'session.ndjson',
       speed: 'instant',
