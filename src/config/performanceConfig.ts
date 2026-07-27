@@ -10,9 +10,7 @@ export const performanceConfig: PerformanceConfig = {
   maximumSamplesPerSymbol: 100,
 };
 
-export const validatePerformanceConfig = (
-  config: PerformanceConfig,
-): void => {
+export const validatePerformanceConfig = (config: PerformanceConfig): void => {
   const errors: string[] = [];
 
   if (
@@ -22,7 +20,10 @@ export const validatePerformanceConfig = (
     errors.push('slowUpdateThresholdMs must be greater than 0');
   }
 
-  if (!Number.isFinite(config.warningCooldownMs) || config.warningCooldownMs < 0) {
+  if (
+    !Number.isFinite(config.warningCooldownMs) ||
+    config.warningCooldownMs < 0
+  ) {
     errors.push('warningCooldownMs must be greater than or equal to 0');
   }
 
@@ -34,6 +35,8 @@ export const validatePerformanceConfig = (
   }
 
   if (errors.length > 0) {
-    throw new Error(`Invalid performance configuration:\n- ${errors.join('\n- ')}`);
+    throw new Error(
+      `Invalid performance configuration:\n- ${errors.join('\n- ')}`,
+    );
   }
 };
