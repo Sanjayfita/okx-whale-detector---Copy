@@ -34,7 +34,7 @@ const defaultJsonLoader: JsonLoader = async (url) => {
   return response.json();
 };
 
-const parseTicker = (value: unknown): OKXTicker => {
+const parseTicker = (value: unknown): OKXTicker | null => {
   if (!isRecord(value)) {
     throw new Error('OKX returned a malformed ticker record');
   }
@@ -42,19 +42,23 @@ const parseTicker = (value: unknown): OKXTicker => {
   const instType = readString(value, 'instType');
 
   if (instType !== 'SPOT' && instType !== 'SWAP') {
-    throw new Error(`Unsupported OKX ticker instrument type: ${instType || 'missing'}`);
+    throw new Error(
+      `Unsupported OKX ticker instrument type: ${instType || 'missing'}`,
+    );
   }
 
   const instId = readString(value, 'instId');
   const last = Number(readString(value, 'last'));
   const volumeCurrency24h = Number(readString(value, 'volCcy24h'));
 
-  if (!instId || !Number.isFinite(last) || last <= 0) {
-    throw new Error(`Invalid OKX ticker price metadata for ${instId || 'unknown instrument'}`);
-  }
-
-  if (!Number.isFinite(volumeCurrency24h) || volumeCurrency24h < 0) {
-    throw new Error(`Invalid OKX ticker volume metadata for ${instId}`);
+  if (
+    !instId ||
+    !Number.isFinite(last) ||
+    last <= 0 ||
+    !Number.isFinite(volumeCurrency24h) ||
+    volumeCurrency24h < 0
+  ) {
+    return null;
   }
 
   return {
@@ -84,7 +88,9 @@ const parseResponse = (value: unknown): OKXTicker[] => {
     throw new Error('OKX ticker response is missing its data array');
   }
 
-  return value.data.map(parseTicker);
+  return value.data
+    .map(parseTicker)
+    .filter((ticker): ticker is OKXTicker => ticker !== null);
 };
 
 const isUsdtMarket = (ticker: OKXTicker): boolean =>
