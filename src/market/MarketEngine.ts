@@ -154,4 +154,11 @@ export class MarketEngine {
     this.sequenceGapSymbols.clear();
     this.summaryThrottle.reset();
   }
+
+  public resetSymbols(symbols: readonly string[]): void {
+    for (const symbol of symbols) {
+      this.sequenceGapSymbols.delete(symbol);
+      this.summaryThrottle.reset(symbol);
+    }
+  }
 }
