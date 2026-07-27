@@ -29,46 +29,33 @@ export interface MarketSummarySignal {
     | 'BEARISH'
     | 'NEUTRAL';
 
-  confidence:
-    number;
-
-  reason:
-    string;
-
-  bidPressure:
-    number;
-
-  askPressure:
-    number;
+  confidence: number;
+  reason: string;
+  bidPressure: number;
+  askPressure: number;
 }
 
 export interface MarketSummaryInput {
-  symbol:
-    string;
-
-  currentPrice:
-    number;
-
-  bestBidPrice?:
-    number;
-
-  bestAskPrice?:
-    number;
-
-  activeWhales:
-    Whale[];
-
-  walls:
-    Wall[];
-
-  scoredWhales:
-    WhaleScore[];
-
-  marketSignal:
-    MarketSummarySignal;
+  symbol: string;
+  currentPrice: number;
+  bestBidPrice?: number;
+  bestAskPrice?: number;
+  activeWhales: Whale[];
+  walls: Wall[];
+  scoredWhales: WhaleScore[];
+  marketSignal: MarketSummarySignal;
 }
 
 export class MarketReporter {
+  private readonly priceFractionDigits:
+    Readonly<Record<string, number>> = {
+      'BTC-USDT': 2,
+      'ETH-USDT': 2,
+      'SOL-USDT': 2,
+      'XRP-USDT': 4,
+      'DOGE-USDT': 5,
+    };
+
   public reportSequenceGap(
     symbol: string,
   ): void {
@@ -84,36 +71,36 @@ export class MarketReporter {
     console.log(
       `🧠 ${behavior.type} | ` +
       `${behavior.whale.side} | ` +
-      `Confidence: ` +
-      `${behavior.confidence.toFixed(
-        0,
-      )}% | ` +
+      `Confidence: ${behavior.confidence.toFixed(0)}% | ` +
       `${behavior.reason}`,
     );
   }
 
   public reportSpoof(
+    symbol: string,
     spoof: WhaleBehavior,
   ): void {
     console.log(
       `🎭 SPOOF DETECTED | ` +
       `${spoof.whale.side} | ` +
-      `Price: ${spoof.whale.price} | ` +
-      `Value: ` +
-      `${this.formatQuote(
-        spoof.whale
-          .notionalQuote,
-      )} USDT | ` +
-      `Confidence: ` +
-      `${spoof.confidence}%`,
+      `Price: ${this.formatPrice(symbol, spoof.whale.price)} | ` +
+      `Value: ${this.formatQuote(spoof.whale.notionalQuote)} USDT | ` +
+      `Confidence: ${spoof.confidence}%`,
     );
   }
 
   public reportWhaleEvent(
+    symbol: string,
     event: WhaleEvent,
   ): void {
     const whale =
       event.whale;
+
+    const price =
+      this.formatPrice(
+        symbol,
+        whale.price,
+      );
 
     const value =
       this.formatQuote(
@@ -124,86 +111,81 @@ export class MarketReporter {
       case 'NEW':
         console.log(
           `🆕 NEW ${whale.side} WHALE | ` +
-          `Price: ${whale.price} | ` +
+          `Price: ${price} | ` +
           `Value: ${value} USDT`,
         );
-
         break;
 
       case 'REMOVED':
         console.log(
           `💥 REMOVED ${whale.side} WHALE | ` +
-          `Price: ${whale.price} | ` +
+          `Price: ${price} | ` +
           `Value: ${value} USDT`,
         );
-
         break;
 
       case 'INCREASED':
         console.log(
           `📈 INCREASED ${whale.side} WHALE | ` +
-          `Price: ${whale.price} | ` +
+          `Price: ${price} | ` +
           `Value: ${value} USDT`,
         );
-
         break;
 
       case 'DECREASED':
         console.log(
           `📉 DECREASED ${whale.side} WHALE | ` +
-          `Price: ${whale.price} | ` +
+          `Price: ${price} | ` +
           `Value: ${value} USDT`,
         );
-
         break;
 
       case 'MOVED':
-        /*
-         * WhaleTracker already prints its
-         * detailed moved-wall event.
-         */
         break;
     }
   }
 
   public reportRefill(
+    symbol: string,
     refill: WhaleRefillEvent,
   ): void {
     console.log(
       `🔄 REFILLING ${refill.whale.side} WHALE | ` +
-      `Price: ${refill.whale.price} | ` +
-      `Refill: ` +
-      `${this.formatQuote(
-        refill.refillAmountQuote,
-      )} USDT | ` +
+      `Price: ${this.formatPrice(symbol, refill.whale.price)} | ` +
+      `Refill: ${this.formatQuote(refill.refillAmountQuote)} USDT | ` +
       `Count: ${refill.refillCount}`,
     );
   }
 
   public reportMovedWhale(
+    symbol: string,
     moved: WhaleChange,
   ): void {
+    const previousPrice =
+      moved.previousPrice === undefined
+        ? 'unknown'
+        : this.formatPrice(
+            symbol,
+            moved.previousPrice,
+          );
+
     console.log(
       `🚚 MOVED ${moved.side} WHALE | ` +
-      `Price: ` +
-      `${moved.previousPrice} → ` +
-      `${moved.price} | ` +
-      `Value: ` +
-      `${this.formatQuote(
-        moved.currentNotionalQuote,
-      )} USDT`,
+      `Price: ${previousPrice} → ` +
+      `${this.formatPrice(symbol, moved.price)} | ` +
+      `Value: ${this.formatQuote(moved.currentNotionalQuote)} USDT`,
     );
   }
 
   public reportWhaleScore(
+    symbol: string,
     scored: WhaleScore,
   ): void {
     console.log(
-      `🐋 ${scored.whale.side} ` +
-      `WHALE SCORE: ` +
+      `🐋 ${scored.whale.side} WHALE SCORE: ` +
       `${scored.totalScore}/100 | ` +
       `${scored.strength} | ` +
-      `Price: ${scored.whale.price}`,
+      `Price: ${this.formatPrice(symbol, scored.whale.price)}`,
     );
   }
 
@@ -213,67 +195,51 @@ export class MarketReporter {
     const bidWhales =
       input.activeWhales.filter(
         whale =>
-          whale.side ===
-          'BID',
+          whale.side === 'BID',
       );
 
     const askWhales =
       input.activeWhales.filter(
         whale =>
-          whale.side ===
-          'ASK',
+          whale.side === 'ASK',
       );
 
     const totalBidValue =
       bidWhales.reduce(
-        (
-          total,
-          whale,
-        ) =>
-          total +
-          whale.notionalQuote,
-
+        (total, whale) =>
+          total + whale.notionalQuote,
         0,
       );
 
     const totalAskValue =
       askWhales.reduce(
-        (
-          total,
-          whale,
-        ) =>
-          total +
-          whale.notionalQuote,
-
+        (total, whale) =>
+          total + whale.notionalQuote,
         0,
       );
 
     const newWalls =
       input.walls.filter(
         wall =>
-          wall.status ===
-          'NEW',
+          wall.status === 'NEW',
       );
 
     const activeWalls =
       input.walls.filter(
         wall =>
-          wall.status ===
-          'ACTIVE',
+          wall.status === 'ACTIVE',
       );
 
     const persistentWalls =
       input.walls.filter(
         wall =>
-          wall.status ===
-          'PERSISTENT',
+          wall.status === 'PERSISTENT',
       );
 
     const strongWalls =
       input.walls.filter(
         wall =>
-          wall.status ===
-          'STRONG',
+          wall.status === 'STRONG',
       );
 
     for (
@@ -281,6 +247,7 @@ export class MarketReporter {
       of input.scoredWhales
     ) {
       this.reportWhaleScore(
+        input.symbol,
         scored,
       );
     }
@@ -294,61 +261,54 @@ export class MarketReporter {
     );
 
     console.log(
-      `💵 Best Bid: ` +
-      `${input.bestBidPrice} | ` +
-      `Best Ask: ` +
-      `${input.bestAskPrice}`,
+      `💵 Best Bid: ${this.formatOptionalPrice(
+        input.symbol,
+        input.bestBidPrice,
+      )} | Best Ask: ${this.formatOptionalPrice(
+        input.symbol,
+        input.bestAskPrice,
+      )}`,
     );
 
     console.log(
-      `💵 Current Price: ` +
-      `${input.currentPrice}`,
+      `💵 Current Price: ${this.formatPrice(
+        input.symbol,
+        input.currentPrice,
+      )}`,
     );
 
     console.log(
-      `🟢 Active BID Whales: ` +
-      `${bidWhales.length} ` +
-      `(${this.formatQuote(
-        totalBidValue,
-      )} USDT)`,
+      `🟢 Active BID Whales: ${bidWhales.length} ` +
+      `(${this.formatQuote(totalBidValue)} USDT)`,
     );
 
     console.log(
-      `🔴 Active ASK Whales: ` +
-      `${askWhales.length} ` +
-      `(${this.formatQuote(
-        totalAskValue,
-      )} USDT)`,
+      `🔴 Active ASK Whales: ${askWhales.length} ` +
+      `(${this.formatQuote(totalAskValue)} USDT)`,
     );
 
     console.log(
-      `🐋 Total Active Whale Walls: ` +
-      `${input.activeWhales.length}`,
+      `🐋 Total Active Whale Walls: ${input.activeWhales.length}`,
     );
 
     console.log(
-      `🧱 Tracked Walls: ` +
-      `${input.walls.length}`,
+      `🧱 Tracked Walls: ${input.walls.length}`,
     );
 
     console.log(
-      `🆕 New Walls: ` +
-      `${newWalls.length}`,
+      `🆕 New Walls: ${newWalls.length}`,
     );
 
     console.log(
-      `🔵 Active Walls: ` +
-      `${activeWalls.length}`,
+      `🔵 Active Walls: ${activeWalls.length}`,
     );
 
     console.log(
-      `🟠 Persistent Walls: ` +
-      `${persistentWalls.length}`,
+      `🟠 Persistent Walls: ${persistentWalls.length}`,
     );
 
     console.log(
-      `🔴 Strong Walls: ` +
-      `${strongWalls.length}`,
+      `🔴 Strong Walls: ${strongWalls.length}`,
     );
 
     console.log(
@@ -368,17 +328,11 @@ export class MarketReporter {
     );
 
     console.log(
-      `🟢 BID PRESSURE: ` +
-      `${input.marketSignal.bidPressure.toFixed(
-        1,
-      )}%`,
+      `🟢 BID PRESSURE: ${input.marketSignal.bidPressure.toFixed(1)}%`,
     );
 
     console.log(
-      `🔴 ASK PRESSURE: ` +
-      `${input.marketSignal.askPressure.toFixed(
-        1,
-      )}%`,
+      `🔴 ASK PRESSURE: ${input.marketSignal.askPressure.toFixed(1)}%`,
     );
 
     console.log(
@@ -390,37 +344,60 @@ export class MarketReporter {
     signal: MarketSummarySignal,
   ): void {
     const confidence =
-      signal.confidence.toFixed(
-        1,
-      );
+      signal.confidence.toFixed(1);
 
     if (
-      signal.bias ===
-      'BULLISH'
+      signal.bias === 'BULLISH'
     ) {
       console.log(
-        `🟢 BULLISH | Pressure Strength: ` +
-        `${confidence}%`,
+        `🟢 BULLISH | Pressure Strength: ${confidence}%`,
       );
-
       return;
     }
 
     if (
-      signal.bias ===
-      'BEARISH'
+      signal.bias === 'BEARISH'
     ) {
       console.log(
-        `🔴 BEARISH | Pressure Strength: ` +
-        `${confidence}%`,
+        `🔴 BEARISH | Pressure Strength: ${confidence}%`,
       );
-
       return;
     }
 
     console.log(
-      `⚪ NEUTRAL | Pressure Strength: ` +
-      `${confidence}%`,
+      `⚪ NEUTRAL | Pressure Strength: ${confidence}%`,
+    );
+  }
+
+  private formatOptionalPrice(
+    symbol: string,
+    value: number | undefined,
+  ): string {
+    if (
+      value === undefined
+    ) {
+      return 'N/A';
+    }
+
+    return this.formatPrice(
+      symbol,
+      value,
+    );
+  }
+
+  private formatPrice(
+    symbol: string,
+    value: number,
+  ): string {
+    const maximumFractionDigits =
+      this.priceFractionDigits[symbol] ?? 8;
+
+    return value.toLocaleString(
+      'en-US',
+      {
+        maximumFractionDigits,
+        useGrouping: false,
+      },
     );
   }
 
@@ -430,8 +407,7 @@ export class MarketReporter {
     return value.toLocaleString(
       'en-US',
       {
-        maximumFractionDigits:
-          0,
+        maximumFractionDigits: 0,
       },
     );
   }
