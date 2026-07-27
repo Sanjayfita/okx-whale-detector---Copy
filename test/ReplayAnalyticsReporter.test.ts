@@ -25,6 +25,7 @@ describe('ReplayAnalyticsReporter', () => {
       whale,
       confidence: 90,
       reason: 'Test behavior',
+      detectedAt: 2,
     };
 
     reporter.reportSequenceGap('BTC-USDT');
