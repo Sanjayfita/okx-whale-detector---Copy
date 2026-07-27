@@ -20,12 +20,20 @@ export class OrderBookManager {
 
   public constructor(
     private readonly instrument: MarketInstrumentConfig = DEFAULT_INSTRUMENT,
+    private readonly maximumLevelsPerSide: number = 400,
   ) {
     if (
       !Number.isFinite(instrument.baseUnitsPerSize) ||
       instrument.baseUnitsPerSize <= 0
     ) {
       throw new Error('instrument.baseUnitsPerSize must be greater than 0');
+    }
+
+    if (
+      !Number.isInteger(maximumLevelsPerSide) ||
+      maximumLevelsPerSide <= 0
+    ) {
+      throw new Error('maximumLevelsPerSide must be a positive integer');
     }
   }
 
@@ -43,6 +51,7 @@ export class OrderBookManager {
 
       this.applyLevels(this.orderBook.bids, bids, timestamp);
       this.applyLevels(this.orderBook.asks, asks, timestamp);
+      this.pruneDepth();
 
       this.orderBook.lastSeqId = seqId;
       this.orderBook.updatedAt = timestamp;
@@ -65,6 +74,7 @@ export class OrderBookManager {
 
     this.applyLevels(this.orderBook.bids, bids, timestamp);
     this.applyLevels(this.orderBook.asks, asks, timestamp);
+    this.pruneDepth();
 
     this.orderBook.lastSeqId = seqId;
     this.orderBook.updatedAt = timestamp;
@@ -121,6 +131,28 @@ export class OrderBookManager {
         quoteCurrency: this.instrument.quoteCurrency,
         updatedAt: timestamp,
       });
+    }
+  }
+
+  private pruneDepth(): void {
+    this.pruneSide(this.orderBook.bids, true);
+    this.pruneSide(this.orderBook.asks, false);
+  }
+
+  private pruneSide(side: Map<number, OrderLevel>, keepHighest: boolean): void {
+    if (side.size <= this.maximumLevelsPerSide) {
+      return;
+    }
+
+    const retainedPrices = [...side.keys()]
+      .sort((left, right) => (keepHighest ? right - left : left - right))
+      .slice(0, this.maximumLevelsPerSide);
+    const retained = new Set(retainedPrices);
+
+    for (const price of side.keys()) {
+      if (!retained.has(price)) {
+        side.delete(price);
+      }
     }
   }
 
