@@ -15,6 +15,7 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
     "load:test": "tsx src/tools/loadTest.ts",
+    "replay": "tsx src/tools/replayRecording.ts",
     "check": "npm run typecheck && npm run lint && npm test"
   },
   "keywords": [],
