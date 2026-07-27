@@ -28,15 +28,23 @@ export const validateThroughputConfig = (config: ThroughputConfig): void => {
     }
   }
 
-  if (!Number.isFinite(config.warningCooldownMs) || config.warningCooldownMs < 0) {
+  if (
+    !Number.isFinite(config.warningCooldownMs) ||
+    config.warningCooldownMs < 0
+  ) {
     errors.push('warningCooldownMs must be greater than or equal to 0');
   }
 
-  if (!Number.isInteger(config.maximumSymbolsInReport) || config.maximumSymbolsInReport <= 0) {
+  if (
+    !Number.isInteger(config.maximumSymbolsInReport) ||
+    config.maximumSymbolsInReport <= 0
+  ) {
     errors.push('maximumSymbolsInReport must be a positive integer');
   }
 
   if (errors.length > 0) {
-    throw new Error(`Invalid throughput configuration:\n- ${errors.join('\n- ')}`);
+    throw new Error(
+      `Invalid throughput configuration:\n- ${errors.join('\n- ')}`,
+    );
   }
 };

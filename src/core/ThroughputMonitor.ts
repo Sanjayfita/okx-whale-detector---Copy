@@ -100,7 +100,9 @@ export class ThroughputMonitor {
     };
 
     const busiest = busiestSymbols.length
-      ? busiestSymbols.map((entry) => `${entry.symbol}:${entry.totalUpdates}`).join(', ')
+      ? busiestSymbols
+          .map((entry) => `${entry.symbol}:${entry.totalUpdates}`)
+          .join(', ')
       : 'none';
 
     this.logger(
@@ -122,7 +124,10 @@ export class ThroughputMonitor {
       return;
     }
 
-    this.reportTimer = setInterval(() => this.report(), this.config.reportIntervalMs);
+    this.reportTimer = setInterval(
+      () => this.report(),
+      this.config.reportIntervalMs,
+    );
 
     let expectedAt = Date.now() + this.config.eventLoopSampleIntervalMs;
     this.eventLoopTimer = setInterval(() => {
