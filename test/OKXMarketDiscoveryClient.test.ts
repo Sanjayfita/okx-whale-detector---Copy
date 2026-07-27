@@ -45,7 +45,7 @@ const createLoader = (): JsonLoader =>
     return response(
       instType === 'SPOT'
         ? [
-            ticker('BTC-USDT', 'SPOT', '65_000'.replace('_', ''), '500000000'),
+            ticker('BTC-USDT', 'SPOT', '65000', '500000000'),
             ticker('ETH-USDT', 'SPOT', '2000', '400000000'),
             ticker('SOL-USDT', 'SPOT', '75', '200000000'),
             ticker('LOW-USDT', 'SPOT', '1', '1000'),
@@ -128,17 +128,20 @@ describe('OKXMarketDiscoveryClient', () => {
     ).rejects.toThrow('Required symbol count 2 exceeds discovery maximum 1');
   });
 
-  it('rejects malformed ticker numbers', async () => {
+  it('skips tickers with empty prices or invalid volume', async () => {
     const client = new OKXMarketDiscoveryClient(async () =>
-      response([ticker('BAD-USDT', 'SPOT', '', '100000000')]),
+      response([
+        ticker('EMPTY-USDT', 'SPOT', '', '100000000'),
+        ticker('BAD-USDT', 'SPOT', '1', 'not-a-number'),
+      ]),
     );
 
-    await expect(
-      client.discoverProfiles([], {
-        ...baseConfig,
-        instrumentTypes: ['SPOT'],
-      }),
-    ).rejects.toThrow('Invalid OKX ticker price metadata');
+    const profiles = await client.discoverProfiles([], {
+      ...baseConfig,
+      instrumentTypes: ['SPOT'],
+    });
+
+    expect(profiles).toEqual([]);
   });
 
   it('surfaces OKX ticker API errors', async () => {
