@@ -5,6 +5,21 @@ export enum InstType {
   OPTION = 'OPTION',
 }
 
+export type SupportedInstType = 'SPOT' | 'SWAP';
+
+export interface MarketInstrumentConfig {
+  instId: string;
+  instType: SupportedInstType;
+  quoteCurrency: string;
+
+  /*
+   * Order-book size is base-asset quantity for SPOT.
+   * For SWAP, it is a contract count, so this value must be
+   * the amount of base asset represented by one contract.
+   */
+  baseUnitsPerSize: number;
+}
+
 export interface Instrument {
   instId: string;
   instType: InstType;
