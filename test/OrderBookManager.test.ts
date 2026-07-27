@@ -34,7 +34,6 @@ describe('OrderBookManager', () => {
     );
 
     expect([...manager.getOrderBook().bids.keys()]).toEqual([102]);
-
     expect([...manager.getOrderBook().asks.keys()]).toEqual([103]);
   });
 
@@ -62,14 +61,53 @@ describe('OrderBookManager', () => {
     expect(result).toBe(false);
     expect(manager.getOrderBook().status).toBe('INVALID');
   });
+
+  it('uses base-asset size directly for spot notional', () => {
+    const manager = new OrderBookManager({
+      instId: 'BTC-USDT',
+      instType: 'SPOT',
+      quoteCurrency: 'USDT',
+      baseUnitsPerSize: 1,
+    });
+
+    manager.applyUpdate(
+      [level('50_000'.replace('_', ''), '2')],
+      [],
+      1,
+      1,
+      -1,
+      'snapshot',
+    );
+
+    expect(manager.getBestBid()?.notionalQuote).toBe(100_000);
+  });
+
+  it('converts swap contract counts into quote notional', () => {
+    const manager = new OrderBookManager({
+      instId: 'XAU-USDT-SWAP',
+      instType: 'SWAP',
+      quoteCurrency: 'USDT',
+      baseUnitsPerSize: 0.001,
+    });
+
+    manager.applyUpdate(
+      [level('5_000'.replace('_', ''), '1000')],
+      [],
+      1,
+      1,
+      -1,
+      'snapshot',
+    );
+
+    expect(manager.getBestBid()?.notionalQuote).toBe(5_000);
+  });
+
   describe('best bid and ask selection', () => {
     it('returns undefined for empty sides', () => {
       const manager = new OrderBookManager();
 
       expect(manager.getBestBid()).toBeUndefined();
-
       expect(manager.getBestAsk()).toBeUndefined();
-
       expect(manager.getMidPrice()).toBeUndefined();
     });
 
@@ -86,11 +124,8 @@ describe('OrderBookManager', () => {
       );
 
       expect(applied).toBe(true);
-
       expect(manager.getBestBid()?.price).toBe(100);
-
       expect(manager.getBestAsk()?.price).toBe(101);
-
       expect(manager.getMidPrice()).toBe(100.5);
     });
 
@@ -115,7 +150,6 @@ describe('OrderBookManager', () => {
       );
 
       expect(manager.getBestBid()?.price).toBe(101);
-
       expect(manager.getBestAsk()?.price).toBe(101.5);
     });
 
@@ -147,9 +181,7 @@ describe('OrderBookManager', () => {
       );
 
       expect(applied).toBe(true);
-
       expect(manager.getBestBid()?.price).toBe(99);
-
       expect(manager.getBestAsk()?.price).toBe(102);
     });
 
@@ -175,11 +207,8 @@ describe('OrderBookManager', () => {
       );
 
       expect(applied).toBe(true);
-
       expect(manager.getBestBid()?.price).toBe(100.5);
-
       expect(manager.getBestAsk()?.price).toBe(100.8);
-
       expect(manager.getMidPrice()).toBeCloseTo(100.65);
     });
   });
