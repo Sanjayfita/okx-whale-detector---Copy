@@ -10,6 +10,11 @@ export interface WallDetectorConfig {
   removalGracePeriodMs: number;
 }
 
+interface SideWallIndex {
+  readonly walls: Wall[];
+  readonly byCurrentPrice: Map<number, Wall>;
+}
+
 export class WallDetector {
   private readonly walls = new Map<string, Wall>();
 
@@ -29,44 +34,80 @@ export class WallDetector {
 
   public detect(orderBook: OrderBook): Wall[] {
     const matchedWallKeys = new Set<string>();
+    const indexes = this.buildSideIndexes();
+    const now = Date.now();
 
-    this.processSide(WallSide.BUY, orderBook.bids, matchedWallKeys);
+    this.processSide(
+      WallSide.BUY,
+      orderBook.bids,
+      indexes.get(WallSide.BUY),
+      matchedWallKeys,
+      now,
+    );
 
-    this.processSide(WallSide.SELL, orderBook.asks, matchedWallKeys);
+    this.processSide(
+      WallSide.SELL,
+      orderBook.asks,
+      indexes.get(WallSide.SELL),
+      matchedWallKeys,
+      now,
+    );
 
-    this.removeMissingWalls(matchedWallKeys);
+    this.removeMissingWalls(matchedWallKeys, now);
 
     return [...this.walls.values()];
+  }
+
+  private buildSideIndexes(): Map<WallSide, SideWallIndex> {
+    const indexes = new Map<WallSide, SideWallIndex>([
+      [WallSide.BUY, { walls: [], byCurrentPrice: new Map() }],
+      [WallSide.SELL, { walls: [], byCurrentPrice: new Map() }],
+    ]);
+
+    for (const wall of this.walls.values()) {
+      const index = indexes.get(wall.side);
+
+      if (!index) {
+        continue;
+      }
+
+      index.walls.push(wall);
+      index.byCurrentPrice.set(wall.currentPrice, wall);
+    }
+
+    return indexes;
   }
 
   private processSide(
     side: WallSide,
     levels: Map<number, OrderLevel>,
+    index: SideWallIndex | undefined,
     matchedWallKeys: Set<string>,
+    now: number,
   ): void {
+    const sideIndex: SideWallIndex = index ?? {
+      walls: [],
+      byCurrentPrice: new Map(),
+    };
+
     for (const level of levels.values()) {
       if (level.notionalQuote < this.config.minNotionalQuote) {
         continue;
       }
 
-      const existingWall = this.findNearbyWall(
-        side,
-        level.price,
-        matchedWallKeys,
-      );
+      const exactWall = sideIndex.byCurrentPrice.get(level.price);
+      const existingWall =
+        exactWall && !matchedWallKeys.has(exactWall.wallId)
+          ? exactWall
+          : this.findNearbyWall(level.price, sideIndex.walls, matchedWallKeys);
 
       if (existingWall) {
         matchedWallKeys.add(existingWall.wallId);
-
-        this.updateWall(existingWall, level);
-
+        this.updateWall(existingWall, level, now);
         continue;
       }
 
-      const now = Date.now();
-
       const wallId = this.createWallId(side, level.price);
-
       const wall: Wall = {
         wallId,
         side,
@@ -85,22 +126,22 @@ export class WallDetector {
       };
 
       this.walls.set(wallId, wall);
-
+      sideIndex.walls.push(wall);
+      sideIndex.byCurrentPrice.set(level.price, wall);
       matchedWallKeys.add(wallId);
     }
   }
 
   private findNearbyWall(
-    side: WallSide,
     price: number,
+    candidates: readonly Wall[],
     matchedWallKeys: Set<string>,
   ): Wall | undefined {
     let closestWall: Wall | undefined;
-
     let closestDistance = Number.POSITIVE_INFINITY;
 
-    for (const wall of this.walls.values()) {
-      if (wall.side !== side || matchedWallKeys.has(wall.wallId)) {
+    for (const wall of candidates) {
+      if (matchedWallKeys.has(wall.wallId)) {
         continue;
       }
 
@@ -120,25 +161,16 @@ export class WallDetector {
     return closestWall;
   }
 
-  private updateWall(wall: Wall, level: OrderLevel): void {
-    const now = Date.now();
-
+  private updateWall(wall: Wall, level: OrderLevel, now: number): void {
     wall.currentPrice = level.price;
-
     wall.currentNotional = level.notionalQuote;
-
     wall.lastSeen = now;
-
     wall.ageMs = now - wall.firstSeen;
-
     wall.highestNotional = Math.max(wall.highestNotional, level.notionalQuote);
-
     wall.lowestNotional = Math.min(wall.lowestNotional, level.notionalQuote);
-
     wall.priceMovementPercent = Math.abs(
       ((wall.currentPrice - wall.initialPrice) / wall.initialPrice) * 100,
     );
-
     wall.notionalChangePercent =
       ((wall.currentNotional - wall.initialNotional) / wall.initialNotional) *
       100;
@@ -152,17 +184,16 @@ export class WallDetector {
     }
   }
 
-  private removeMissingWalls(matchedWallKeys: Set<string>): void {
-    const now = Date.now();
-
+  private removeMissingWalls(
+    matchedWallKeys: Set<string>,
+    now: number,
+  ): void {
     for (const [key, wall] of this.walls) {
       if (matchedWallKeys.has(key)) {
         continue;
       }
 
-      const timeSinceLastSeen = now - wall.lastSeen;
-
-      if (timeSinceLastSeen >= this.config.removalGracePeriodMs) {
+      if (now - wall.lastSeen >= this.config.removalGracePeriodMs) {
         this.walls.delete(key);
       }
     }
