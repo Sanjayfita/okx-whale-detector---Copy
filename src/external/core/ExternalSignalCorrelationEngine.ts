@@ -32,7 +32,8 @@ export interface CorrelatedMarketSignal {
   okxConfidence: number;
   externalBias: MarketBias;
   externalConfidence: number;
-  agreement: 'AGREEMENT' | 'CONTRADICTION' | 'EXTERNAL_ONLY' | 'OKX_ONLY' | 'NEUTRAL';
+  agreement:
+    'AGREEMENT' | 'CONTRADICTION' | 'EXTERNAL_ONLY' | 'OKX_ONLY' | 'NEUTRAL';
   bullishExternalScore: number;
   bearishExternalScore: number;
   neutralExternalSignals: number;
@@ -98,7 +99,8 @@ export class ExternalSignalCorrelationEngine {
 
     for (const effective of externalSignals) {
       if (
-        effective.effectiveConfidence < this.config.minimumEffectiveConfidence ||
+        effective.effectiveConfidence <
+          this.config.minimumEffectiveConfidence ||
         effective.relevance <= 0 ||
         effective.freshness <= 0
       ) {
@@ -106,7 +108,9 @@ export class ExternalSignalCorrelationEngine {
         continue;
       }
 
-      const directionalMultiplier = directionToScore(effective.signal.direction);
+      const directionalMultiplier = directionToScore(
+        effective.signal.direction,
+      );
       const signedScore = effective.effectiveConfidence * directionalMultiplier;
 
       if (signedScore > 0) {
@@ -139,7 +143,10 @@ export class ExternalSignalCorrelationEngine {
         : Math.min(
             this.config.maximumConfidence,
             (Math.abs(externalNetScore) / externalTotalDirectionalScore) *
-              Math.min(externalTotalDirectionalScore, this.config.maximumConfidence),
+              Math.min(
+                externalTotalDirectionalScore,
+                this.config.maximumConfidence,
+              ),
           );
 
     const okxSignedScore =
@@ -261,8 +268,14 @@ export class ExternalSignalCorrelationEngine {
       maximumConfidence,
     } = this.config;
 
-    if (okxWeight < 0 || externalWeight < 0 || okxWeight + externalWeight <= 0) {
-      throw new Error('Correlation weights must be non-negative with a positive total');
+    if (
+      okxWeight < 0 ||
+      externalWeight < 0 ||
+      okxWeight + externalWeight <= 0
+    ) {
+      throw new Error(
+        'Correlation weights must be non-negative with a positive total',
+      );
     }
 
     if (

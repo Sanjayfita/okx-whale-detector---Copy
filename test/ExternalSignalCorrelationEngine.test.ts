@@ -4,7 +4,10 @@ import { ExternalSignalCorrelationEngine } from '../src/external/core/ExternalSi
 import type { EffectiveExternalSignal } from '../src/external/types/ExternalWhaleSignal';
 import type { MarketSignal } from '../src/types/signal';
 
-const okxSignal = (bias: MarketSignal['bias'], confidence = 60): MarketSignal => ({
+const okxSignal = (
+  bias: MarketSignal['bias'],
+  confidence = 60,
+): MarketSignal => ({
   bias,
   confidence,
   reason: 'Test OKX signal',
@@ -143,7 +146,11 @@ describe('ExternalSignalCorrelationEngine', () => {
 
   it('rejects invalid correlation weights', () => {
     expect(
-      () => new ExternalSignalCorrelationEngine({ okxWeight: 0, externalWeight: 0 }),
+      () =>
+        new ExternalSignalCorrelationEngine({
+          okxWeight: 0,
+          externalWeight: 0,
+        }),
     ).toThrow('weights');
   });
 });
