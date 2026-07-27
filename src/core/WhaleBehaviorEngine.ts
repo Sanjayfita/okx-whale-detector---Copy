@@ -1,11 +1,7 @@
 import type { Whale } from '../types/whale';
 
 export type WhaleBehaviorType =
-  | 'SPOOF'
-  | 'PERSISTENT'
-  | 'REFILLING'
-  | 'ACCUMULATION'
-  | 'DISTRIBUTION';
+  'SPOOF' | 'PERSISTENT' | 'REFILLING' | 'ACCUMULATION' | 'DISTRIBUTION';
 
 export interface WhaleBehavior {
   type: WhaleBehaviorType;

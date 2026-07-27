@@ -108,10 +108,7 @@ export class WhaleScoreEngine {
     const stabilityScore = this.calculateStabilityScore(history);
     const rawScore =
       sizeScore + distanceScore + persistenceScore + stabilityScore;
-    const totalScore = Math.min(
-      Math.round(rawScore),
-      this.config.maxScore,
-    );
+    const totalScore = Math.min(Math.round(rawScore), this.config.maxScore);
     const strength = this.getStrength(totalScore);
     const explanation = this.buildExplanation(
       totalScore,
