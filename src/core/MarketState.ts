@@ -1,4 +1,4 @@
-import { appConfig } from '../config/appConfig';
+import { appConfig, type AppConfig } from '../config/appConfig';
 
 import { OrderBookManager } from './OrderBookManager';
 import { WhaleTracker } from './WhaleTracker';
@@ -10,8 +10,6 @@ import { WhaleRefillDetector } from './WhaleRefillDetector';
 import { WhaleScoreEngine } from './WhaleScoreEngine';
 import { WhaleBehaviorEngine } from './WhaleBehaviorEngine';
 import { BehaviorTransitionTracker } from './BehaviorTransitionTracker';
-
-export type MarketStateConfig = typeof appConfig;
 
 export class MarketState {
   public readonly orderBookManager = new OrderBookManager();
@@ -25,7 +23,7 @@ export class MarketState {
   public readonly whaleBehaviorEngine = new WhaleBehaviorEngine();
   public readonly behaviorTransitionTracker = new BehaviorTransitionTracker();
 
-  public constructor(config: MarketStateConfig = appConfig) {
+  public constructor(config: AppConfig = appConfig) {
     this.whaleEventDetector = new WhaleEventDetector({
       removalGraceMs: config.events.removalGraceMs,
       minimumChangePercent: config.events.minimumChangePercent,
