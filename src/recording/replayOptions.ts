@@ -77,3 +77,20 @@ export const calculateReplayDelayMs = (
   const originalDelay = Math.max(0, recordedAt - previousRecordedAt);
   return speed === 'realtime' ? originalDelay : originalDelay / speed;
 };
+
+export const calculateAnchoredReplayDelayMs = (
+  firstRecordedAt: number | undefined,
+  recordedAt: number,
+  playbackElapsedMs: number,
+  speed: ReplaySpeed,
+): number => {
+  if (firstRecordedAt === undefined || speed === 'instant') {
+    return 0;
+  }
+
+  const recordedElapsedMs = Math.max(0, recordedAt - firstRecordedAt);
+  const targetElapsedMs =
+    speed === 'realtime' ? recordedElapsedMs : recordedElapsedMs / speed;
+
+  return Math.max(0, targetElapsedMs - Math.max(0, playbackElapsedMs));
+};
