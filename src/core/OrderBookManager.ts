@@ -1,4 +1,12 @@
+import type { MarketInstrumentConfig } from '../types/instrument';
 import type { OrderBook, OrderBookLevel, OrderLevel } from '../types/orderbook';
+
+const DEFAULT_INSTRUMENT: MarketInstrumentConfig = {
+  instId: 'UNKNOWN-USDT',
+  instType: 'SPOT',
+  quoteCurrency: 'USDT',
+  baseUnitsPerSize: 1,
+};
 
 export class OrderBookManager {
   private readonly orderBook: OrderBook = {
@@ -9,6 +17,17 @@ export class OrderBookManager {
     initialized: false,
     updatedAt: 0,
   };
+
+  public constructor(
+    private readonly instrument: MarketInstrumentConfig = DEFAULT_INSTRUMENT,
+  ) {
+    if (
+      !Number.isFinite(instrument.baseUnitsPerSize) ||
+      instrument.baseUnitsPerSize <= 0
+    ) {
+      throw new Error('instrument.baseUnitsPerSize must be greater than 0');
+    }
+  }
 
   public applyUpdate(
     bids: OrderBookLevel[],
@@ -23,7 +42,6 @@ export class OrderBookManager {
       this.orderBook.asks.clear();
 
       this.applyLevels(this.orderBook.bids, bids, timestamp);
-
       this.applyLevels(this.orderBook.asks, asks, timestamp);
 
       this.orderBook.lastSeqId = seqId;
@@ -46,7 +64,6 @@ export class OrderBookManager {
     }
 
     this.applyLevels(this.orderBook.bids, bids, timestamp);
-
     this.applyLevels(this.orderBook.asks, asks, timestamp);
 
     this.orderBook.lastSeqId = seqId;
@@ -64,6 +81,7 @@ export class OrderBookManager {
     this.orderBook.initialized = false;
     this.orderBook.updatedAt = 0;
   }
+
   private applyLevels(
     side: Map<number, OrderLevel>,
     levels: OrderBookLevel[],
@@ -99,11 +117,8 @@ export class OrderBookManager {
         rawPrice,
         size,
         rawSize,
-
-        notionalQuote: price * size,
-
-        quoteCurrency: 'USDT',
-
+        notionalQuote: price * size * this.instrument.baseUnitsPerSize,
+        quoteCurrency: this.instrument.quoteCurrency,
         updatedAt: timestamp,
       });
     }
@@ -139,7 +154,6 @@ export class OrderBookManager {
 
   public getMidPrice(): number | undefined {
     const bestBid = this.getBestBid();
-
     const bestAsk = this.getBestAsk();
 
     if (!bestBid || !bestAsk) {
