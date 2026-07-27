@@ -40,9 +40,32 @@ describe('recording validation', () => {
     expect(record.type).toBe('orderBook');
   });
 
+  it('parses a candle record', () => {
+    const record = parseRecordingRecord(
+      JSON.stringify({
+        type: 'candle',
+        recordedAt: 3,
+        candle: {
+          instId: 'BTC-USDT',
+          timestamp: 3,
+          open: 100,
+          high: 101,
+          low: 99,
+          close: 100.5,
+          volume: 10,
+          volumeCurrency: 1_000,
+          volumeCurrencyQuote: 1_000,
+          confirm: true,
+        },
+      }),
+    );
+
+    expect(record.type).toBe('candle');
+  });
+
   it('rejects an unsupported record type', () => {
     expect(() =>
-      parseRecordingRecord(JSON.stringify({ type: 'candle', recordedAt: 1 })),
+      parseRecordingRecord(JSON.stringify({ type: 'trade', recordedAt: 1 })),
     ).toThrow('record type');
   });
 
