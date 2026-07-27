@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -8,7 +10,7 @@ import {
 describe('replay report', () => {
   it('creates a default report path from the recording name', () => {
     expect(resolveReplayReportPath('data/recordings/3rd.ndjson')).toBe(
-      'data\\reports\\3rd-replay-report.json',
+      path.join('data', 'reports', '3rd-replay-report.json'),
     );
   });
 
