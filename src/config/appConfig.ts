@@ -1,4 +1,24 @@
-export const appConfig = {
+export interface AppConfig {
+  whale: {
+    minimumNotionalQuote: number;
+    persistentAfterMs: number;
+    strongAfterMs: number;
+    movementPriceTolerancePercent: number;
+  };
+  events: {
+    removalGraceMs: number;
+    minimumChangePercent: number;
+    minimumChangeNotional: number;
+  };
+  reporting: {
+    summaryIntervalMs: number;
+  };
+  history: {
+    candleLimit: number;
+  };
+}
+
+export const appConfig: AppConfig = {
   whale: {
     minimumNotionalQuote: 500_000,
     persistentAfterMs: 30_000,
@@ -16,4 +36,4 @@ export const appConfig = {
   history: {
     candleLimit: 100,
   },
-} as const;
+};
