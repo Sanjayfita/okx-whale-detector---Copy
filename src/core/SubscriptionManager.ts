@@ -6,12 +6,15 @@ import {
   OKXCandleWebSocketClient,
   type OKXCandle,
 } from '../clients/okx/OKXCandleWebSocketClient';
-import type { MarketInstrumentConfig } from '../types/instrument';
+import type {
+  MarketInstrumentConfig,
+  SupportedInstType,
+} from '../types/instrument';
 
 interface OrderBookClient {
   onReconnect(callback: () => void): void;
   onOrderBook(callback: (update: OKXOrderBookUpdate) => void): void;
-  subscribeToOrderBook(instId: string, instType: string): void;
+  subscribeToOrderBook(instId: string, instType: SupportedInstType): void;
   close(): void;
 }
 
