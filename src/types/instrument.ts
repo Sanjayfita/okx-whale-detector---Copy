@@ -16,7 +16,7 @@ export interface MarketInstrumentConfig {
 
   /*
    * Order-book size is base-asset quantity for SPOT.
-   * For SWAP, it is a contract count, so this value is
+   * For linear SWAP, it is a contract count, so this value is
    * the amount of base asset represented by one contract.
    */
   baseUnitsPerSize: number;
@@ -29,6 +29,7 @@ export interface OKXPublicInstrument {
   baseCcy: string;
   quoteCcy: string;
   settleCcy: string;
+  ctType: string;
   ctVal: string;
   ctValCcy: string;
   ctMult: string;
