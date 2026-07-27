@@ -1,5 +1,3 @@
-import { OKXWebSocketClient } from './clients/okx/OKXWebSocketClient';
-import { OKXCandleWebSocketClient } from './clients/okx/OKXCandleWebSocketClient';
 import { OKXInstrumentClient } from './clients/okx/OKXInstrumentClient';
 import { OKXMarketDiscoveryClient } from './clients/okx/OKXMarketDiscoveryClient';
 import { appConfig } from './config/appConfig';
@@ -7,16 +5,22 @@ import {
   marketDiscoveryConfig,
   validateMarketDiscoveryConfig,
 } from './config/marketDiscoveryConfig';
+import {
+  subscriptionConfig,
+  validateSubscriptionConfig,
+} from './config/subscriptionConfig';
 import { resolveSymbolConfig, SYMBOL_PROFILES } from './config/symbolProfiles';
 import { validateAppConfig } from './config/validateAppConfig';
-import { MarketState } from './core/MarketState';
-import { SummaryThrottle } from './core/SummaryThrottle';
 import { CandleUpdateHandler } from './core/CandleUpdateHandler';
+import { MarketState } from './core/MarketState';
+import { SubscriptionManager } from './core/SubscriptionManager';
+import { SummaryThrottle } from './core/SummaryThrottle';
 import { MarketEngine } from './market/MarketEngine';
 
 const start = async (): Promise<void> => {
   validateAppConfig(appConfig);
   validateMarketDiscoveryConfig(marketDiscoveryConfig);
+  validateSubscriptionConfig(subscriptionConfig);
 
   console.log('OKX Whale Detector starting...');
   console.log('Discovering eligible OKX markets...');
@@ -40,8 +44,6 @@ const start = async (): Promise<void> => {
 
   console.log(`Loaded metadata for ${instruments.size} instruments.`);
 
-  const client = new OKXWebSocketClient();
-  const candleClient = new OKXCandleWebSocketClient();
   const marketStates = new Map<string, MarketState>();
   const summaryThrottle = new SummaryThrottle(
     appConfig.reporting.summaryIntervalMs,
@@ -67,37 +69,46 @@ const start = async (): Promise<void> => {
   const marketEngine = new MarketEngine(marketStates, summaryThrottle);
   const candleUpdateHandler = new CandleUpdateHandler(marketStates);
 
-  candleClient.onCandle((candle) => {
-    candleUpdateHandler.handle(candle);
+  const subscriptionManager = new SubscriptionManager({
+    maximumSymbolsPerConnection:
+      subscriptionConfig.maximumSymbolsPerConnection,
+    onOrderBook: (update) => {
+      marketEngine.processOrderBookUpdate(update);
+    },
+    onCandle: (candle) => {
+      candleUpdateHandler.handle(candle);
+    },
+    onShardReconnect: (symbols) => {
+      console.warn(
+        `🔄 OKX order-book shard reconnected for ${symbols.length} markets. ` +
+          'Resetting only its local market state...',
+      );
+
+      for (const symbol of symbols) {
+        marketStates.set(symbol, createMarketState(symbol));
+      }
+
+      candleUpdateHandler.resetSymbols(symbols);
+      marketEngine.resetSymbols(symbols);
+
+      console.log(
+        `✅ Reset ${symbols.length} markets. Waiting for fresh snapshots...`,
+      );
+    },
   });
 
-  client.onReconnect(() => {
-    console.warn(
-      '🔄 OKX connection restored. ' + 'Resetting local market state...',
-    );
+  const activeInstruments = activeProfiles.map((profile) =>
+    requireInstrument(profile.symbol),
+  );
 
-    for (const profile of activeProfiles) {
-      marketStates.set(profile.symbol, createMarketState(profile.symbol));
-    }
+  subscriptionManager.start(activeInstruments);
 
-    candleUpdateHandler.reset();
-    marketEngine.reset();
+  const shards = subscriptionManager.getShards();
 
-    console.log(
-      '✅ Local market state reset. ' + 'Waiting for fresh snapshots...',
-    );
-  });
-
-  client.onOrderBook((update) => {
-    marketEngine.processOrderBookUpdate(update);
-  });
-
-  for (const profile of activeProfiles) {
-    const instrument = requireInstrument(profile.symbol);
-
-    client.subscribeToOrderBook(instrument.instId, instrument.instType);
-    candleClient.subscribeToCandle(instrument.instId);
-  }
+  console.log(
+    `Started ${shards.length} subscription shard${shards.length === 1 ? '' : 's'} ` +
+      `with up to ${subscriptionConfig.maximumSymbolsPerConnection} markets each.`,
+  );
 
   let isShuttingDown = false;
 
@@ -110,8 +121,7 @@ const start = async (): Promise<void> => {
 
     console.log(`Received ${signal}; closing OKX connections.`);
 
-    client.close();
-    candleClient.close();
+    subscriptionManager.close();
   };
 
   process.once('SIGINT', () => shutdown('SIGINT'));
