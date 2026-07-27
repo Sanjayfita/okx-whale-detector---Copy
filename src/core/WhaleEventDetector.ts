@@ -1,32 +1,43 @@
 import type { Whale } from '../types/whale';
 
 export type WhaleEventType =
-  'NEW' | 'REMOVED' | 'INCREASED' | 'DECREASED' | 'MOVED';
+  | 'NEW'
+  | 'REMOVED'
+  | 'INCREASED'
+  | 'DECREASED'
+  | 'MOVED';
 
 export interface WhaleEvent {
   type: WhaleEventType;
-
   whale: Whale;
-
   previous?: Whale;
+}
+
+export interface WhaleEventDetectorConfig {
+  removalGraceMs: number;
+  minimumChangePercent: number;
+  minimumChangeNotional: number;
 }
 
 interface TrackedWhale {
   whale: Whale;
-
   lastSeen: number;
 }
 
 export class WhaleEventDetector {
   private readonly previousWhales = new Map<string, TrackedWhale>();
 
-  private readonly removalGracePeriodMs = 2_000;
+  public constructor(
+    private readonly config: WhaleEventDetectorConfig = {
+      removalGraceMs: 2_000,
+      minimumChangePercent: 10,
+      minimumChangeNotional: 100_000,
+    },
+  ) {}
 
   public detect(currentWhales: Whale[]): WhaleEvent[] {
     const now = Date.now();
-
     const events: WhaleEvent[] = [];
-
     const activeIds = new Set<string>();
 
     for (const whale of currentWhales) {
@@ -37,7 +48,6 @@ export class WhaleEventDetector {
       if (!previous) {
         events.push({
           type: 'NEW',
-
           whale,
         });
 
@@ -52,33 +62,30 @@ export class WhaleEventDetector {
       if (previous.whale.price !== whale.price) {
         events.push({
           type: 'MOVED',
-
           whale,
-
           previous: previous.whale,
         });
       }
 
       const change = whale.notionalQuote - previous.whale.notionalQuote;
-
       const changePercent =
         previous.whale.notionalQuote === 0
           ? 0
           : Math.abs(change / previous.whale.notionalQuote) * 100;
 
-      if (changePercent >= 10 && Math.abs(change) >= 100_000) {
+      if (
+        changePercent >= this.config.minimumChangePercent &&
+        Math.abs(change) >= this.config.minimumChangeNotional
+      ) {
         events.push({
           type: change > 0 ? 'INCREASED' : 'DECREASED',
-
           whale,
-
           previous: previous.whale,
         });
       }
 
       this.previousWhales.set(whale.wallId, {
         whale,
-
         lastSeen: now,
       });
     }
@@ -90,13 +97,12 @@ export class WhaleEventDetector {
 
       const timeSinceLastSeen = now - tracked.lastSeen;
 
-      if (timeSinceLastSeen < this.removalGracePeriodMs) {
+      if (timeSinceLastSeen < this.config.removalGraceMs) {
         continue;
       }
 
       events.push({
         type: 'REMOVED',
-
         whale: tracked.whale,
       });
 
