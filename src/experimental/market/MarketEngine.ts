@@ -1,7 +1,6 @@
 import { OrderBookManager } from '../../core/OrderBookManager';
 import { WhaleTracker } from '../../core/WhaleTracker';
 import { MarketAnalyzer } from '../../core/MarketAnalyzer';
-import { WhaleEventDetector } from '../../core/WhaleEventDetector';
 import type { OrderBookLevel } from '../../types/orderbook';
 
 import type { Whale } from '../../types/whale';
@@ -37,9 +36,6 @@ export class MarketEngine {
   private readonly marketAnalyzer:
     MarketAnalyzer;
 
-  private readonly whaleEventDetector:
-    WhaleEventDetector;
-
   private latestSnapshot:
     MarketSnapshot | null = null;
 
@@ -56,42 +52,35 @@ export class MarketEngine {
 
     this.marketAnalyzer =
       new MarketAnalyzer();
-
-    this.whaleEventDetector =
-      new WhaleEventDetector();
   }
 
-public processOrderBook(
-  bids: OrderBookLevel[],
-  asks: OrderBookLevel[],
-  timestamp: number,
-  seqId: number,
-  prevSeqId: number,
-  action: 'snapshot' | 'update',
-): MarketSnapshot {
-    const wasApplied = this.orderBookManager.applyUpdate(
-  bids,
-  asks,
-  timestamp,
-  seqId,
-  prevSeqId,
-  action,
-);
+  public processOrderBook(
+    bids: OrderBookLevel[],
+    asks: OrderBookLevel[],
+    timestamp: number,
+    seqId: number,
+    prevSeqId: number,
+    action: 'snapshot' | 'update',
+  ): MarketSnapshot {
+    const wasApplied =
+      this.orderBookManager.applyUpdate(
+        bids,
+        asks,
+        timestamp,
+        seqId,
+        prevSeqId,
+        action,
+      );
 
-if (!wasApplied) {
-  throw new Error(
-    `Order-book sequence gap for ${this.symbol}`,
-  );
-}
+    if (!wasApplied) {
+      throw new Error(
+        `Order-book sequence gap for ${this.symbol}`,
+      );
+    }
 
     const result =
       this.whaleTracker.scan(
         this.orderBookManager.getOrderBook(),
-      );
-
-    const whaleEvents =
-      this.whaleEventDetector.detect(
-        result.active,
       );
 
     const bestBid =
@@ -108,13 +97,13 @@ if (!wasApplied) {
 
     const bidWhales =
       result.active.filter(
-        (whale) =>
+        whale =>
           whale.side === 'BID',
       );
 
     const askWhales =
       result.active.filter(
-        (whale) =>
+        whale =>
           whale.side === 'ASK',
       );
 
