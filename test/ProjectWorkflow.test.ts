@@ -125,7 +125,7 @@ describe(
             'node dist/index.js',
 
           check:
-            'npm run typecheck && npm test',
+            'npm run typecheck && npm run lint && npm test',
         });
       },
     );
