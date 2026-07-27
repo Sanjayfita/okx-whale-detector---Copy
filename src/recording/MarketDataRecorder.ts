@@ -1,6 +1,7 @@
 import { mkdirSync, createWriteStream, type WriteStream } from 'node:fs';
 import path from 'node:path';
 
+import type { OKXCandle } from '../clients/okx/OKXCandleWebSocketClient';
 import type { OKXOrderBookUpdate } from '../clients/okx/OKXWebSocketClient';
 import type { MarketInstrumentConfig } from '../types/instrument';
 
@@ -14,6 +15,11 @@ export type RecordingRecord =
       type: 'orderBook';
       recordedAt: number;
       update: OKXOrderBookUpdate;
+    }
+  | {
+      type: 'candle';
+      recordedAt: number;
+      candle: OKXCandle;
     };
 
 export class MarketDataRecorder {
@@ -45,6 +51,14 @@ export class MarketDataRecorder {
       type: 'orderBook',
       recordedAt: Date.now(),
       update,
+    });
+  }
+
+  public recordCandle(candle: OKXCandle): void {
+    this.writeRecord({
+      type: 'candle',
+      recordedAt: Date.now(),
+      candle,
     });
   }
 
