@@ -48,6 +48,8 @@ export const validateMarketDiscoveryConfig = (
   }
 
   if (errors.length > 0) {
-    throw new Error(`Invalid market discovery configuration:\n- ${errors.join('\n- ')}`);
+    throw new Error(
+      `Invalid market discovery configuration:\n- ${errors.join('\n- ')}`,
+    );
   }
 };

@@ -15,10 +15,7 @@ const DEFAULT_BASE_URL = 'https://www.okx.com';
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const readString = (
-  record: Record<string, unknown>,
-  key: string,
-): string => {
+const readString = (record: Record<string, unknown>, key: string): string => {
   const value = record[key];
 
   return typeof value === 'string' ? value : '';
@@ -104,7 +101,9 @@ export class OKXMarketDiscoveryClient {
     private readonly baseUrl: string = DEFAULT_BASE_URL,
   ) {}
 
-  private async fetchTickers(instType: SupportedInstType): Promise<OKXTicker[]> {
+  private async fetchTickers(
+    instType: SupportedInstType,
+  ): Promise<OKXTicker[]> {
     const url = new URL('/api/v5/market/tickers', this.baseUrl);
 
     url.searchParams.set('instType', instType);
@@ -140,9 +139,7 @@ export class OKXMarketDiscoveryClient {
       .filter(isUsdtMarket)
       .filter((ticker) => !requiredBySymbol.has(ticker.instId))
       .filter((ticker) => !excluded.has(ticker.instId))
-      .filter(
-        (ticker) => ticker.volumeQuote24h >= config.minimum24hQuoteVolume,
-      )
+      .filter((ticker) => ticker.volumeQuote24h >= config.minimum24hQuoteVolume)
       .sort((left, right) => right.volumeQuote24h - left.volumeQuote24h);
 
     const remainingSlots = config.maximumSymbols - requiredBySymbol.size;

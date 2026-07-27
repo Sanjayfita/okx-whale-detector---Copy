@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import {
-  OKXMarketDiscoveryClient,
-} from '../src/clients/okx/OKXMarketDiscoveryClient';
+import { OKXMarketDiscoveryClient } from '../src/clients/okx/OKXMarketDiscoveryClient';
 import type { JsonLoader } from '../src/clients/okx/OKXInstrumentClient';
 import type { MarketDiscoveryConfig } from '../src/config/marketDiscoveryConfig';
 import type { SymbolProfile } from '../src/config/symbolProfiles';
@@ -61,7 +59,10 @@ const createLoader = (): JsonLoader =>
 describe('OKXMarketDiscoveryClient', () => {
   it('keeps required markets and adds the highest-volume eligible markets', async () => {
     const client = new OKXMarketDiscoveryClient(createLoader());
-    const profiles = await client.discoverProfiles(requiredProfiles, baseConfig);
+    const profiles = await client.discoverProfiles(
+      requiredProfiles,
+      baseConfig,
+    );
 
     expect(profiles.map((profile) => profile.symbol)).toEqual([
       'BTC-USDT',

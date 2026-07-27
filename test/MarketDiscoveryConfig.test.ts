@@ -7,7 +7,9 @@ import {
 
 describe('market discovery configuration', () => {
   it('accepts the default discovery configuration', () => {
-    expect(() => validateMarketDiscoveryConfig(marketDiscoveryConfig)).not.toThrow();
+    expect(() =>
+      validateMarketDiscoveryConfig(marketDiscoveryConfig),
+    ).not.toThrow();
   });
 
   it('rejects an empty instrument type list', () => {
