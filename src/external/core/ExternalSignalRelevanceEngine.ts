@@ -12,15 +12,16 @@ export interface ExternalSignalRelevanceOverrides {
   categoryMaximumAgeMs?: Partial<Record<ExternalSignalCategory, number>>;
 }
 
-const DEFAULT_MAXIMUM_AGE_MS: Readonly<Record<ExternalSignalCategory, number>> = {
-  EXCHANGE_INFLOW: 6 * 60 * 60 * 1_000,
-  EXCHANGE_OUTFLOW: 6 * 60 * 60 * 1_000,
-  WALLET_TRANSFER: 3 * 60 * 60 * 1_000,
-  STABLECOIN_MINT: 12 * 60 * 60 * 1_000,
-  STABLECOIN_BURN: 12 * 60 * 60 * 1_000,
-  PREDICTION_TRADE: 24 * 60 * 60 * 1_000,
-  PREDICTION_POSITION: 24 * 60 * 60 * 1_000,
-};
+const DEFAULT_MAXIMUM_AGE_MS: Readonly<Record<ExternalSignalCategory, number>> =
+  {
+    EXCHANGE_INFLOW: 6 * 60 * 60 * 1_000,
+    EXCHANGE_OUTFLOW: 6 * 60 * 60 * 1_000,
+    WALLET_TRANSFER: 3 * 60 * 60 * 1_000,
+    STABLECOIN_MINT: 12 * 60 * 60 * 1_000,
+    STABLECOIN_BURN: 12 * 60 * 60 * 1_000,
+    PREDICTION_TRADE: 24 * 60 * 60 * 1_000,
+    PREDICTION_POSITION: 24 * 60 * 60 * 1_000,
+  };
 
 export class ExternalSignalRelevanceEngine {
   private readonly config: ExternalSignalRelevanceConfig;
@@ -37,7 +38,9 @@ export class ExternalSignalRelevanceEngine {
       this.config.categoryMaximumAgeMs,
     )) {
       if (!Number.isFinite(maximumAgeMs) || maximumAgeMs <= 0) {
-        throw new Error('External signal maximum ages must be greater than zero');
+        throw new Error(
+          'External signal maximum ages must be greater than zero',
+        );
       }
     }
   }

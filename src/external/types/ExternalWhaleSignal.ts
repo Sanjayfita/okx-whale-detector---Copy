@@ -1,8 +1,5 @@
 export type ExternalSignalProvider =
-  | 'WHALE_ALERT'
-  | 'NANSEN'
-  | 'POLYMARKET'
-  | 'MANUAL';
+  'WHALE_ALERT' | 'NANSEN' | 'POLYMARKET' | 'MANUAL';
 
 export type ExternalSignalCategory =
   | 'EXCHANGE_INFLOW'
@@ -14,10 +11,7 @@ export type ExternalSignalCategory =
   | 'PREDICTION_POSITION';
 
 export type ExternalSignalDirection =
-  | 'BULLISH'
-  | 'BEARISH'
-  | 'NEUTRAL'
-  | 'UNKNOWN';
+  'BULLISH' | 'BEARISH' | 'NEUTRAL' | 'UNKNOWN';
 
 export interface ExternalSignalEvidence {
   provider: ExternalSignalProvider;

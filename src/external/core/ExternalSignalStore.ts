@@ -25,16 +25,25 @@ export class ExternalSignalStore {
   public constructor(config: Partial<ExternalSignalStoreConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
 
-    if (!Number.isInteger(this.config.maximumSignals) || this.config.maximumSignals <= 0) {
+    if (
+      !Number.isInteger(this.config.maximumSignals) ||
+      this.config.maximumSignals <= 0
+    ) {
       throw new Error('maximumSignals must be a positive integer');
     }
 
-    if (!Number.isFinite(this.config.retentionMs) || this.config.retentionMs <= 0) {
+    if (
+      !Number.isFinite(this.config.retentionMs) ||
+      this.config.retentionMs <= 0
+    ) {
       throw new Error('retentionMs must be greater than zero');
     }
   }
 
-  public add(signal: ExternalWhaleSignal, now = Date.now()): ExternalSignalAddResult {
+  public add(
+    signal: ExternalWhaleSignal,
+    now = Date.now(),
+  ): ExternalSignalAddResult {
     this.prune(now);
 
     const existing = this.signals.get(signal.underlyingEventId);

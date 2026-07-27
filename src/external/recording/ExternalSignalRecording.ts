@@ -12,14 +12,19 @@ export interface ExternalSignalRecord {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
-export const parseExternalSignalRecord = (line: string): ExternalSignalRecord => {
+export const parseExternalSignalRecord = (
+  line: string,
+): ExternalSignalRecord => {
   const value: unknown = JSON.parse(line);
 
   if (!isRecord(value) || value.type !== 'externalSignal') {
     throw new Error('Invalid external signal record type');
   }
 
-  if (typeof value.recordedAt !== 'number' || !Number.isFinite(value.recordedAt)) {
+  if (
+    typeof value.recordedAt !== 'number' ||
+    !Number.isFinite(value.recordedAt)
+  ) {
     throw new Error('Invalid external signal recording timestamp');
   }
 
