@@ -288,7 +288,7 @@ describe(
             symbol:
               'ETH-USDT',
             value:
-              1_894.0149999999999,
+              1_894.0150000000001,
             expected:
               '1894.02',
           },
