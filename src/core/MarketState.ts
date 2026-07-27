@@ -1,5 +1,6 @@
 import { appConfig, type AppConfig } from '../config/appConfig';
 import { validateAppConfig } from '../config/validateAppConfig';
+import type { MarketInstrumentConfig } from '../types/instrument';
 
 import { OrderBookManager } from './OrderBookManager';
 import { WhaleTracker } from './WhaleTracker';
@@ -12,8 +13,15 @@ import { WhaleScoreEngine } from './WhaleScoreEngine';
 import { WhaleBehaviorEngine } from './WhaleBehaviorEngine';
 import { BehaviorTransitionTracker } from './BehaviorTransitionTracker';
 
+const DEFAULT_INSTRUMENT: MarketInstrumentConfig = {
+  instId: 'UNKNOWN-USDT',
+  instType: 'SPOT',
+  quoteCurrency: 'USDT',
+  baseUnitsPerSize: 1,
+};
+
 export class MarketState {
-  public readonly orderBookManager = new OrderBookManager();
+  public readonly orderBookManager: OrderBookManager;
   public readonly whaleTracker: WhaleTracker;
   public readonly whaleScoreEngine: WhaleScoreEngine;
   public readonly whaleEventDetector: WhaleEventDetector;
@@ -24,9 +32,13 @@ export class MarketState {
   public readonly whaleBehaviorEngine: WhaleBehaviorEngine;
   public readonly behaviorTransitionTracker = new BehaviorTransitionTracker();
 
-  public constructor(config: AppConfig = appConfig) {
+  public constructor(
+    config: AppConfig = appConfig,
+    instrument: MarketInstrumentConfig = DEFAULT_INSTRUMENT,
+  ) {
     validateAppConfig(config);
 
+    this.orderBookManager = new OrderBookManager(instrument);
     this.whaleTracker = new WhaleTracker(config.tracker);
     this.whaleScoreEngine = new WhaleScoreEngine(config.scoring);
 
