@@ -70,6 +70,7 @@ export interface AppConfig {
   };
   history: {
     candleLimit: number;
+    orderBookLevelLimit: number;
   };
 }
 
@@ -145,5 +146,6 @@ export const appConfig: AppConfig = {
   },
   history: {
     candleLimit: 100,
+    orderBookLevelLimit: 400,
   },
 };
