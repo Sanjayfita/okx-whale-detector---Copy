@@ -13,7 +13,7 @@ import { BehaviorTransitionTracker } from './BehaviorTransitionTracker';
 
 export class MarketState {
   public readonly orderBookManager = new OrderBookManager();
-  public readonly whaleTracker = new WhaleTracker();
+  public readonly whaleTracker: WhaleTracker;
   public readonly whaleScoreEngine: WhaleScoreEngine;
   public readonly whaleEventDetector: WhaleEventDetector;
   public readonly wallDetector: WallDetector;
@@ -24,6 +24,7 @@ export class MarketState {
   public readonly behaviorTransitionTracker = new BehaviorTransitionTracker();
 
   public constructor(config: AppConfig = appConfig) {
+    this.whaleTracker = new WhaleTracker(config.tracker);
     this.whaleScoreEngine = new WhaleScoreEngine(config.scoring);
 
     this.whaleEventDetector = new WhaleEventDetector({
