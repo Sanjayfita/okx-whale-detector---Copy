@@ -1,6 +1,7 @@
 import { OKXWebSocketClient } from './clients/okx/OKXWebSocketClient';
 import { OKXCandleWebSocketClient } from './clients/okx/OKXCandleWebSocketClient';
 import { appConfig } from './config/appConfig';
+import { resolveSymbolConfig } from './config/symbolProfiles';
 import { validateAppConfig } from './config/validateAppConfig';
 import { WATCHLIST } from './config/symbols';
 import { MarketState } from './core/MarketState';
@@ -20,7 +21,7 @@ const summaryThrottle = new SummaryThrottle(
 );
 
 for (const symbol of WATCHLIST) {
-  marketStates.set(symbol, new MarketState(appConfig));
+  marketStates.set(symbol, new MarketState(resolveSymbolConfig(symbol)));
 }
 
 const marketEngine = new MarketEngine(marketStates, summaryThrottle);
@@ -47,7 +48,7 @@ client.onReconnect(() => {
      * - internal WhaleScoreEngine
      * - MarketAnalyzer
      */
-    marketStates.set(symbol, new MarketState(appConfig));
+    marketStates.set(symbol, new MarketState(resolveSymbolConfig(symbol)));
   }
 
   candleUpdateHandler.reset();
