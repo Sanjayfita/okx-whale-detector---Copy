@@ -18,6 +18,7 @@
     "replay": "tsx src/tools/replayRecording.ts",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "external:demo": "tsx src/tools/demoExternalSignals.ts",
+    "polymarket:scan": "tsx src/tools/scanPolymarketWhales.ts",
     "check": "npm run typecheck && npm run lint && npm test"
   },
   "keywords": [],
