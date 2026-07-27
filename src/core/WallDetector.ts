@@ -184,10 +184,7 @@ export class WallDetector {
     }
   }
 
-  private removeMissingWalls(
-    matchedWallKeys: Set<string>,
-    now: number,
-  ): void {
+  private removeMissingWalls(matchedWallKeys: Set<string>, now: number): void {
     for (const [key, wall] of this.walls) {
       if (matchedWallKeys.has(key)) {
         continue;
