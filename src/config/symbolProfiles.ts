@@ -23,6 +23,8 @@ export const SYMBOL_PROFILES: readonly SymbolProfile[] = [
   { symbol: 'SOL-USDT' },
   { symbol: 'XRP-USDT' },
   { symbol: 'DOGE-USDT' },
+  { symbol: `XAU-USDT` },
+  { symbol: `XAG-USDT` },
 ];
 
 const mergeConfig = (
