@@ -29,7 +29,6 @@ const DEFAULT_CONFIG: WhaleRefillConfig = {
 
 export class WhaleRefillDetector {
   private readonly history = new Map<string, WhaleRefillHistory>();
-
   private readonly config: WhaleRefillConfig;
 
   public constructor(config: Partial<WhaleRefillConfig> = {}) {
@@ -84,7 +83,6 @@ export class WhaleRefillDetector {
     const recoveryTarget =
       existing.baselineNotionalQuote *
       (this.config.recoveryThresholdPercent / 100);
-
     const isRecovering = current > existing.lastNotionalQuote;
 
     if (!isRecovering || current < recoveryTarget) {
