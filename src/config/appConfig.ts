@@ -3,6 +3,7 @@ export const appConfig = {
     minimumNotionalQuote: 500_000,
     persistentAfterMs: 30_000,
     strongAfterMs: 120_000,
+    movementPriceTolerancePercent: 0.1,
   },
   events: {
     removalGraceMs: 2_000,
@@ -11,5 +12,8 @@ export const appConfig = {
   },
   reporting: {
     summaryIntervalMs: 5_000,
+  },
+  history: {
+    candleLimit: 100,
   },
 } as const;
