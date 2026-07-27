@@ -14,6 +14,10 @@ import {
   subscriptionConfig,
   validateSubscriptionConfig,
 } from './config/subscriptionConfig';
+import {
+  throughputConfig,
+  validateThroughputConfig,
+} from './config/throughputConfig';
 import { resolveSymbolConfig, SYMBOL_PROFILES } from './config/symbolProfiles';
 import { validateAppConfig } from './config/validateAppConfig';
 import { CandleUpdateHandler } from './core/CandleUpdateHandler';
@@ -21,6 +25,7 @@ import { MarketHealthMonitor } from './core/MarketHealthMonitor';
 import { MarketState } from './core/MarketState';
 import { SubscriptionManager } from './core/SubscriptionManager';
 import { SummaryThrottle } from './core/SummaryThrottle';
+import { ThroughputMonitor } from './core/ThroughputMonitor';
 import { MarketEngine } from './market/MarketEngine';
 
 const start = async (): Promise<void> => {
@@ -29,6 +34,7 @@ const start = async (): Promise<void> => {
   validateMarketDiscoveryConfig(marketDiscoveryConfig);
   validatePerformanceConfig(performanceConfig);
   validateSubscriptionConfig(subscriptionConfig);
+  validateThroughputConfig(throughputConfig);
 
   console.log('OKX Whale Detector starting...');
   console.log('Discovering eligible OKX markets...');
@@ -76,19 +82,20 @@ const start = async (): Promise<void> => {
 
   const marketEngine = new MarketEngine(marketStates, summaryThrottle);
   const candleUpdateHandler = new CandleUpdateHandler(marketStates);
-  const healthMonitor = new MarketHealthMonitor(
-    activeProfiles.map((profile) => profile.symbol),
-    healthConfig,
-  );
+  const activeSymbols = activeProfiles.map((profile) => profile.symbol);
+  const healthMonitor = new MarketHealthMonitor(activeSymbols, healthConfig);
+  const throughputMonitor = new ThroughputMonitor(throughputConfig);
 
   const subscriptionManager = new SubscriptionManager({
     maximumSymbolsPerConnection: subscriptionConfig.maximumSymbolsPerConnection,
     onOrderBook: (update) => {
       healthMonitor.recordOrderBook(update.instId);
+      throughputMonitor.record(update.instId, 'orderBook');
       marketEngine.processOrderBookUpdate(update);
     },
     onCandle: (candle) => {
       healthMonitor.recordCandle(candle.instId);
+      throughputMonitor.record(candle.instId, 'candle');
       candleUpdateHandler.handle(candle);
     },
     onShardReconnect: (symbols) => {
@@ -104,6 +111,7 @@ const start = async (): Promise<void> => {
       candleUpdateHandler.resetSymbols(symbols);
       marketEngine.resetSymbols(symbols);
       healthMonitor.resetSymbols(symbols);
+      throughputMonitor.resetSymbols(symbols);
 
       console.log(
         `✅ Reset ${symbols.length} markets. Waiting for fresh snapshots...`,
@@ -117,6 +125,7 @@ const start = async (): Promise<void> => {
 
   subscriptionManager.start(activeInstruments);
   healthMonitor.start();
+  throughputMonitor.start();
 
   const shards = subscriptionManager.getShards();
 
@@ -127,6 +136,7 @@ const start = async (): Promise<void> => {
   console.log(
     `Started market health monitoring for ${activeProfiles.length} markets.`,
   );
+  console.log('Started throughput and event-loop monitoring.');
 
   let isShuttingDown = false;
 
@@ -140,6 +150,7 @@ const start = async (): Promise<void> => {
     console.log(`Received ${signal}; closing OKX connections.`);
 
     healthMonitor.stop();
+    throughputMonitor.stop();
     subscriptionManager.close();
   };
 
