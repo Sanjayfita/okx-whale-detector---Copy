@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  calculateAnchoredReplayDelayMs,
   calculateReplayDelayMs,
   parseReplayOptions,
   parseReplaySpeed,
@@ -55,5 +56,19 @@ describe('replay options', () => {
 
   it('divides delays by an acceleration multiplier', () => {
     expect(calculateReplayDelayMs(1_000, 3_000, 10)).toBe(200);
+  });
+
+  it('anchors accelerated timing to total playback elapsed time', () => {
+    expect(calculateAnchoredReplayDelayMs(1_000, 3_000, 150, 10)).toBe(50);
+  });
+
+  it('compensates for timer overshoot instead of accumulating drift', () => {
+    expect(calculateAnchoredReplayDelayMs(1_000, 3_000, 240, 10)).toBe(0);
+  });
+
+  it('anchors realtime playback to the recording timeline', () => {
+    expect(
+      calculateAnchoredReplayDelayMs(1_000, 2_500, 1_200, 'realtime'),
+    ).toBe(300);
   });
 });
