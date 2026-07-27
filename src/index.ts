@@ -11,6 +11,10 @@ import {
   validatePerformanceConfig,
 } from './config/performanceConfig';
 import {
+  recordingConfig,
+  validateRecordingConfig,
+} from './config/recordingConfig';
+import {
   subscriptionConfig,
   validateSubscriptionConfig,
 } from './config/subscriptionConfig';
@@ -27,12 +31,14 @@ import { SubscriptionManager } from './core/SubscriptionManager';
 import { SummaryThrottle } from './core/SummaryThrottle';
 import { ThroughputMonitor } from './core/ThroughputMonitor';
 import { MarketEngine } from './market/MarketEngine';
+import { MarketDataRecorder } from './recording/MarketDataRecorder';
 
 const start = async (): Promise<void> => {
   validateAppConfig(appConfig);
   validateHealthConfig(healthConfig);
   validateMarketDiscoveryConfig(marketDiscoveryConfig);
   validatePerformanceConfig(performanceConfig);
+  validateRecordingConfig(recordingConfig);
   validateSubscriptionConfig(subscriptionConfig);
   validateThroughputConfig(throughputConfig);
 
@@ -80,6 +86,12 @@ const start = async (): Promise<void> => {
     marketStates.set(profile.symbol, createMarketState(profile.symbol));
   }
 
+  const activeInstruments = activeProfiles.map((profile) =>
+    requireInstrument(profile.symbol),
+  );
+  const recorder = recordingConfig.enabled
+    ? new MarketDataRecorder(recordingConfig.directory, activeInstruments)
+    : undefined;
   const marketEngine = new MarketEngine(marketStates, summaryThrottle);
   const candleUpdateHandler = new CandleUpdateHandler(marketStates);
   const activeSymbols = activeProfiles.map((profile) => profile.symbol);
@@ -89,6 +101,7 @@ const start = async (): Promise<void> => {
   const subscriptionManager = new SubscriptionManager({
     maximumSymbolsPerConnection: subscriptionConfig.maximumSymbolsPerConnection,
     onOrderBook: (update) => {
+      recorder?.recordOrderBook(update);
       healthMonitor.recordOrderBook(update.instId);
       throughputMonitor.record(update.instId, 'orderBook');
       marketEngine.processOrderBookUpdate(update);
@@ -119,10 +132,6 @@ const start = async (): Promise<void> => {
     },
   });
 
-  const activeInstruments = activeProfiles.map((profile) =>
-    requireInstrument(profile.symbol),
-  );
-
   subscriptionManager.start(activeInstruments);
   healthMonitor.start();
   throughputMonitor.start();
@@ -138,6 +147,10 @@ const start = async (): Promise<void> => {
   );
   console.log('Started throughput and event-loop monitoring.');
 
+  if (recorder) {
+    console.log(`Recording order-book data to ${recorder.filePath}`);
+  }
+
   let isShuttingDown = false;
 
   const shutdown = (signal: NodeJS.Signals): void => {
@@ -151,6 +164,7 @@ const start = async (): Promise<void> => {
 
     healthMonitor.stop();
     throughputMonitor.stop();
+    recorder?.close();
     subscriptionManager.close();
   };
 
