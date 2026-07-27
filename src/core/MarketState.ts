@@ -1,4 +1,5 @@
 import { appConfig, type AppConfig } from '../config/appConfig';
+import { validateAppConfig } from '../config/validateAppConfig';
 
 import { OrderBookManager } from './OrderBookManager';
 import { WhaleTracker } from './WhaleTracker';
@@ -24,6 +25,8 @@ export class MarketState {
   public readonly behaviorTransitionTracker = new BehaviorTransitionTracker();
 
   public constructor(config: AppConfig = appConfig) {
+    validateAppConfig(config);
+
     this.whaleTracker = new WhaleTracker(config.tracker);
     this.whaleScoreEngine = new WhaleScoreEngine(config.scoring);
 
