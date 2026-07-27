@@ -107,6 +107,7 @@ const start = async (): Promise<void> => {
       marketEngine.processOrderBookUpdate(update);
     },
     onCandle: (candle) => {
+      recorder?.recordCandle(candle);
       healthMonitor.recordCandle(candle.instId);
       throughputMonitor.record(candle.instId, 'candle');
       candleUpdateHandler.handle(candle);
@@ -148,7 +149,7 @@ const start = async (): Promise<void> => {
   console.log('Started throughput and event-loop monitoring.');
 
   if (recorder) {
-    console.log(`Recording order-book data to ${recorder.filePath}`);
+    console.log(`Recording order-book and candle data to ${recorder.filePath}`);
   }
 
   let isShuttingDown = false;
