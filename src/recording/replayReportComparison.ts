@@ -51,12 +51,19 @@ export interface ReplayReportComparison {
   pipeline: PipelineStageComparison[];
 }
 
-const compareNumber = (baseline: number, candidate: number): NumericComparison => ({
+const compareNumber = (
+  baseline: number,
+  candidate: number,
+): NumericComparison => ({
   baseline,
   candidate,
   change: candidate - baseline,
   changePercent:
-    baseline === 0 ? (candidate === 0 ? 0 : null) : ((candidate - baseline) / baseline) * 100,
+    baseline === 0
+      ? candidate === 0
+        ? 0
+        : null
+      : ((candidate - baseline) / baseline) * 100,
 });
 
 const compareRecord = (
@@ -68,7 +75,10 @@ const compareRecord = (
   return Object.fromEntries(
     [...keys]
       .sort()
-      .map((key) => [key, compareNumber(baseline[key] ?? 0, candidate[key] ?? 0)]),
+      .map((key) => [
+        key,
+        compareNumber(baseline[key] ?? 0, candidate[key] ?? 0),
+      ]),
   );
 };
 
@@ -103,39 +113,37 @@ const comparePipeline = (
   const candidate = indexPipeline(candidateStages);
   const stages = new Set([...baseline.keys(), ...candidate.keys()]);
 
-  return [...stages]
-    .sort()
-    .map((stage) => {
-      const baselineStage = baseline.get(stage);
-      const candidateStage = candidate.get(stage);
-      const averageMs = compareNumber(
-        baselineStage?.averageMs ?? 0,
-        candidateStage?.averageMs ?? 0,
-      );
+  return [...stages].sort().map((stage) => {
+    const baselineStage = baseline.get(stage);
+    const candidateStage = candidate.get(stage);
+    const averageMs = compareNumber(
+      baselineStage?.averageMs ?? 0,
+      candidateStage?.averageMs ?? 0,
+    );
 
-      return {
-        stage,
-        samples: compareNumber(
-          baselineStage?.samples ?? 0,
-          candidateStage?.samples ?? 0,
-        ),
-        totalMs: compareNumber(
-          baselineStage?.totalMs ?? 0,
-          candidateStage?.totalMs ?? 0,
-        ),
-        averageMs,
-        maximumMs: compareNumber(
-          baselineStage?.maximumMs ?? 0,
-          candidateStage?.maximumMs ?? 0,
-        ),
-        averagePerformance:
-          averageMs.change < 0
-            ? 'FASTER'
-            : averageMs.change > 0
-              ? 'SLOWER'
-              : 'UNCHANGED',
-      };
-    });
+    return {
+      stage,
+      samples: compareNumber(
+        baselineStage?.samples ?? 0,
+        candidateStage?.samples ?? 0,
+      ),
+      totalMs: compareNumber(
+        baselineStage?.totalMs ?? 0,
+        candidateStage?.totalMs ?? 0,
+      ),
+      averageMs,
+      maximumMs: compareNumber(
+        baselineStage?.maximumMs ?? 0,
+        candidateStage?.maximumMs ?? 0,
+      ),
+      averagePerformance:
+        averageMs.change < 0
+          ? 'FASTER'
+          : averageMs.change > 0
+            ? 'SLOWER'
+            : 'UNCHANGED',
+    };
+  });
 };
 
 export const compareReplayReports = (
@@ -176,7 +184,10 @@ export const compareReplayReports = (
         baseline.candleUpdates,
         candidate.candleUpdates,
       ),
-      totalUpdates: compareNumber(baseline.totalUpdates, candidate.totalUpdates),
+      totalUpdates: compareNumber(
+        baseline.totalUpdates,
+        candidate.totalUpdates,
+      ),
       elapsedMs: compareNumber(baseline.elapsedMs, candidate.elapsedMs),
       throughputUpdatesPerSecond: compareNumber(
         baseline.throughputUpdatesPerSecond,

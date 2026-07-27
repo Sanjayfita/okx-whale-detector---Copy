@@ -54,9 +54,7 @@ const run = (): void => {
       comparison.events.whaleEvents.NEW,
     )} NEW`,
   );
-  console.log(
-    `Sequence gaps: ${formatChange(comparison.events.sequenceGaps)}`,
-  );
+  console.log(`Sequence gaps: ${formatChange(comparison.events.sequenceGaps)}`);
 
   console.log('\nPIPELINE AVERAGE TIME');
   for (const stage of comparison.pipeline) {

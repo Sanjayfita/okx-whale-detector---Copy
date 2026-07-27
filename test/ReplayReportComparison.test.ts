@@ -112,7 +112,9 @@ describe('replay report comparison', () => {
     const baseline = createReport({ elapsedMs: 0 });
     const candidate = createReport({ elapsedMs: 10 });
 
-    expect(compare(baseline, candidate).totals.elapsedMs.changePercent).toBeNull();
+    expect(
+      compare(baseline, candidate).totals.elapsedMs.changePercent,
+    ).toBeNull();
   });
 
   it('includes stages and symbols present in only one report', () => {
