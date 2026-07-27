@@ -1,3 +1,5 @@
+import type { QuoteCurrency } from './orderbook';
+
 export enum InstType {
   SPOT = 'SPOT',
   FUTURE = 'FUTURE',
@@ -10,7 +12,7 @@ export type SupportedInstType = 'SPOT' | 'SWAP';
 export interface MarketInstrumentConfig {
   instId: string;
   instType: SupportedInstType;
-  quoteCurrency: string;
+  quoteCurrency: QuoteCurrency;
 
   /*
    * Order-book size is base-asset quantity for SPOT.
