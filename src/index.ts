@@ -1,11 +1,14 @@
 import { OKXWebSocketClient } from './clients/okx/OKXWebSocketClient';
 import { OKXCandleWebSocketClient } from './clients/okx/OKXCandleWebSocketClient';
 import { appConfig } from './config/appConfig';
+import { validateAppConfig } from './config/validateAppConfig';
 import { WATCHLIST } from './config/symbols';
 import { MarketState } from './core/MarketState';
 import { SummaryThrottle } from './core/SummaryThrottle';
 import { CandleUpdateHandler } from './core/CandleUpdateHandler';
 import { MarketEngine } from './market/MarketEngine';
+
+validateAppConfig(appConfig);
 
 console.log('OKX Whale Detector starting...');
 
