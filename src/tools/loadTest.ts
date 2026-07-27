@@ -33,6 +33,7 @@ if (!Number.isInteger(updates) || updates <= 0) {
 }
 
 const symbol = 'LOAD-USDT';
+const depth = 100;
 const marketStates = new Map([
   [
     symbol,
@@ -60,10 +61,10 @@ const engine = new MarketEngine(
 const snapshot: OKXOrderBookUpdate = {
   instId: symbol,
   action: 'snapshot',
-  bids: Array.from({ length: 100 }, (_, index) =>
+  bids: Array.from({ length: depth }, (_, index) =>
     level(100 - index * 0.01, index % 10 === 0 ? 6_000 : 100),
   ),
-  asks: Array.from({ length: 100 }, (_, index) =>
+  asks: Array.from({ length: depth }, (_, index) =>
     level(100.01 + index * 0.01, index % 10 === 0 ? 6_000 : 100),
   ),
   timestamp: 1,
@@ -76,13 +77,17 @@ const startedAt = performance.now();
 
 for (let index = 0; index < updates; index += 1) {
   const seqId = index + 2;
-  const priceOffset = (index % 20) * 0.01;
+  const depthIndex = index % depth;
 
   engine.processOrderBookUpdate({
     instId: symbol,
     action: 'update',
-    bids: [level(99.9 - priceOffset, 5_000 + (index % 500))],
-    asks: [level(100.1 + priceOffset, 5_000 + (index % 700))],
+    bids: [
+      level(100 - depthIndex * 0.01, 5_000 + (index % 500)),
+    ],
+    asks: [
+      level(100.01 + depthIndex * 0.01, 5_000 + (index % 700)),
+    ],
     timestamp: seqId,
     seqId,
     prevSeqId: seqId - 1,
@@ -91,9 +96,11 @@ for (let index = 0; index < updates; index += 1) {
 
 const elapsedMs = performance.now() - startedAt;
 const profile = profiler.getSnapshot();
+const orderBook = marketStates.get(symbol)?.orderBookManager.getOrderBook();
 
 console.log('\nDETERMINISTIC LOAD TEST');
 console.log(`Updates: ${updates.toLocaleString('en-US')}`);
+console.log(`Book depth: ${orderBook?.bids.size ?? 0} bids / ${orderBook?.asks.size ?? 0} asks`);
 console.log(`Elapsed: ${elapsedMs.toFixed(2)}ms`);
 console.log(`Throughput: ${(updates / (elapsedMs / 1_000)).toFixed(2)} updates/s`);
 console.log('\nPIPELINE PROFILE');
