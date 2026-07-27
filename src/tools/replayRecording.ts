@@ -7,11 +7,17 @@ import { CandleUpdateHandler } from '../core/CandleUpdateHandler';
 import { MarketState } from '../core/MarketState';
 import { SummaryThrottle } from '../core/SummaryThrottle';
 import { MarketEngine } from '../market/MarketEngine';
+import { ReplayAnalyticsReporter } from '../recording/ReplayAnalyticsReporter';
 import {
   calculateAnchoredReplayDelayMs,
   parseReplayOptions,
-  type ReplaySpeed,
 } from '../recording/replayOptions';
+import {
+  formatReplaySpeed,
+  resolveReplayReportPath,
+  writeReplayReport,
+  type ReplaySymbolStats,
+} from '../recording/replayReport';
 import { parseRecordingRecord } from '../recording/recordingValidation';
 import type { MarketInstrumentConfig } from '../types/instrument';
 
@@ -23,18 +29,23 @@ const wait = async (milliseconds: number): Promise<void> => {
   await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 };
 
-const formatSpeed = (speed: ReplaySpeed): string =>
-  typeof speed === 'number' ? `${speed}x` : speed;
-
 const replay = async (): Promise<void> => {
   const options = parseReplayOptions(process.argv.slice(2));
   const instruments = new Map<string, MarketInstrumentConfig>();
   const marketStates = new Map<string, MarketState>();
+  const symbolStats = new Map<string, ReplaySymbolStats>();
+  const analyticsReporter = options.report
+    ? new ReplayAnalyticsReporter()
+    : undefined;
   const engine = new MarketEngine(
     marketStates,
     new SummaryThrottle(appConfig.reporting.summaryIntervalMs),
+    analyticsReporter,
   );
-  const candleHandler = new CandleUpdateHandler(marketStates);
+  const candleHandler = new CandleUpdateHandler(
+    marketStates,
+    options.report ? () => undefined : console.log,
+  );
 
   let orderBookCount = 0;
   let candleCount = 0;
@@ -66,6 +77,11 @@ const replay = async (): Promise<void> => {
           record.instrument,
         ),
       );
+      symbolStats.set(record.instrument.instId, {
+        orderBookUpdates: 0,
+        candleUpdates: 0,
+        finalActiveWhales: 0,
+      });
       continue;
     }
 
@@ -91,12 +107,19 @@ const replay = async (): Promise<void> => {
     );
     await wait(delayMs);
 
+    const stats = symbolStats.get(symbol);
+    if (!stats) {
+      throw new Error(`Replay statistics were not initialized for ${symbol}`);
+    }
+
     if (record.type === 'orderBook') {
       engine.processOrderBookUpdate(record.update);
       orderBookCount += 1;
+      stats.orderBookUpdates += 1;
     } else {
       candleHandler.handle(record.candle);
       candleCount += 1;
+      stats.candleUpdates += 1;
     }
   }
 
@@ -104,20 +127,49 @@ const replay = async (): Promise<void> => {
     throw new Error(`Recording does not contain instrument ${options.symbol}`);
   }
 
+  for (const [symbol, state] of marketStates) {
+    const stats = symbolStats.get(symbol);
+    if (stats) {
+      stats.finalActiveWhales = state.whaleTracker.getTrackedWalls().length;
+    }
+  }
+
   const elapsedMs = performance.now() - startedAt;
   const totalUpdates = orderBookCount + candleCount;
+  const throughput = totalUpdates / Math.max(elapsedMs / 1_000, 0.001);
 
   console.log('\nREPLAY COMPLETE');
   console.log(`File: ${options.filePath}`);
   console.log(`Markets: ${marketStates.size}`);
   console.log(`Symbol filter: ${options.symbol ?? 'all'}`);
-  console.log(`Speed: ${formatSpeed(options.speed)}`);
+  console.log(`Speed: ${formatReplaySpeed(options.speed)}`);
   console.log(`Order-book updates: ${orderBookCount.toLocaleString('en-US')}`);
   console.log(`Candle updates: ${candleCount.toLocaleString('en-US')}`);
   console.log(`Elapsed: ${elapsedMs.toFixed(2)}ms`);
-  console.log(
-    `Replay throughput: ${(totalUpdates / Math.max(elapsedMs / 1_000, 0.001)).toFixed(2)} updates/s`,
-  );
+  console.log(`Replay throughput: ${throughput.toFixed(2)} updates/s`);
+
+  if (options.report && analyticsReporter) {
+    const reportPath = resolveReplayReportPath(
+      options.filePath,
+      options.reportPath,
+    );
+    writeReplayReport(reportPath, {
+      generatedAt: new Date().toISOString(),
+      recordingFile: options.filePath,
+      symbolFilter: options.symbol ?? null,
+      speed: formatReplaySpeed(options.speed),
+      markets: marketStates.size,
+      orderBookUpdates: orderBookCount,
+      candleUpdates: candleCount,
+      totalUpdates,
+      elapsedMs,
+      throughputUpdatesPerSecond: throughput,
+      events: analyticsReporter.getTotals(),
+      pipeline: engine.getPipelineProfile(),
+      symbols: Object.fromEntries(symbolStats),
+    });
+    console.log(`Report: ${reportPath}`);
+  }
 };
 
 void replay().catch((error: unknown) => {
