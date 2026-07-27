@@ -38,7 +38,10 @@ export class MarketState {
   ) {
     validateAppConfig(config);
 
-    this.orderBookManager = new OrderBookManager(instrument);
+    this.orderBookManager = new OrderBookManager(
+      instrument,
+      config.history.orderBookLevelLimit,
+    );
     this.whaleTracker = new WhaleTracker(config.tracker);
     this.whaleScoreEngine = new WhaleScoreEngine(config.scoring);
 
