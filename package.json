@@ -6,11 +6,15 @@
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint src test",
+    "lint:fix": "eslint src test --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "check": "npm run typecheck && npm test"
+    "check": "npm run typecheck && npm run lint && npm test"
   },
   "keywords": [],
   "author": "",
@@ -20,10 +24,15 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "3.9.6",
     "tsx": "^4.23.1",
     "typescript": "^7.0.2",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.10"
   }
 }
