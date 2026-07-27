@@ -47,7 +47,7 @@ describe('ExternalSignalRelevanceEngine', () => {
     const engine = new ExternalSignalRelevanceEngine({
       categoryMaximumAgeMs: {
         EXCHANGE_INFLOW: 1_000,
-      } as never,
+      },
     });
     const result = engine.evaluate(signal, 'BTC-USDT', 1_500);
 
