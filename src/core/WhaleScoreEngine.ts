@@ -4,61 +4,62 @@ export type WhaleStrength = 'WEAK' | 'MODERATE' | 'STRONG' | 'VERY_STRONG';
 
 export interface WhaleScore {
   whale: Whale;
-
   totalScore: number;
-
   strength: WhaleStrength;
-
   components: {
     sizeScore: number;
     distanceScore: number;
     persistenceScore: number;
     stabilityScore: number;
   };
-
   explanation: string[];
 }
 
 export interface WhaleScoreEngineConfig {
   maxScore: number;
-
   maxSizeScore: number;
   maxDistanceScore: number;
   maxPersistenceScore: number;
   maxStabilityScore: number;
-
   persistenceWindowMs: number;
+  minimumScoredNotionalQuote: number;
+  veryStrongThreshold: number;
+  strongThreshold: number;
+  moderateThreshold: number;
 }
 
 interface WhaleHistory {
   firstSeen: number;
   lastSeen: number;
-
   highestNotional: number;
   lowestNotional: number;
-
   lastPrice: number;
 }
 
+const DEFAULT_CONFIG: WhaleScoreEngineConfig = {
+  maxScore: 100,
+  maxSizeScore: 30,
+  maxDistanceScore: 25,
+  maxPersistenceScore: 25,
+  maxStabilityScore: 20,
+  persistenceWindowMs: 120_000,
+  minimumScoredNotionalQuote: 500_000,
+  veryStrongThreshold: 80,
+  strongThreshold: 60,
+  moderateThreshold: 35,
+};
+
 export class WhaleScoreEngine {
   private readonly config: WhaleScoreEngineConfig;
-
   private readonly history = new Map<string, WhaleHistory>();
 
-  constructor(
-    config: WhaleScoreEngineConfig = {
-      maxScore: 100,
-
-      maxSizeScore: 30,
-      maxDistanceScore: 25,
-      maxPersistenceScore: 25,
-      maxStabilityScore: 20,
-
-      persistenceWindowMs: 120_000,
-    },
-  ) {
-    this.config = config;
+  public constructor(config: Partial<WhaleScoreEngineConfig> = {}) {
+    this.config = {
+      ...DEFAULT_CONFIG,
+      ...config,
+    };
   }
+
   public prune(activeWhales: Whale[]): void {
     const activeKeys = new Set(activeWhales.map((whale) => this.getKey(whale)));
 
@@ -68,85 +69,50 @@ export class WhaleScoreEngine {
       }
     }
   }
+
   public score(whale: Whale, currentPrice: number): WhaleScore {
     const now = Date.now();
-
     const key = this.getKey(whale);
-
     let history = this.history.get(key);
 
     if (!history) {
       history = {
         firstSeen: now,
         lastSeen: now,
-
         highestNotional: whale.notionalQuote,
-
         lowestNotional: whale.notionalQuote,
-
         lastPrice: whale.price,
       };
-
       this.history.set(key, history);
     }
 
     history.lastSeen = now;
-
     history.highestNotional = Math.max(
       history.highestNotional,
       whale.notionalQuote,
     );
-
     history.lowestNotional = Math.min(
       history.lowestNotional,
       whale.notionalQuote,
     );
 
-    /*
-     * 1. SIZE SCORE
-     */
-
     const sizeScore = this.calculateSizeScore(whale.notionalQuote);
-
-    /*
-     * 2. DISTANCE SCORE
-     */
-
     const distanceScore = this.calculateDistanceScore(
       whale.price,
       currentPrice,
     );
-
-    /*
-     * 3. PERSISTENCE SCORE
-     */
-
     const ageMs = now - history.firstSeen;
-
     const persistenceScore =
-      Math.min(
-        ageMs / this.config.persistenceWindowMs,
-
-        1,
-      ) * this.config.maxPersistenceScore;
-
-    /*
-     * 4. STABILITY SCORE
-     */
-
+      Math.min(ageMs / this.config.persistenceWindowMs, 1) *
+      this.config.maxPersistenceScore;
     const stabilityScore = this.calculateStabilityScore(history);
-
     const rawScore =
       sizeScore + distanceScore + persistenceScore + stabilityScore;
-
     const totalScore = Math.min(
       Math.round(rawScore),
-
       this.config.maxScore,
     );
-
     const strength = this.getStrength(totalScore);
-
     const explanation = this.buildExplanation(
       totalScore,
       sizeScore,
@@ -159,21 +125,14 @@ export class WhaleScoreEngine {
 
     return {
       whale,
-
       totalScore,
-
       strength,
-
       components: {
         sizeScore: Math.round(sizeScore),
-
         distanceScore: Math.round(distanceScore),
-
         persistenceScore: Math.round(persistenceScore),
-
         stabilityScore: Math.round(stabilityScore),
       },
-
       explanation,
     };
   }
@@ -183,13 +142,10 @@ export class WhaleScoreEngine {
   }
 
   private calculateSizeScore(notionalQuote: number): number {
-    /*
-     * $500k = small whale
-     * $1M   = strong whale
-     * $5M+  = maximum score
-     */
-
-    const score = Math.log10(Math.max(notionalQuote, 500_000) / 500_000) * 30;
+    const minimum = this.config.minimumScoredNotionalQuote;
+    const score =
+      Math.log10(Math.max(notionalQuote, minimum) / minimum) *
+      this.config.maxSizeScore;
 
     return Math.min(score, this.config.maxSizeScore);
   }
@@ -200,14 +156,6 @@ export class WhaleScoreEngine {
   ): number {
     const distancePercent =
       Math.abs((whalePrice - currentPrice) / currentPrice) * 100;
-
-    /*
-     * 0.00% away = 25 points
-     * 0.25% away = ~20 points
-     * 1.00% away = ~12 points
-     * 5.00% away = ~4 points
-     */
-
     const score = this.config.maxDistanceScore / (1 + distancePercent);
 
     return Math.min(score, this.config.maxDistanceScore);
@@ -219,29 +167,22 @@ export class WhaleScoreEngine {
     }
 
     const range = history.highestNotional - history.lowestNotional;
-
     const volatility = range / history.highestNotional;
-
-    /*
-     * Stable whale = high score
-     * Constantly changing whale = lower score
-     */
-
     const stability = 1 - Math.min(volatility, 1);
 
     return stability * this.config.maxStabilityScore;
   }
 
   private getStrength(score: number): WhaleStrength {
-    if (score >= 80) {
+    if (score >= this.config.veryStrongThreshold) {
       return 'VERY_STRONG';
     }
 
-    if (score >= 60) {
+    if (score >= this.config.strongThreshold) {
       return 'STRONG';
     }
 
-    if (score >= 35) {
+    if (score >= this.config.moderateThreshold) {
       return 'MODERATE';
     }
 
@@ -273,7 +214,7 @@ export class WhaleScoreEngine {
       explanation.push('Stable liquidity');
     }
 
-    if (totalScore < 35) {
+    if (totalScore < this.config.moderateThreshold) {
       explanation.push('Low-confidence whale');
     }
 
