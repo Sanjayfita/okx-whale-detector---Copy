@@ -24,10 +24,7 @@ const summaryThrottle = new SummaryThrottle(
 );
 
 const createMarketState = (symbol: string): MarketState =>
-  new MarketState(
-    resolveSymbolConfig(symbol),
-    resolveMarketInstrument(symbol),
-  );
+  new MarketState(resolveSymbolConfig(symbol), resolveMarketInstrument(symbol));
 
 for (const symbol of WATCHLIST) {
   marketStates.set(symbol, createMarketState(symbol));
