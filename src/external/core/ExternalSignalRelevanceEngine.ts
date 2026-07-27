@@ -8,6 +8,10 @@ export interface ExternalSignalRelevanceConfig {
   categoryMaximumAgeMs: Readonly<Record<ExternalSignalCategory, number>>;
 }
 
+export interface ExternalSignalRelevanceOverrides {
+  categoryMaximumAgeMs?: Partial<Record<ExternalSignalCategory, number>>;
+}
+
 const DEFAULT_MAXIMUM_AGE_MS: Readonly<Record<ExternalSignalCategory, number>> = {
   EXCHANGE_INFLOW: 6 * 60 * 60 * 1_000,
   EXCHANGE_OUTFLOW: 6 * 60 * 60 * 1_000,
@@ -21,13 +25,21 @@ const DEFAULT_MAXIMUM_AGE_MS: Readonly<Record<ExternalSignalCategory, number>> =
 export class ExternalSignalRelevanceEngine {
   private readonly config: ExternalSignalRelevanceConfig;
 
-  public constructor(config: Partial<ExternalSignalRelevanceConfig> = {}) {
+  public constructor(config: ExternalSignalRelevanceOverrides = {}) {
     this.config = {
       categoryMaximumAgeMs: {
         ...DEFAULT_MAXIMUM_AGE_MS,
         ...config.categoryMaximumAgeMs,
       },
     };
+
+    for (const maximumAgeMs of Object.values(
+      this.config.categoryMaximumAgeMs,
+    )) {
+      if (!Number.isFinite(maximumAgeMs) || maximumAgeMs <= 0) {
+        throw new Error('External signal maximum ages must be greater than zero');
+      }
+    }
   }
 
   public evaluate(
