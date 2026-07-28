@@ -100,6 +100,35 @@ describe('PolymarketWhaleDetector', () => {
     ).toBe('BULLISH');
   });
 
+  it('recognizes live downside wording such as dip to a price', () => {
+    const detector = new PolymarketWhaleDetector();
+    const dipMarket = {
+      ...market,
+      question: 'Will Bitcoin dip to $55,000 by December 31, 2026?',
+    };
+
+    expect(detector.inferQuestionPolarity(dipMarket.question)).toBe('NEGATIVE');
+    expect(detector.interpretTrade(trade, dipMarket).direction).toBe('BEARISH');
+    expect(
+      detector.interpretTrade({ ...trade, outcome: 'NO' }, dipMarket).direction,
+    ).toBe('BULLISH');
+  });
+
+  it('keeps wallet movement questions directionally unknown', () => {
+    const detector = new PolymarketWhaleDetector();
+    const movementMarket = {
+      ...market,
+      question: 'Will Satoshi move any Bitcoin in 2026?',
+    };
+
+    expect(detector.inferQuestionPolarity(movementMarket.question)).toBe(
+      'UNKNOWN',
+    );
+    expect(detector.interpretTrade(trade, movementMarket).direction).toBe(
+      'UNKNOWN',
+    );
+  });
+
   it('maps direct UP and DOWN outcomes without question polarity', () => {
     const detector = new PolymarketWhaleDetector();
     const directionalMarket = {
