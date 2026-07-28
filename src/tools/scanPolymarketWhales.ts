@@ -11,6 +11,7 @@ interface ScanOptions {
   minimumLiquidityUsd: number;
   marketLimit: number;
   tradeLimit: number;
+  maximumTradeAgeHours: number;
   reportPath?: string;
 }
 
@@ -31,6 +32,7 @@ const parseOptions = (args: readonly string[]): ScanOptions => {
     minimumLiquidityUsd: 25_000,
     marketLimit: 500,
     tradeLimit: 1_000,
+    maximumTradeAgeHours: 24,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -49,6 +51,9 @@ const parseOptions = (args: readonly string[]): ScanOptions => {
     } else if (flag === '--trade-limit') {
       options.tradeLimit = parsePositiveNumber(value, flag);
       index += 1;
+    } else if (flag === '--max-age-hours') {
+      options.maximumTradeAgeHours = parsePositiveNumber(value, flag);
+      index += 1;
     } else if (flag === '--report') {
       options.reportPath = value?.startsWith('--')
         ? 'data/reports/polymarket-whale-scan.json'
@@ -64,13 +69,16 @@ const parseOptions = (args: readonly string[]): ScanOptions => {
 
 const main = async (): Promise<void> => {
   const options = parseOptions(process.argv.slice(2));
+  const maximumTradeAgeMs = options.maximumTradeAgeHours * 60 * 60 * 1_000;
   const client = new PolymarketPublicClient();
   const detector = new PolymarketWhaleDetector({
     minimumLiquidityUsd: options.minimumLiquidityUsd,
     minimumTradeNotionalUsd: options.minimumTradeUsd,
+    maximumTradeAgeMs,
   });
   const aggregator = new PolymarketMarketAggregator(detector, {
     minimumNetNotionalUsd: options.minimumTradeUsd,
+    maximumTradeAgeMs,
   });
   const store = new ExternalSignalStore();
 
@@ -112,20 +120,40 @@ const main = async (): Promise<void> => {
     }
   }
 
-  const aggregations = relevantMarkets
-    .map((market) =>
-      aggregator.aggregate(
-        market,
-        tradesByCondition.get(market.conditionId) ?? [],
-      ),
-    )
-    .filter((aggregation) => aggregation.directionalTrades > 0);
+  const allAggregations = relevantMarkets.map((market) =>
+    aggregator.aggregate(
+      market,
+      tradesByCondition.get(market.conditionId) ?? [],
+    ),
+  );
+  const aggregations = allAggregations.filter(
+    (aggregation) => aggregation.directionalTrades > 0,
+  );
 
   for (const aggregation of aggregations) {
     if (aggregation.signal) store.add(aggregation.signal);
   }
 
   const signals = store.getAll();
+  const freshDirectionalTrades = allAggregations.reduce(
+    (sum, aggregation) => sum + aggregation.directionalTrades,
+    0,
+  );
+  const staleTrades = allAggregations.reduce(
+    (sum, aggregation) => sum + aggregation.staleTrades,
+    0,
+  );
+  const weakNetFlowMarkets = aggregations.filter(
+    (aggregation) =>
+      !aggregation.signal &&
+      Math.abs(aggregation.netDirectionalNotionalUsd) < options.minimumTradeUsd,
+  ).length;
+  const lowDominanceMarkets = aggregations.filter(
+    (aggregation) =>
+      !aggregation.signal &&
+      Math.abs(aggregation.netDirectionalNotionalUsd) >= options.minimumTradeUsd &&
+      aggregation.dominance < 0.15,
+  ).length;
   const topUnknownExamples = [...unknownExamples.entries()]
     .sort((left, right) => right[1] - left[1])
     .slice(0, 5)
@@ -138,7 +166,13 @@ const main = async (): Promise<void> => {
   console.log(`Trades matched to discovered markets: ${matchedTrades}`);
   console.log(`Directionally interpreted trades: ${directionalTrades}`);
   console.log(`Unknown-direction trades: ${unknownDirectionTrades}`);
-  console.log(`Markets with directional activity: ${aggregations.length}`);
+  console.log(
+    `Fresh directional trades (≤${options.maximumTradeAgeHours}h): ${freshDirectionalTrades}`,
+  );
+  console.log(`Stale trades discarded: ${staleTrades}`);
+  console.log(`Markets with fresh directional activity: ${aggregations.length}`);
+  console.log(`Markets rejected for weak net flow: ${weakNetFlowMarkets}`);
+  console.log(`Markets rejected for low dominance: ${lowDominanceMarkets}`);
   console.log(`Aggregated whale signals detected: ${signals.length}`);
 
   if (topUnknownExamples.length > 0) {
@@ -189,9 +223,13 @@ const main = async (): Promise<void> => {
       matchedTrades,
       directionalTrades,
       unknownDirectionTrades,
-      topUnknownExamples,
+      freshDirectionalTrades,
+      staleTrades,
       marketsWithDirectionalActivity: aggregations.length,
-      aggregations,
+      weakNetFlowMarkets,
+      lowDominanceMarkets,
+      topUnknownExamples,
+      aggregations: allAggregations,
       whaleSignals: signals,
     };
     mkdirSync(path.dirname(options.reportPath), { recursive: true });
