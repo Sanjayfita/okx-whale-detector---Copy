@@ -1,65 +1,113 @@
+import path from 'node:path';
+
 import { appConfig } from '../config/appConfig';
-import { CorrelatedAlertLogReader } from '../recording/CorrelatedAlertLogReader';
+import {
+  CorrelatedAlertLogReader,
+  type CorrelatedAlertLogReadOptions,
+  type CorrelatedAlertLogReadResult,
+} from '../recording/CorrelatedAlertLogReader';
 import {
   aggregateCorrelatedAlerts,
   parseCorrelatedAlertInspectOptions,
 } from '../recording/correlatedAlertInspection';
 
-const run = async (): Promise<void> => {
-  const options = parseCorrelatedAlertInspectOptions(
-    process.argv.slice(2),
-    appConfig.correlatedAlertRecording.outputPath,
-  );
-  const result = await new CorrelatedAlertLogReader().read(options.filePath, {
-    maximumRecords: options.limit,
-  });
+export interface CorrelatedAlertInspectionReader {
+  read(
+    filePath: string,
+    options?: CorrelatedAlertLogReadOptions,
+  ): Promise<CorrelatedAlertLogReadResult>;
+}
+
+export interface CorrelatedAlertInspectionCliDependencies {
+  defaultFilePath?: string;
+  reader?: CorrelatedAlertInspectionReader;
+  log?: (...values: unknown[]) => void;
+  warn?: (...values: unknown[]) => void;
+  error?: (...values: unknown[]) => void;
+}
+
+const isMissingFileError = (error: unknown): boolean =>
+  typeof error === 'object' &&
+  error !== null &&
+  'code' in error &&
+  error.code === 'ENOENT';
+
+export const inspectCorrelatedAlerts = async (
+  args: readonly string[],
+  dependencies: CorrelatedAlertInspectionCliDependencies = {},
+): Promise<void> => {
+  const defaultFilePath =
+    dependencies.defaultFilePath ??
+    appConfig.correlatedAlertRecording.outputPath;
+  const reader = dependencies.reader ?? new CorrelatedAlertLogReader();
+  const log = dependencies.log ?? console.log;
+  const warn = dependencies.warn ?? console.warn;
+  const options = parseCorrelatedAlertInspectOptions(args, defaultFilePath);
+  let result: CorrelatedAlertLogReadResult;
+
+  try {
+    result = await reader.read(options.filePath, {
+      maximumRecords: options.limit,
+    });
+  } catch (error: unknown) {
+    if (!isMissingFileError(error)) {
+      throw error;
+    }
+
+    log('CORRELATED ALERT LOG\n');
+    log('No correlated alert log exists yet.');
+    log(`Expected file: ${path.resolve(options.filePath)}`);
+    log(
+      'The file is created lazily after the first correlated alert is emitted.',
+    );
+    return;
+  }
+
   const inspection = aggregateCorrelatedAlerts(result.records, options.latest);
 
-  console.log('CORRELATED ALERT LOG\n');
-  console.log(`File: ${options.filePath}`);
-  console.log(`Valid alerts: ${inspection.totalValidAlerts}`);
-  console.log(`Malformed lines: ${result.malformedLines.length}`);
+  log('CORRELATED ALERT LOG\n');
+  log(`File: ${options.filePath}`);
+  log(`Valid alerts: ${inspection.totalValidAlerts}`);
+  log(`Malformed lines: ${result.malformedLines.length}`);
 
   for (const malformed of result.malformedLines) {
-    console.warn(
-      `Malformed line ${malformed.lineNumber}: ${malformed.message}`,
-    );
+    warn(`Malformed line ${malformed.lineNumber}: ${malformed.message}`);
   }
 
-  console.log('\nBy severity:');
+  log('\nBy severity:');
   for (const [severity, count] of Object.entries(inspection.countsBySeverity)) {
-    console.log(`${severity}: ${count}`);
+    log(`${severity}: ${count}`);
   }
 
-  console.log('\nBy event:');
+  log('\nBy event:');
   for (const [eventType, count] of Object.entries(
     inspection.countsByEventType,
   )) {
-    console.log(`${eventType}: ${count}`);
+    log(`${eventType}: ${count}`);
   }
 
-  console.log('\nTop symbols:');
+  log('\nTop symbols:');
   const symbols = Object.entries(inspection.countsBySymbol).sort(
     ([leftSymbol, leftCount], [rightSymbol, rightCount]) =>
       rightCount - leftCount || leftSymbol.localeCompare(rightSymbol),
   );
 
   for (const [symbol, count] of symbols) {
-    console.log(`${symbol}: ${count}`);
+    log(`${symbol}: ${count}`);
   }
 
-  console.log(
+  log(
     `\nLatest alert timestamp: ${
       inspection.latestAlertTimestamp === undefined
         ? 'N/A'
         : new Date(inspection.latestAlertTimestamp).toISOString()
     }`,
   );
-  console.log('\nLatest alerts:');
+  log('\nLatest alerts:');
 
   for (const record of inspection.latestAlerts) {
     const { alert } = record;
-    console.log(
+    log(
       `${new Date(alert.createdAt).toISOString()} | ${alert.symbol} | ` +
         `${alert.severity} | ${alert.eventType} | ` +
         `${alert.combinedConfidence.toFixed(1)}%`,
@@ -67,10 +115,27 @@ const run = async (): Promise<void> => {
   }
 };
 
-void run().catch((error: unknown) => {
-  console.error(
-    'Correlated alert inspection failed:',
-    error instanceof Error ? error.message : error,
+export const runCorrelatedAlertInspectionCli = async (
+  args: readonly string[],
+  dependencies: CorrelatedAlertInspectionCliDependencies = {},
+): Promise<number> => {
+  try {
+    await inspectCorrelatedAlerts(args, dependencies);
+    return 0;
+  } catch (error: unknown) {
+    const errorLog = dependencies.error ?? console.error;
+    errorLog(
+      'Correlated alert inspection failed:',
+      error instanceof Error ? error.message : error,
+    );
+    return 1;
+  }
+};
+
+if (require.main === module) {
+  void runCorrelatedAlertInspectionCli(process.argv.slice(2)).then(
+    (exitCode) => {
+      process.exitCode = exitCode;
+    },
   );
-  process.exitCode = 1;
-});
+}
