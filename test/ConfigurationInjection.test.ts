@@ -44,6 +44,13 @@ describe('central configuration injection', () => {
     expect(appConfig.events.removalGraceMs).toBe(2_000);
 
     expect(appConfig.reporting.summaryIntervalMs).toBe(5_000);
+
+    expect(appConfig.correlatedAlerts).toEqual({
+      enabled: true,
+      minimumCombinedConfidence: 55,
+      cooldownSeconds: 60,
+      confidenceChangeThreshold: 10,
+    });
   });
 
   it('changes wall detection when a smaller threshold is injected', () => {

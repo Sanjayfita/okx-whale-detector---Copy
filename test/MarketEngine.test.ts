@@ -6,7 +6,13 @@ import { MarketState } from '../src/core/MarketState';
 
 import { SummaryThrottle } from '../src/core/SummaryThrottle';
 
+import { CorrelatedAlertEngine } from '../src/alerts/CorrelatedAlertEngine';
+import { ExternalSignalCorrelationService } from '../src/external/core/ExternalSignalCorrelationService';
+import { CorrelatedAlertReporter } from '../src/reporting/CorrelatedAlertReporter';
+import { MarketReporter } from '../src/reporting/MarketReporter';
+
 import type { OKXOrderBookUpdate } from '../src/clients/okx/OKXWebSocketClient';
+import type { MarketEvaluation } from '../src/types/marketEvaluation';
 
 const createSnapshot = (
   overrides: Partial<OKXOrderBookUpdate> = {},
@@ -300,6 +306,76 @@ describe('MarketEngine', () => {
 
     expect(replacementState.orderBookManager.getOrderBook().status).toBe(
       'SYNCED',
+    );
+  });
+
+  it('correlates once and passes the same evaluation to reporting and alerts', () => {
+    const evaluation: MarketEvaluation = {
+      marketSignal: {
+        bias: 'BULLISH',
+        confidence: 75,
+        reason: 'Strong OKX pressure',
+        bidPressure: 80,
+        askPressure: 20,
+        netPressure: 60,
+        timestamp: Date.now(),
+      },
+      correlatedSignal: {
+        symbol: 'BTC-USDT',
+        bias: 'BULLISH',
+        confidence: 70,
+        okxBias: 'BULLISH',
+        okxConfidence: 75,
+        externalBias: 'BULLISH',
+        externalConfidence: 60,
+        agreement: 'AGREEMENT',
+        bullishExternalScore: 60,
+        bearishExternalScore: 0,
+        neutralExternalSignals: 0,
+        consideredSignals: 1,
+        ignoredSignals: 0,
+        contributions: [],
+        reason: 'OKX and external intelligence agree.',
+        timestamp: Date.now(),
+      },
+    };
+    const correlationService = new ExternalSignalCorrelationService();
+    const correlateSpy = vi
+      .spyOn(correlationService, 'correlateMarketSignal')
+      .mockReturnValue(evaluation);
+    const alertEngine = new CorrelatedAlertEngine({
+      clock: () => Date.now(),
+    });
+    const evaluateSpy = vi.spyOn(alertEngine, 'evaluate');
+    const alertReporter = new CorrelatedAlertReporter();
+    const alertReportSpy = vi.spyOn(alertReporter, 'report');
+    const marketReporter = new MarketReporter();
+    const summarySpy = vi.spyOn(marketReporter, 'reportSummary');
+    const integratedEngine = new MarketEngine(
+      marketStates,
+      new SummaryThrottle(5_000),
+      marketReporter,
+      undefined,
+      undefined,
+      correlationService,
+      alertEngine,
+      alertReporter,
+    );
+
+    integratedEngine.processOrderBookUpdate(createSnapshot());
+
+    expect(correlateSpy).toHaveBeenCalledTimes(1);
+    expect(evaluateSpy).toHaveBeenCalledTimes(1);
+    expect(evaluateSpy).toHaveBeenCalledWith(evaluation);
+    expect(summarySpy).toHaveBeenCalledWith(
+      expect.objectContaining({ evaluation }),
+    );
+    expect(alertReportSpy).toHaveBeenCalledTimes(1);
+    expect(alertReportSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: 'BTC-USDT',
+        relationship: 'AGREEMENT',
+      }),
     );
   });
 });

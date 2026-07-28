@@ -1,10 +1,12 @@
 import type { OKXOrderBookUpdate } from '../clients/okx/OKXWebSocketClient';
+import type { CorrelatedAlertEngine } from '../alerts/CorrelatedAlertEngine';
 import { performanceConfig } from '../config/performanceConfig';
 import type { MarketState } from '../core/MarketState';
 import { PipelineProfiler } from '../core/PipelineProfiler';
 import { ProcessingMonitor } from '../core/ProcessingMonitor';
 import { SummaryThrottle } from '../core/SummaryThrottle';
 import { MarketReporter } from '../reporting/MarketReporter';
+import { CorrelatedAlertReporter } from '../reporting/CorrelatedAlertReporter';
 import type { ExternalSignalCorrelationService } from '../external/core/ExternalSignalCorrelationService';
 import type { MarketEvaluation } from '../types/marketEvaluation';
 
@@ -21,6 +23,8 @@ export class MarketEngine {
     ),
     private readonly pipelineProfiler: PipelineProfiler = new PipelineProfiler(),
     private readonly correlationService?: ExternalSignalCorrelationService,
+    private readonly correlatedAlertEngine?: CorrelatedAlertEngine,
+    private readonly correlatedAlertReporter: CorrelatedAlertReporter = new CorrelatedAlertReporter(),
   ) {}
 
   public processOrderBookUpdate(update: OKXOrderBookUpdate): void {
@@ -172,6 +176,14 @@ export class MarketEngine {
           marketSignal,
           evaluation,
         });
+
+        if (evaluation) {
+          const alert = this.correlatedAlertEngine?.evaluate(evaluation);
+
+          if (alert) {
+            this.correlatedAlertReporter.report(alert);
+          }
+        }
       });
     } finally {
       this.processingMonitor.record(
@@ -195,6 +207,7 @@ export class MarketEngine {
     this.processingMonitor.reset();
     this.pipelineProfiler.reset();
     this.lastEvaluations.clear();
+    this.correlatedAlertEngine?.clear();
   }
 
   public resetSymbols(symbols: readonly string[]): void {
@@ -207,6 +220,7 @@ export class MarketEngine {
 
     for (const symbol of symbols) {
       this.lastEvaluations.delete(symbol);
+      this.correlatedAlertEngine?.resetSymbol(symbol);
     }
   }
 }

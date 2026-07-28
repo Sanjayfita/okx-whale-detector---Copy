@@ -2,7 +2,10 @@ import { appConfig, type AppConfig } from './appConfig';
 import { validateAppConfig } from './validateAppConfig';
 import type { SupportedInstType } from '../types/instrument';
 
-type SymbolConfigSection = Exclude<keyof AppConfig, 'reporting'>;
+type SymbolConfigSection = Exclude<
+  keyof AppConfig,
+  'reporting' | 'correlatedAlerts'
+>;
 
 export type AppConfigOverride = {
   [Section in SymbolConfigSection]?: Partial<AppConfig[Section]>;
@@ -41,6 +44,7 @@ const mergeConfig = (
   scoring: { ...baseConfig.scoring, ...override.scoring },
   market: { ...baseConfig.market, ...override.market },
   reporting: { ...baseConfig.reporting },
+  correlatedAlerts: { ...baseConfig.correlatedAlerts },
   polymarket: { ...baseConfig.polymarket, ...override.polymarket },
   history: { ...baseConfig.history, ...override.history },
 });

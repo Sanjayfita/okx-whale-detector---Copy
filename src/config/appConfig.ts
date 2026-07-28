@@ -68,6 +68,12 @@ export interface AppConfig {
   reporting: {
     summaryIntervalMs: number;
   };
+  correlatedAlerts: {
+    enabled: boolean;
+    minimumCombinedConfidence: number;
+    cooldownSeconds: number;
+    confidenceChangeThreshold: number;
+  };
   polymarket: {
     enabled: boolean;
     minimumSignalUsd: number;
@@ -155,6 +161,12 @@ export const appConfig: AppConfig = {
   },
   reporting: {
     summaryIntervalMs: 5_000,
+  },
+  correlatedAlerts: {
+    enabled: true,
+    minimumCombinedConfidence: 55,
+    cooldownSeconds: 60,
+    confidenceChangeThreshold: 10,
   },
   polymarket: {
     enabled: true,

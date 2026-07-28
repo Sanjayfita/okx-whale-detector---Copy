@@ -1,5 +1,6 @@
 import { OKXInstrumentClient } from './clients/okx/OKXInstrumentClient';
 import { OKXMarketDiscoveryClient } from './clients/okx/OKXMarketDiscoveryClient';
+import { CorrelatedAlertEngine } from './alerts/CorrelatedAlertEngine';
 import { appConfig } from './config/appConfig';
 import { healthConfig, validateHealthConfig } from './config/healthConfig';
 import {
@@ -34,9 +35,12 @@ import { MarketEngine } from './market/MarketEngine';
 import { ExternalSignalCorrelationService } from './external/core/ExternalSignalCorrelationService';
 import { PolymarketLiveSignalRuntime } from './external/providers/polymarket/PolymarketLiveSignalRuntime';
 import { MarketDataRecorder } from './recording/MarketDataRecorder';
+import { CorrelatedAlertReporter } from './reporting/CorrelatedAlertReporter';
 
 export interface AppRuntimeDependencies {
   externalSignalCorrelationService?: ExternalSignalCorrelationService;
+  correlatedAlertEngine?: CorrelatedAlertEngine;
+  correlatedAlertReporter?: CorrelatedAlertReporter;
   polymarketRuntime?: PolymarketLiveSignalRuntime;
 }
 
@@ -44,6 +48,7 @@ export const createAppRuntime = async (
   dependencies: AppRuntimeDependencies = {},
 ): Promise<{
   externalSignalCorrelationService: ExternalSignalCorrelationService;
+  correlatedAlertEngine: CorrelatedAlertEngine;
   marketEngine: MarketEngine;
   polymarketRuntime: PolymarketLiveSignalRuntime;
   shutdown: (signal: NodeJS.Signals) => void;
@@ -109,6 +114,16 @@ export const createAppRuntime = async (
   const externalSignalCorrelationService =
     dependencies.externalSignalCorrelationService ??
     new ExternalSignalCorrelationService();
+  const correlatedAlertEngine =
+    dependencies.correlatedAlertEngine ??
+    new CorrelatedAlertEngine({
+      enabled: appConfig.correlatedAlerts.enabled,
+      minimumCombinedConfidence:
+        appConfig.correlatedAlerts.minimumCombinedConfidence,
+      cooldownMs: appConfig.correlatedAlerts.cooldownSeconds * 1_000,
+      confidenceChangeThreshold:
+        appConfig.correlatedAlerts.confidenceChangeThreshold,
+    });
   const marketEngine = new MarketEngine(
     marketStates,
     summaryThrottle,
@@ -116,6 +131,8 @@ export const createAppRuntime = async (
     undefined,
     undefined,
     externalSignalCorrelationService,
+    correlatedAlertEngine,
+    dependencies.correlatedAlertReporter,
   );
   const polymarketRuntime =
     dependencies.polymarketRuntime ??
@@ -218,6 +235,7 @@ export const createAppRuntime = async (
 
   return {
     externalSignalCorrelationService,
+    correlatedAlertEngine,
     marketEngine,
     polymarketRuntime,
     shutdown,

@@ -35,6 +35,23 @@ describe('application configuration validation', () => {
     );
   });
 
+  it('rejects invalid correlated alert configuration', () => {
+    const config = cloneConfig();
+
+    config.correlatedAlerts.enabled = 'yes' as never;
+    config.correlatedAlerts.minimumCombinedConfidence = 101;
+    config.correlatedAlerts.cooldownSeconds = 0;
+    config.correlatedAlerts.confidenceChangeThreshold = 0;
+
+    expect(() => validateAppConfig(config)).toThrowError(
+      expect.objectContaining({
+        message: expect.stringMatching(
+          /correlatedAlerts\.enabled[\s\S]*correlatedAlerts\.minimumCombinedConfidence[\s\S]*correlatedAlerts\.cooldownSeconds[\s\S]*correlatedAlerts\.confidenceChangeThreshold/,
+        ),
+      }),
+    );
+  });
+
   it('rejects strong ages below persistent ages', () => {
     const config = cloneConfig();
 

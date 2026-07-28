@@ -7,3 +7,4 @@ export * from './signal';
 export * from './events';
 export * from './okx';
 export * from './config';
+export * from './correlatedAlert';

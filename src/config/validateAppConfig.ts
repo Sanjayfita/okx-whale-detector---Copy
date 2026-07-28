@@ -392,6 +392,25 @@ export const validateAppConfig = (config: AppConfig): void => {
     'reporting.summaryIntervalMs',
     config.reporting.summaryIntervalMs,
   );
+  if (typeof config.correlatedAlerts.enabled !== 'boolean') {
+    errors.push('correlatedAlerts.enabled must be a boolean');
+  }
+  requirePercent(
+    errors,
+    'correlatedAlerts.minimumCombinedConfidence',
+    config.correlatedAlerts.minimumCombinedConfidence,
+    true,
+  );
+  requireFinitePositive(
+    errors,
+    'correlatedAlerts.cooldownSeconds',
+    config.correlatedAlerts.cooldownSeconds,
+  );
+  requirePercent(
+    errors,
+    'correlatedAlerts.confidenceChangeThreshold',
+    config.correlatedAlerts.confidenceChangeThreshold,
+  );
   requireFinitePositive(
     errors,
     'history.candleLimit',
