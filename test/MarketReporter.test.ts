@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { PipelineProfiler } from '../src/core/PipelineProfiler';
 import { MarketReporter } from '../src/reporting/MarketReporter';
 
 import type { MarketEvaluation } from '../src/types/marketEvaluation';
@@ -45,8 +46,18 @@ const createNeutralSummary = (
   currentPrice,
   bestBidPrice,
   bestAskPrice,
-  activeWhales: [],
-  walls: [],
+  aggregates: {
+    bidWhaleCount: 0,
+    askWhaleCount: 0,
+    totalBidWhaleNotionalQuote: 0,
+    totalAskWhaleNotionalQuote: 0,
+    totalActiveWhaleCount: 0,
+    trackedWallCount: 0,
+    newWallCount: 0,
+    activeWallCount: 0,
+    persistentWallCount: 0,
+    strongWallCount: 0,
+  },
   scoredWhales: [],
   marketSignal: {
     bias: 'NEUTRAL' as const,
@@ -268,7 +279,18 @@ describe('MarketReporter', () => {
         64_665.14,
         64_665.16,
       ),
-      activeWhales: [whale],
+      aggregates: {
+        bidWhaleCount: 1,
+        askWhaleCount: 0,
+        totalBidWhaleNotionalQuote: whale.notionalQuote,
+        totalAskWhaleNotionalQuote: 0,
+        totalActiveWhaleCount: 1,
+        trackedWallCount: 0,
+        newWallCount: 0,
+        activeWallCount: 0,
+        persistentWallCount: 0,
+        strongWallCount: 0,
+      },
       scoredWhales: [
         {
           whale,
@@ -291,6 +313,64 @@ describe('MarketReporter', () => {
     expect(output).toContain(
       'BID WHALE SCORE: 75/100 | STRONG | Price: 64665.15',
     );
+  });
+
+  it('records prepared-summary formatting under the existing stage name', () => {
+    const reporter = new MarketReporter(() => undefined);
+    const profiler = new PipelineProfiler();
+
+    reporter.reportSummary(
+      createNeutralSummary('BTC-USDT', 100.5, 100, 101),
+      profiler,
+    );
+
+    expect(profiler.getRecentStage('summary.formatting')?.count).toBe(1);
+    expect(profiler.getRecentStage('summary.consoleEmission')?.count).toBe(1);
+    expect(profiler.getStageCount()).toBe(2);
+  });
+
+  it('formats prepared whale and wall aggregates without changing summary lines', () => {
+    const reporter = new MarketReporter();
+
+    reporter.reportSummary({
+      ...createNeutralSummary('BTC-USDT', 100.5, 100, 101),
+      aggregates: {
+        bidWhaleCount: 2,
+        askWhaleCount: 1,
+        totalBidWhaleNotionalQuote: 4_000_000,
+        totalAskWhaleNotionalQuote: 2_000_000,
+        totalActiveWhaleCount: 3,
+        trackedWallCount: 6,
+        newWallCount: 1,
+        activeWallCount: 1,
+        persistentWallCount: 1,
+        strongWallCount: 1,
+      },
+    });
+
+    const output = logSpy.mock.calls.map((call) => String(call[0]));
+
+    expect(output).toEqual([
+      '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
+      '📡 BTC-USDT',
+      '💵 Best Bid: 100 | Best Ask: 101',
+      '💵 Current Price: 100.5',
+      '🟢 Active BID Whales: 2 (4,000,000 USDT)',
+      '🔴 Active ASK Whales: 1 (2,000,000 USDT)',
+      '🐋 Total Active Whale Walls: 3',
+      '🧱 Tracked Walls: 6',
+      '🆕 New Walls: 1',
+      '🔵 Active Walls: 1',
+      '🟠 Persistent Walls: 1',
+      '🔴 Strong Walls: 1',
+      '\n📊 MARKET BIAS',
+      '⚪ NEUTRAL | Pressure Strength: 0.0%',
+      '💡 No active whale walls',
+      '\n📊 PRESSURE ANALYSIS',
+      '🟢 BID PRESSURE: 0.0%',
+      '🔴 ASK PRESSURE: 0.0%',
+      '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n',
+    ]);
   });
 
   it('reports unavailable bid and ask prices as N/A', () => {

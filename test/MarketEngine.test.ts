@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MarketEngine } from '../src/market/MarketEngine';
+import {
+  MarketEngine,
+  prepareMarketSummaryAggregates,
+} from '../src/market/MarketEngine';
 
 import { MarketState } from '../src/core/MarketState';
 
@@ -15,6 +18,56 @@ import type { PerformanceTrace } from '../src/core/PerformanceTrace';
 
 import type { OKXOrderBookUpdate } from '../src/clients/okx/OKXWebSocketClient';
 import type { MarketEvaluation } from '../src/types/marketEvaluation';
+import { WallSide, WallStatus, type Wall } from '../src/types/wall';
+import type { Whale } from '../src/types/whale';
+
+const createWhale = (
+  side: Whale['side'],
+  wallId: string,
+  notionalQuote: number,
+): Whale => ({
+  wallId,
+  side,
+  price: 100,
+  size: 10_000,
+  notionalQuote,
+  quoteCurrency: 'USDT',
+  detectedAt: 1_000,
+});
+
+const createWall = (status: WallStatus, wallId: string): Wall => ({
+  wallId,
+  side: WallSide.BUY,
+  initialPrice: 100,
+  currentPrice: 100,
+  initialNotional: 1_000_000,
+  currentNotional: 1_000_000,
+  highestNotional: 1_000_000,
+  lowestNotional: 1_000_000,
+  firstSeen: 1_000,
+  lastSeen: 1_000,
+  ageMs: 0,
+  priceMovementPercent: 0,
+  notionalChangePercent: 0,
+  status,
+});
+
+const prepareLegacyEquivalent = (
+  active: readonly Whale[],
+  walls: readonly Wall[] = [],
+) =>
+  prepareMarketSummaryAggregates(
+    {
+      active: [...active],
+      totalBidNotionalQuote: active
+        .filter((whale) => whale.side === 'BID')
+        .reduce((total, whale) => total + whale.notionalQuote, 0),
+      totalAskNotionalQuote: active
+        .filter((whale) => whale.side === 'ASK')
+        .reduce((total, whale) => total + whale.notionalQuote, 0),
+    },
+    walls,
+  );
 
 const createSnapshot = (
   overrides: Partial<OKXOrderBookUpdate> = {},
@@ -85,6 +138,110 @@ const createCorrelatedEvaluation = (): MarketEvaluation => ({
     reason: 'OKX and external intelligence agree.',
     timestamp: Date.now(),
   },
+});
+
+describe('prepareMarketSummaryAggregates', () => {
+  it.each([
+    {
+      name: 'zero whales',
+      whales: [],
+      expected: {
+        bidWhaleCount: 0,
+        askWhaleCount: 0,
+        totalBidWhaleNotionalQuote: 0,
+        totalAskWhaleNotionalQuote: 0,
+      },
+    },
+    {
+      name: 'BID-only whales',
+      whales: [createWhale('BID', 'bid-1', 1_000_000)],
+      expected: {
+        bidWhaleCount: 1,
+        askWhaleCount: 0,
+        totalBidWhaleNotionalQuote: 1_000_000,
+        totalAskWhaleNotionalQuote: 0,
+      },
+    },
+    {
+      name: 'ASK-only whales',
+      whales: [createWhale('ASK', 'ask-1', 2_000_000)],
+      expected: {
+        bidWhaleCount: 0,
+        askWhaleCount: 1,
+        totalBidWhaleNotionalQuote: 0,
+        totalAskWhaleNotionalQuote: 2_000_000,
+      },
+    },
+    {
+      name: 'mixed whales',
+      whales: [
+        createWhale('BID', 'bid-1', 1_000_000),
+        createWhale('ASK', 'ask-1', 2_000_000),
+        createWhale('BID', 'bid-2', 3_000_000),
+      ],
+      expected: {
+        bidWhaleCount: 2,
+        askWhaleCount: 1,
+        totalBidWhaleNotionalQuote: 4_000_000,
+        totalAskWhaleNotionalQuote: 2_000_000,
+      },
+    },
+  ])('matches legacy calculations for $name', ({ whales, expected }) => {
+    expect(prepareLegacyEquivalent(whales)).toMatchObject({
+      ...expected,
+      totalActiveWhaleCount: whales.length,
+    });
+  });
+
+  it('counts every reported wall category while retaining all tracked walls', () => {
+    const walls = [
+      createWall(WallStatus.NEW, 'new'),
+      createWall(WallStatus.ACTIVE, 'active'),
+      createWall(WallStatus.PERSISTENT, 'persistent'),
+      createWall(WallStatus.STRONG, 'strong'),
+      createWall(WallStatus.FADING, 'fading'),
+      createWall(WallStatus.REMOVED, 'removed'),
+    ];
+
+    expect(prepareLegacyEquivalent([], walls)).toMatchObject({
+      trackedWallCount: 6,
+      newWallCount: 1,
+      activeWallCount: 1,
+      persistentWallCount: 1,
+      strongWallCount: 1,
+    });
+  });
+
+  it('keeps symbols isolated and does not mutate detector collections', () => {
+    const btcWhales = [createWhale('BID', 'btc-bid', 1_000_000)];
+    const ethWhales = [createWhale('ASK', 'eth-ask', 2_000_000)];
+    const btcWalls = [createWall(WallStatus.NEW, 'btc-wall')];
+    const ethWalls = [createWall(WallStatus.STRONG, 'eth-wall')];
+    const originalBtcWhales = structuredClone(btcWhales);
+    const originalEthWhales = structuredClone(ethWhales);
+    const originalBtcWalls = structuredClone(btcWalls);
+    const originalEthWalls = structuredClone(ethWalls);
+
+    const btc = prepareLegacyEquivalent(btcWhales, btcWalls);
+    const eth = prepareLegacyEquivalent(ethWhales, ethWalls);
+
+    expect(btc).toMatchObject({
+      bidWhaleCount: 1,
+      askWhaleCount: 0,
+      newWallCount: 1,
+      strongWallCount: 0,
+    });
+    expect(eth).toMatchObject({
+      bidWhaleCount: 0,
+      askWhaleCount: 1,
+      newWallCount: 0,
+      strongWallCount: 1,
+    });
+    expect(btcWhales).toEqual(originalBtcWhales);
+    expect(ethWhales).toEqual(originalEthWhales);
+    expect(btcWalls).toEqual(originalBtcWalls);
+    expect(ethWalls).toEqual(originalEthWalls);
+  });
 });
 
 describe('MarketEngine', () => {

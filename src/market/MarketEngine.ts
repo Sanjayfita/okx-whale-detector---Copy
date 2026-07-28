@@ -9,11 +9,70 @@ import {
 } from '../core/PerformanceTrace';
 import { ProcessingMonitor } from '../core/ProcessingMonitor';
 import { SummaryThrottle } from '../core/SummaryThrottle';
-import { MarketReporter } from '../reporting/MarketReporter';
+import type { WhaleScanResult } from '../core/WhaleTracker';
+import {
+  MarketReporter,
+  type MarketSummaryAggregates,
+} from '../reporting/MarketReporter';
 import { CorrelatedAlertReporter } from '../reporting/CorrelatedAlertReporter';
 import type { ExternalSignalCorrelationService } from '../external/core/ExternalSignalCorrelationService';
 import type { CorrelatedAlertRecorder } from '../recording/CorrelatedAlertRecorder';
 import type { MarketEvaluation } from '../types/marketEvaluation';
+import type { Wall } from '../types/wall';
+
+export const prepareMarketSummaryAggregates = (
+  whaleScan: Pick<
+    WhaleScanResult,
+    'active' | 'totalBidNotionalQuote' | 'totalAskNotionalQuote'
+  >,
+  walls: readonly Wall[],
+): MarketSummaryAggregates => {
+  let bidWhaleCount = 0;
+  let askWhaleCount = 0;
+
+  for (const whale of whaleScan.active) {
+    if (whale.side === 'BID') {
+      bidWhaleCount += 1;
+    } else {
+      askWhaleCount += 1;
+    }
+  }
+
+  let newWallCount = 0;
+  let activeWallCount = 0;
+  let persistentWallCount = 0;
+  let strongWallCount = 0;
+
+  for (const wall of walls) {
+    switch (wall.status) {
+      case 'NEW':
+        newWallCount += 1;
+        break;
+      case 'ACTIVE':
+        activeWallCount += 1;
+        break;
+      case 'PERSISTENT':
+        persistentWallCount += 1;
+        break;
+      case 'STRONG':
+        strongWallCount += 1;
+        break;
+    }
+  }
+
+  return {
+    bidWhaleCount,
+    askWhaleCount,
+    totalBidWhaleNotionalQuote: whaleScan.totalBidNotionalQuote,
+    totalAskWhaleNotionalQuote: whaleScan.totalAskNotionalQuote,
+    totalActiveWhaleCount: whaleScan.active.length,
+    trackedWallCount: walls.length,
+    newWallCount,
+    activeWallCount,
+    persistentWallCount,
+    strongWallCount,
+  };
+};
 
 export class MarketEngine {
   private readonly sequenceGapSymbols = new Set<string>();
@@ -193,8 +252,7 @@ export class MarketEngine {
             currentPrice,
             bestBidPrice: bestBid?.price,
             bestAskPrice: bestAsk?.price,
-            activeWhales: result.active,
-            walls,
+            aggregates: prepareMarketSummaryAggregates(result, walls),
             scoredWhales,
             marketSignal,
             evaluation,

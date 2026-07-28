@@ -1,6 +1,4 @@
-import type { Whale, WhaleChange } from '../types/whale';
-
-import type { Wall } from '../types/wall';
+import type { WhaleChange } from '../types/whale';
 
 import type { WhaleBehavior } from '../core/WhaleBehaviorEngine';
 
@@ -27,11 +25,23 @@ export interface MarketSummaryInput {
   currentPrice: number;
   bestBidPrice?: number;
   bestAskPrice?: number;
-  activeWhales: Whale[];
-  walls: Wall[];
+  aggregates: MarketSummaryAggregates;
   scoredWhales: WhaleScore[];
   marketSignal: MarketSummarySignal;
   evaluation?: MarketEvaluation;
+}
+
+export interface MarketSummaryAggregates {
+  readonly bidWhaleCount: number;
+  readonly askWhaleCount: number;
+  readonly totalBidWhaleNotionalQuote: number;
+  readonly totalAskWhaleNotionalQuote: number;
+  readonly totalActiveWhaleCount: number;
+  readonly trackedWallCount: number;
+  readonly newWallCount: number;
+  readonly activeWallCount: number;
+  readonly persistentWallCount: number;
+  readonly strongWallCount: number;
 }
 
 export class MarketReporter {
@@ -186,33 +196,7 @@ export class MarketReporter {
 
   private formatSummary(input: MarketSummaryInput): string[] {
     const lines: string[] = [];
-    const bidWhales = input.activeWhales.filter(
-      (whale) => whale.side === 'BID',
-    );
-
-    const askWhales = input.activeWhales.filter(
-      (whale) => whale.side === 'ASK',
-    );
-
-    const totalBidValue = bidWhales.reduce(
-      (total, whale) => total + whale.notionalQuote,
-      0,
-    );
-
-    const totalAskValue = askWhales.reduce(
-      (total, whale) => total + whale.notionalQuote,
-      0,
-    );
-
-    const newWalls = input.walls.filter((wall) => wall.status === 'NEW');
-
-    const activeWalls = input.walls.filter((wall) => wall.status === 'ACTIVE');
-
-    const persistentWalls = input.walls.filter(
-      (wall) => wall.status === 'PERSISTENT',
-    );
-
-    const strongWalls = input.walls.filter((wall) => wall.status === 'STRONG');
+    const { aggregates } = input;
 
     for (const scored of input.scoredWhales) {
       lines.push(
@@ -240,21 +224,23 @@ export class MarketReporter {
     );
 
     lines.push(
-      `🟢 Active BID Whales: ${bidWhales.length} ` +
-        `(${this.formatQuote(totalBidValue)} USDT)`,
+      `🟢 Active BID Whales: ${aggregates.bidWhaleCount} ` +
+        `(${this.formatQuote(aggregates.totalBidWhaleNotionalQuote)} USDT)`,
     );
 
     lines.push(
-      `🔴 Active ASK Whales: ${askWhales.length} ` +
-        `(${this.formatQuote(totalAskValue)} USDT)`,
+      `🔴 Active ASK Whales: ${aggregates.askWhaleCount} ` +
+        `(${this.formatQuote(aggregates.totalAskWhaleNotionalQuote)} USDT)`,
     );
 
-    lines.push(`🐋 Total Active Whale Walls: ${input.activeWhales.length}`);
-    lines.push(`🧱 Tracked Walls: ${input.walls.length}`);
-    lines.push(`🆕 New Walls: ${newWalls.length}`);
-    lines.push(`🔵 Active Walls: ${activeWalls.length}`);
-    lines.push(`🟠 Persistent Walls: ${persistentWalls.length}`);
-    lines.push(`🔴 Strong Walls: ${strongWalls.length}`);
+    lines.push(
+      `🐋 Total Active Whale Walls: ${aggregates.totalActiveWhaleCount}`,
+    );
+    lines.push(`🧱 Tracked Walls: ${aggregates.trackedWallCount}`);
+    lines.push(`🆕 New Walls: ${aggregates.newWallCount}`);
+    lines.push(`🔵 Active Walls: ${aggregates.activeWallCount}`);
+    lines.push(`🟠 Persistent Walls: ${aggregates.persistentWallCount}`);
+    lines.push(`🔴 Strong Walls: ${aggregates.strongWallCount}`);
     lines.push('\n📊 MARKET BIAS');
     lines.push(this.formatMarketBias(input.marketSignal));
     lines.push(`💡 ${input.marketSignal.reason}`);

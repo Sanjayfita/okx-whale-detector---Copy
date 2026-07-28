@@ -5,7 +5,10 @@ import { MarketState } from '../core/MarketState';
 import { PipelineProfiler } from '../core/PipelineProfiler';
 import { ProcessingMonitor } from '../core/ProcessingMonitor';
 import { SummaryThrottle } from '../core/SummaryThrottle';
-import { MarketEngine } from '../market/MarketEngine';
+import {
+  MarketEngine,
+  prepareMarketSummaryAggregates,
+} from '../market/MarketEngine';
 import {
   MarketReporter,
   type MarketSummaryInput,
@@ -114,15 +117,27 @@ const formattingBenchmarkInput = (
   const scoredWhales = Array.from({ length: scoredWhaleCount }, (_, index) =>
     benchmarkScore(index),
   );
+  const activeWhales = scoredWhales.map((score) => score.whale);
+  const walls = Array.from({ length: scoredWhaleCount }, (_, index) =>
+    benchmarkWall(index),
+  );
 
   return {
     symbol: 'BTC-USDT',
     currentPrice: 64_000.125,
     bestBidPrice: 64_000.12,
     bestAskPrice: 64_000.13,
-    activeWhales: scoredWhales.map((score) => score.whale),
-    walls: Array.from({ length: scoredWhaleCount }, (_, index) =>
-      benchmarkWall(index),
+    aggregates: prepareMarketSummaryAggregates(
+      {
+        active: activeWhales,
+        totalBidNotionalQuote: activeWhales
+          .filter((whale) => whale.side === 'BID')
+          .reduce((total, whale) => total + whale.notionalQuote, 0),
+        totalAskNotionalQuote: activeWhales
+          .filter((whale) => whale.side === 'ASK')
+          .reduce((total, whale) => total + whale.notionalQuote, 0),
+      },
+      walls,
     ),
     scoredWhales,
     marketSignal: {
