@@ -116,8 +116,14 @@ describe('PolymarketMarketAggregator', () => {
     });
   });
 
-  it('ignores stale and semantically unknown trades', () => {
-    const aggregator = createAggregator();
+  it('separately reports stale and semantically unknown trades', () => {
+    const aggregator = new PolymarketMarketAggregator(
+      new PolymarketWhaleDetector({ minimumTradeNotionalUsd: 1_000 }),
+      {
+        minimumNetNotionalUsd: 1_000,
+        maximumTradeAgeMs: 60 * 60 * 1_000,
+      },
+    );
     const ambiguousMarket = {
       ...market,
       question: 'What will happen to Bitcoin tomorrow?',
@@ -136,7 +142,34 @@ describe('PolymarketMarketAggregator', () => {
 
     expect(result.directionalTrades).toBe(0);
     expect(result.ignoredTrades).toBe(2);
+    expect(result.unknownDirectionTrades).toBe(1);
+    expect(result.staleTrades).toBe(1);
+    expect(result.mismatchedTrades).toBe(0);
     expect(result.signal).toBeUndefined();
+  });
+
+  it('accepts trades inside a configured 24-hour freshness window', () => {
+    const aggregator = new PolymarketMarketAggregator(
+      new PolymarketWhaleDetector({ minimumTradeNotionalUsd: 1_000 }),
+      {
+        minimumNetNotionalUsd: 1_000,
+        maximumTradeAgeMs: 24 * 60 * 60 * 1_000,
+      },
+    );
+    const result = aggregator.aggregate(
+      market,
+      [
+        createTrade({
+          timestamp: (now - 12 * 60 * 60 * 1_000) / 1_000,
+          transactionHash: 'twelve-hours-old',
+        }),
+      ],
+      now,
+    );
+
+    expect(result.directionalTrades).toBe(1);
+    expect(result.staleTrades).toBe(0);
+    expect(result.signal?.direction).toBe('BULLISH');
   });
 
   it('reduces confidence when a market is close to resolution', () => {
