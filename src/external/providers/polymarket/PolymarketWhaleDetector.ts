@@ -1,4 +1,7 @@
-import type { ExternalWhaleSignal } from '../../types/ExternalWhaleSignal';
+import type {
+  ExternalSignalDirection,
+  ExternalWhaleSignal,
+} from '../../types/ExternalWhaleSignal';
 import type {
   PolymarketMarket,
   PolymarketTrade,
@@ -8,6 +11,16 @@ export interface PolymarketWhaleDetectorConfig {
   minimumLiquidityUsd: number;
   minimumTradeNotionalUsd: number;
   maximumTradeAgeMs: number;
+}
+
+export type PolymarketQuestionPolarity = 'POSITIVE' | 'NEGATIVE' | 'UNKNOWN';
+
+export interface InterpretedPolymarketTrade {
+  direction: ExternalSignalDirection;
+  polarity: PolymarketQuestionPolarity;
+  supportsYes: boolean;
+  notionalUsd: number;
+  occurredAt: number;
 }
 
 const DEFAULT_CONFIG: PolymarketWhaleDetectorConfig = {
@@ -44,7 +57,31 @@ const MACRO_KEYWORDS = [
   'etf',
 ];
 
-const inferAsset = (text: string): string | undefined => {
+const NEGATIVE_PATTERNS = [
+  /\bcrash(?:es|ed|ing)?\b/,
+  /\bfall(?:s|en|ing)?\s+below\b/,
+  /\bdrop(?:s|ped|ping)?\s+below\b/,
+  /\bdecline(?:s|d)?\s+below\b/,
+  /\b(?:be|trade|close|finish|settle)\s+below\b/,
+  /\bbelow\s+\$?[\d,.]+/,
+  /\bunder\s+\$?[\d,.]+/,
+  /\brecession\b/,
+  /\bdefault\b/,
+  /\bban(?:ned|s)?\b/,
+];
+
+const POSITIVE_PATTERNS = [
+  /\b(?:be|trade|close|finish|settle)\s+above\b/,
+  /\babove\s+\$?[\d,.]+/,
+  /\bexceed(?:s|ed)?\b/,
+  /\breach(?:es|ed)?\b/,
+  /\bhit(?:s)?\s+\$?[\d,.]+/,
+  /\brise(?:s|n)?\s+(?:above|to)\b/,
+  /\bapprove(?:s|d)?\b/,
+  /\brate cut\b/,
+];
+
+export const inferPolymarketAsset = (text: string): string | undefined => {
   const normalized = text.toLowerCase();
   if (normalized.includes('bitcoin') || normalized.includes('btc')) return 'BTC';
   if (normalized.includes('ethereum') || normalized.includes('eth')) return 'ETH';
@@ -74,53 +111,91 @@ export class PolymarketWhaleDetector {
     );
   }
 
+  public inferQuestionPolarity(question: string): PolymarketQuestionPolarity {
+    const normalized = question.toLowerCase();
+    const negativeMatches = NEGATIVE_PATTERNS.filter((pattern) =>
+      pattern.test(normalized),
+    ).length;
+    const positiveMatches = POSITIVE_PATTERNS.filter((pattern) =>
+      pattern.test(normalized),
+    ).length;
+
+    if (negativeMatches > positiveMatches) return 'NEGATIVE';
+    if (positiveMatches > negativeMatches) return 'POSITIVE';
+    return 'UNKNOWN';
+  }
+
+  public interpretTrade(
+    trade: PolymarketTrade,
+    market: PolymarketMarket,
+  ): InterpretedPolymarketTrade {
+    const outcomeIsNo = trade.outcome.trim().toLowerCase() === 'no';
+    const supportsOutcome = trade.side === 'BUY';
+    const supportsYes = outcomeIsNo ? !supportsOutcome : supportsOutcome;
+    const polarity = this.inferQuestionPolarity(market.question);
+
+    let direction: ExternalSignalDirection = 'UNKNOWN';
+    if (polarity === 'POSITIVE') {
+      direction = supportsYes ? 'BULLISH' : 'BEARISH';
+    } else if (polarity === 'NEGATIVE') {
+      direction = supportsYes ? 'BEARISH' : 'BULLISH';
+    }
+
+    return {
+      direction,
+      polarity,
+      supportsYes,
+      notionalUsd: trade.size * trade.price,
+      occurredAt: trade.timestamp * 1_000,
+    };
+  }
+
   public detect(
     trade: PolymarketTrade,
     market: PolymarketMarket,
     now = Date.now(),
   ): ExternalWhaleSignal | undefined {
-    const notionalUsd = trade.size * trade.price;
-    const occurredAt = trade.timestamp * 1_000;
-    const ageMs = Math.max(0, now - occurredAt);
+    const interpretation = this.interpretTrade(trade, market);
+    const ageMs = Math.max(0, now - interpretation.occurredAt);
 
     if (
       !this.isRelevantMarket(market) ||
-      notionalUsd < this.config.minimumTradeNotionalUsd ||
+      interpretation.notionalUsd < this.config.minimumTradeNotionalUsd ||
       ageMs > this.config.maximumTradeAgeMs
     ) {
       return undefined;
     }
 
-    const outcomeIsNo = trade.outcome.trim().toLowerCase() === 'no';
-    const supportsOutcome = trade.side === 'BUY';
-    const bullish = outcomeIsNo ? !supportsOutcome : supportsOutcome;
-    const direction = bullish ? 'BULLISH' : 'BEARISH';
     const tradeScale = Math.min(
       1,
-      notionalUsd / Math.max(this.config.minimumTradeNotionalUsd * 5, 1),
+      interpretation.notionalUsd /
+        Math.max(this.config.minimumTradeNotionalUsd * 5, 1),
     );
     const liquidityImpact = Math.min(
       1,
-      notionalUsd / Math.max(market.liquidity, 1),
+      interpretation.notionalUsd / Math.max(market.liquidity, 1),
     );
     const confidence = Math.min(75, 35 + tradeScale * 25 + liquidityImpact * 15);
-    const asset = inferAsset(`${market.question} ${market.category ?? ''}`);
+    const asset = inferPolymarketAsset(
+      `${market.question} ${market.category ?? ''}`,
+    );
 
     return {
       id: `polymarket:${trade.transactionHash}:${trade.asset}`,
       underlyingEventId: `polymarket:${trade.transactionHash}:${trade.asset}`,
       provider: 'POLYMARKET',
       category: 'PREDICTION_TRADE',
-      direction,
-      occurredAt,
+      direction: interpretation.direction,
+      occurredAt: interpretation.occurredAt,
       receivedAt: now,
       confidence,
       asset,
-      notionalUsd,
+      notionalUsd: interpretation.notionalUsd,
       transactionHash: trade.transactionHash,
       description:
         `${trade.side} ${trade.outcome} on “${market.question}” ` +
-        `for approximately $${notionalUsd.toFixed(2)}.`,
+        `for approximately $${interpretation.notionalUsd.toFixed(2)} ` +
+        `(${interpretation.polarity.toLowerCase()} question).`,
       evidence: [
         {
           provider: 'POLYMARKET',
@@ -137,6 +212,8 @@ export class PolymarketWhaleDetector {
         price: trade.price,
         size: trade.size,
         liquidityUsd: market.liquidity,
+        questionPolarity: interpretation.polarity,
+        supportsYes: interpretation.supportsYes,
       },
     };
   }
