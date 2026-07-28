@@ -5,6 +5,8 @@ export interface PolymarketMarket {
   slug: string;
   liquidity: number;
   volume: number;
+  tokenIds: string[];
+  outcomes: string[];
   endDate?: string;
   category?: string;
 }
@@ -42,6 +44,23 @@ const DEFAULT_CONFIG: PolymarketPublicClientConfig = {
 const toFiniteNumber = (value: unknown): number => {
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const toStringArray = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map(String).filter(Boolean);
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
 };
 
 export class PolymarketPublicClient {
@@ -176,6 +195,8 @@ export class PolymarketPublicClient {
           slug: String(value.slug ?? ''),
           liquidity: toFiniteNumber(value.liquidityNum ?? value.liquidity),
           volume: toFiniteNumber(value.volumeNum ?? value.volume),
+          tokenIds: toStringArray(value.clobTokenIds),
+          outcomes: toStringArray(value.outcomes),
           endDate:
             typeof value.endDate === 'string' ? value.endDate : undefined,
           category:
