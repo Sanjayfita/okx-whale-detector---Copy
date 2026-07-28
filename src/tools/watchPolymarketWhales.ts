@@ -11,6 +11,8 @@ interface WatchOptions {
   windowSeconds: number;
   minimumDominance: number;
   signalCooldownSeconds: number;
+  statusSeconds: number;
+  showExecutions: boolean;
 }
 
 const parsePositiveNumber = (
@@ -41,6 +43,8 @@ const parseOptions = (args: readonly string[]): WatchOptions => {
     windowSeconds: 60,
     minimumDominance: 0.15,
     signalCooldownSeconds: 15,
+    statusSeconds: 30,
+    showExecutions: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -68,12 +72,23 @@ const parseOptions = (args: readonly string[]): WatchOptions => {
     } else if (flag === '--signal-cooldown-seconds') {
       options.signalCooldownSeconds = parsePositiveNumber(value, flag);
       index += 1;
+    } else if (flag === '--status-seconds') {
+      options.statusSeconds = parsePositiveNumber(value, flag);
+      index += 1;
+    } else if (flag === '--show-executions') {
+      options.showExecutions = true;
     } else {
       throw new Error(`Unknown Polymarket live option: ${flag}`);
     }
   }
 
   return options;
+};
+
+const resolutionTime = (endDate: string | undefined): number => {
+  if (!endDate) return Number.POSITIVE_INFINITY;
+  const parsed = Date.parse(endDate);
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
 };
 
 const main = async (): Promise<void> => {
@@ -92,9 +107,22 @@ const main = async (): Promise<void> => {
 
   console.log('Discovering Polymarket markets...');
   const markets = await publicClient.getActiveMarkets(options.marketLimit);
+  const discoveryTime = Date.now();
   const watchedMarkets = markets
     .filter((market) => detector.isRelevantMarket(market))
     .filter((market) => (market.tokenIds?.length ?? 0) > 0)
+    .sort((left, right) => {
+      const leftResolution = resolutionTime(left.endDate);
+      const rightResolution = resolutionTime(right.endDate);
+      const leftUpcoming = leftResolution >= discoveryTime;
+      const rightUpcoming = rightResolution >= discoveryTime;
+
+      if (leftUpcoming !== rightUpcoming) return leftUpcoming ? -1 : 1;
+      if (leftResolution !== rightResolution) {
+        return leftResolution - rightResolution;
+      }
+      return right.volume - left.volume;
+    })
     .slice(0, options.watchMarkets);
 
   const tokenContext = new Map<
@@ -130,13 +158,30 @@ const main = async (): Promise<void> => {
     `Minimum dominance: ${(options.minimumDominance * 100).toFixed(1)}%`,
   );
   console.log(`Signal cooldown: ${options.signalCooldownSeconds}s per market`);
+  console.log(`Status interval: ${options.statusSeconds}s`);
+  console.log(
+    `Individual executions: ${options.showExecutions ? 'shown' : 'hidden'}`,
+  );
   console.log('Waiting for real-time trades. Press Ctrl+C to stop.\n');
+
+  let receivedExecutions = 0;
+  let directionalExecutions = 0;
+  let unknownTokenExecutions = 0;
+  let unknownDirectionExecutions = 0;
+  let emittedSignals = 0;
+  let lastExecutionAt: number | undefined;
 
   const webSocketClient = new PolymarketMarketWebSocketClient(
     [...tokenContext.keys()],
     (liveTrade) => {
+      receivedExecutions += 1;
+      lastExecutionAt = Date.now();
+
       const context = tokenContext.get(liveTrade.tokenId);
-      if (!context) return;
+      if (!context) {
+        unknownTokenExecutions += 1;
+        return;
+      }
 
       const tokenIds = context.market.tokenIds ?? [];
       const interpretation = detector.interpretTrade(
@@ -164,19 +209,31 @@ const main = async (): Promise<void> => {
         interpretation.direction === 'UNKNOWN' ||
         interpretation.direction === 'NEUTRAL'
       ) {
+        unknownDirectionExecutions += 1;
         return;
+      }
+
+      directionalExecutions += 1;
+
+      if (options.showExecutions) {
+        console.log(
+          `EXECUTION | ${interpretation.direction} | $${interpretation.notionalUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })} | ${context.market.question}`,
+        );
       }
 
       const executionId =
         liveTrade.transactionHash ??
         `${liveTrade.tokenId}:${liveTrade.timestamp}:${liveTrade.price}:${liveTrade.size}:${liveTrade.side}`;
-      const aggregation = aggregator.add({
-        id: executionId,
-        marketConditionId: context.market.conditionId,
-        occurredAt: interpretation.occurredAt,
-        direction: interpretation.direction,
-        notionalUsd: interpretation.notionalUsd,
-      });
+      const aggregation = aggregator.add(
+        {
+          id: executionId,
+          marketConditionId: context.market.conditionId,
+          occurredAt: interpretation.occurredAt,
+          direction: interpretation.direction,
+          notionalUsd: interpretation.notionalUsd,
+        },
+        Date.now(),
+      );
 
       if (!aggregation.qualifies) return;
 
@@ -187,6 +244,7 @@ const main = async (): Promise<void> => {
         return;
       }
       lastSignalAtByMarket.set(context.market.conditionId, now);
+      emittedSignals += 1;
 
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log(`${aggregation.direction} | ${context.market.question}`);
@@ -206,8 +264,18 @@ const main = async (): Promise<void> => {
     },
   );
 
+  const statusTimer = setInterval(() => {
+    const lastExecution = lastExecutionAt
+      ? `${Math.max(0, Math.round((Date.now() - lastExecutionAt) / 1_000))}s ago`
+      : 'none yet';
+    console.log(
+      `[LIVE STATUS] executions=${receivedExecutions} directional=${directionalExecutions} unknownToken=${unknownTokenExecutions} unknownDirection=${unknownDirectionExecutions} signals=${emittedSignals} lastExecution=${lastExecution}`,
+    );
+  }, options.statusSeconds * 1_000);
+
   const shutdown = (): void => {
     console.log('\nStopping Polymarket live watcher...');
+    clearInterval(statusTimer);
     webSocketClient.close();
     aggregator.clear();
     process.exitCode = 0;
