@@ -55,12 +55,10 @@ export class PolymarketLiveSignalFactory {
     const asset = inferPolymarketAsset(
       `${market.question} ${market.category ?? ''}`,
     );
-    const underlyingEventId =
-      `polymarket-live:${market.conditionId}:` +
-      `${aggregation.windowStartedAt}:${aggregation.windowEndedAt}`;
+    const underlyingEventId = `polymarket-live:${market.conditionId}:${aggregation.direction}`;
 
     return {
-      id: `${underlyingEventId}:${aggregation.direction}`,
+      id: `${underlyingEventId}:${aggregation.windowEndedAt}`,
       underlyingEventId,
       provider: 'POLYMARKET',
       category: 'PREDICTION_POSITION',
@@ -78,7 +76,7 @@ export class PolymarketLiveSignalFactory {
       evidence: [
         {
           provider: 'POLYMARKET',
-          providerEventId: underlyingEventId,
+          providerEventId: `${market.conditionId}:${aggregation.windowEndedAt}`,
           receivedAt,
         },
       ],
