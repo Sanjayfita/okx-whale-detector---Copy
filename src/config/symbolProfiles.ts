@@ -41,6 +41,7 @@ const mergeConfig = (
   scoring: { ...baseConfig.scoring, ...override.scoring },
   market: { ...baseConfig.market, ...override.market },
   reporting: { ...baseConfig.reporting },
+  polymarket: { ...baseConfig.polymarket, ...override.polymarket },
   history: { ...baseConfig.history, ...override.history },
 });
 

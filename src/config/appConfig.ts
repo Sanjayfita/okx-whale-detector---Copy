@@ -68,6 +68,18 @@ export interface AppConfig {
   reporting: {
     summaryIntervalMs: number;
   };
+  polymarket: {
+    enabled: boolean;
+    minimumSignalUsd: number;
+    minimumLiquidityUsd: number;
+    marketLimit: number;
+    watchMarkets: number;
+    windowSeconds: number;
+    minimumDominance: number;
+    signalCooldownSeconds: number;
+    statusSeconds: number;
+    showExecutions: boolean;
+  };
   history: {
     candleLimit: number;
     orderBookLevelLimit: number;
@@ -143,6 +155,18 @@ export const appConfig: AppConfig = {
   },
   reporting: {
     summaryIntervalMs: 5_000,
+  },
+  polymarket: {
+    enabled: true,
+    minimumSignalUsd: 5_000,
+    minimumLiquidityUsd: 5_000,
+    marketLimit: 2_000,
+    watchMarkets: 100,
+    windowSeconds: 60,
+    minimumDominance: 0.15,
+    signalCooldownSeconds: 15,
+    statusSeconds: 30,
+    showExecutions: false,
   },
   history: {
     candleLimit: 100,

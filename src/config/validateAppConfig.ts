@@ -35,6 +35,21 @@ const requirePercent = (
   }
 };
 
+const requireRatio = (
+  errors: string[],
+  path: string,
+  value: number,
+  allowZero = false,
+): void => {
+  const minimum = allowZero ? 0 : Number.EPSILON;
+
+  if (!Number.isFinite(value) || value < minimum || value > 1) {
+    errors.push(
+      `${path} must be a finite ratio ${allowZero ? 'between 0 and 1' : 'greater than 0 and at most 1'}`,
+    );
+  }
+};
+
 const requireDescending = (
   errors: string[],
   entries: Array<[path: string, value: number]>,
@@ -237,6 +252,48 @@ export const validateAppConfig = (config: AppConfig): void => {
     errors,
     'events.removalGraceMs',
     config.events.removalGraceMs,
+  );
+
+  requireFinitePositive(
+    errors,
+    'polymarket.minimumSignalUsd',
+    config.polymarket.minimumSignalUsd,
+  );
+  requireFinitePositive(
+    errors,
+    'polymarket.minimumLiquidityUsd',
+    config.polymarket.minimumLiquidityUsd,
+  );
+  requireFinitePositive(
+    errors,
+    'polymarket.marketLimit',
+    config.polymarket.marketLimit,
+  );
+  requireFinitePositive(
+    errors,
+    'polymarket.watchMarkets',
+    config.polymarket.watchMarkets,
+  );
+  requireFinitePositive(
+    errors,
+    'polymarket.windowSeconds',
+    config.polymarket.windowSeconds,
+  );
+  requireRatio(
+    errors,
+    'polymarket.minimumDominance',
+    config.polymarket.minimumDominance,
+    true,
+  );
+  requireFinitePositive(
+    errors,
+    'polymarket.signalCooldownSeconds',
+    config.polymarket.signalCooldownSeconds,
+  );
+  requireFinitePositive(
+    errors,
+    'polymarket.statusSeconds',
+    config.polymarket.statusSeconds,
   );
   requirePercent(
     errors,

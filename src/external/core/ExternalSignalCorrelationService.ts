@@ -70,6 +70,10 @@ export class ExternalSignalCorrelationService {
     };
   }
 
+  public getSize(now = Date.now()): number {
+    return this.store.getSize(now);
+  }
+
   public clear(): void {
     this.store.clear();
   }

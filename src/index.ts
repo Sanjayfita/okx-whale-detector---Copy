@@ -32,9 +32,22 @@ import { SummaryThrottle } from './core/SummaryThrottle';
 import { ThroughputMonitor } from './core/ThroughputMonitor';
 import { MarketEngine } from './market/MarketEngine';
 import { ExternalSignalCorrelationService } from './external/core/ExternalSignalCorrelationService';
+import { PolymarketLiveSignalRuntime } from './external/providers/polymarket/PolymarketLiveSignalRuntime';
 import { MarketDataRecorder } from './recording/MarketDataRecorder';
 
-const start = async (): Promise<void> => {
+export interface AppRuntimeDependencies {
+  externalSignalCorrelationService?: ExternalSignalCorrelationService;
+  polymarketRuntime?: PolymarketLiveSignalRuntime;
+}
+
+export const createAppRuntime = async (
+  dependencies: AppRuntimeDependencies = {},
+): Promise<{
+  externalSignalCorrelationService: ExternalSignalCorrelationService;
+  marketEngine: MarketEngine;
+  polymarketRuntime: PolymarketLiveSignalRuntime;
+  shutdown: (signal: NodeJS.Signals) => void;
+}> => {
   validateAppConfig(appConfig);
   validateHealthConfig(healthConfig);
   validateMarketDiscoveryConfig(marketDiscoveryConfig);
@@ -94,6 +107,7 @@ const start = async (): Promise<void> => {
     ? new MarketDataRecorder(recordingConfig.directory, activeInstruments)
     : undefined;
   const externalSignalCorrelationService =
+    dependencies.externalSignalCorrelationService ??
     new ExternalSignalCorrelationService();
   const marketEngine = new MarketEngine(
     marketStates,
@@ -103,6 +117,25 @@ const start = async (): Promise<void> => {
     undefined,
     externalSignalCorrelationService,
   );
+  const polymarketRuntime =
+    dependencies.polymarketRuntime ??
+    new PolymarketLiveSignalRuntime(
+      {
+        enabled: appConfig.polymarket.enabled,
+        minimumSignalUsd: appConfig.polymarket.minimumSignalUsd,
+        minimumLiquidityUsd: appConfig.polymarket.minimumLiquidityUsd,
+        marketLimit: appConfig.polymarket.marketLimit,
+        watchMarkets: appConfig.polymarket.watchMarkets,
+        windowSeconds: appConfig.polymarket.windowSeconds,
+        minimumDominance: appConfig.polymarket.minimumDominance,
+        signalCooldownSeconds: appConfig.polymarket.signalCooldownSeconds,
+        statusSeconds: appConfig.polymarket.statusSeconds,
+        showExecutions: appConfig.polymarket.showExecutions,
+      },
+      {
+        correlationService: externalSignalCorrelationService,
+      },
+    );
   const candleUpdateHandler = new CandleUpdateHandler(marketStates);
   const activeSymbols = activeProfiles.map((profile) => profile.symbol);
   const healthMonitor = new MarketHealthMonitor(activeSymbols, healthConfig);
@@ -173,6 +206,7 @@ const start = async (): Promise<void> => {
 
     console.log(`Received ${signal}; closing OKX connections.`);
 
+    polymarketRuntime.stop();
     healthMonitor.stop();
     throughputMonitor.stop();
     recorder?.close();
@@ -181,6 +215,18 @@ const start = async (): Promise<void> => {
 
   process.once('SIGINT', () => shutdown('SIGINT'));
   process.once('SIGTERM', () => shutdown('SIGTERM'));
+
+  return {
+    externalSignalCorrelationService,
+    marketEngine,
+    polymarketRuntime,
+    shutdown,
+  };
+};
+
+const start = async (): Promise<void> => {
+  const appRuntime = await createAppRuntime();
+  await appRuntime.polymarketRuntime.start();
 };
 
 void start().catch((error: unknown) => {
