@@ -1,4 +1,7 @@
+import { ExternalSignalRelevanceEngine } from '../external/core/ExternalSignalRelevanceEngine';
+import { ExternalSignalStore } from '../external/core/ExternalSignalStore';
 import { PolymarketLiveAggregator } from '../external/providers/polymarket/PolymarketLiveAggregator';
+import { PolymarketLiveSignalFactory } from '../external/providers/polymarket/PolymarketLiveSignalFactory';
 import { PolymarketMarketWebSocketClient } from '../external/providers/polymarket/PolymarketMarketWebSocketClient';
 import { PolymarketPublicClient } from '../external/providers/polymarket/PolymarketPublicClient';
 import { PolymarketWhaleDetector } from '../external/providers/polymarket/PolymarketWhaleDetector';
@@ -106,6 +109,11 @@ const main = async (): Promise<void> => {
     minimumNetNotionalUsd: options.minimumSignalUsd,
     minimumDominance: options.minimumDominance,
   });
+  const signalFactory = new PolymarketLiveSignalFactory({
+    minimumNetNotionalUsd: options.minimumSignalUsd,
+  });
+  const signalStore = new ExternalSignalStore();
+  const relevanceEngine = new ExternalSignalRelevanceEngine();
   const lastSignalAtByMarket = new Map<string, number>();
 
   console.log('Discovering Polymarket markets...');
@@ -216,6 +224,11 @@ const main = async (): Promise<void> => {
         interpretation.direction === 'NEUTRAL'
       ) {
         unknownDirectionExecutions += 1;
+        if (options.showExecutions) {
+          console.log(
+            `UNKNOWN EXECUTION | ${context.outcome} | ${liveTrade.side} | ${context.market.question}`,
+          );
+        }
         return;
       }
 
@@ -250,6 +263,17 @@ const main = async (): Promise<void> => {
         return;
       }
       lastSignalAtByMarket.set(context.market.conditionId, now);
+
+      const signal = signalFactory.create(context.market, aggregation, now);
+      const storedSignal = signalStore.add(signal, now).signal;
+      const evaluationSymbol = storedSignal.asset
+        ? `${storedSignal.asset}-USDT`
+        : 'MACRO';
+      const effective = relevanceEngine.evaluate(
+        storedSignal,
+        evaluationSymbol,
+        now,
+      );
       emittedSignals += 1;
 
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
@@ -262,6 +286,16 @@ const main = async (): Promise<void> => {
       console.log(
         `Dominance: ${(aggregation.dominance * 100).toFixed(1)}% | Executions: ${aggregation.executionCount}`,
       );
+      console.log(
+        `EXTERNAL SIGNAL | ${storedSignal.provider}/${storedSignal.category} | Asset: ${storedSignal.asset ?? 'MACRO'}`,
+      );
+      console.log(
+        `Confidence: ${storedSignal.confidence.toFixed(1)}% | Relevance: ${(effective.relevance * 100).toFixed(1)}% | Freshness: ${(effective.freshness * 100).toFixed(1)}%`,
+      );
+      console.log(
+        `Correlation-ready confidence: ${effective.effectiveConfidence.toFixed(1)}%`,
+      );
+      console.log(`Stored external signals: ${signalStore.getSize(now)}`);
       console.log(`Window: last ${options.windowSeconds}s`);
     },
   );
@@ -272,7 +306,7 @@ const main = async (): Promise<void> => {
       ? `${Math.max(0, Math.round((now - lastExecutionAt) / 1_000))}s ago`
       : 'none yet';
     console.log(
-      `[LIVE STATUS] executions=${receivedExecutions} directional=${directionalExecutions} unknownToken=${unknownTokenExecutions} unknownDirection=${unknownDirectionExecutions} signals=${emittedSignals} lastExecution=${lastExecution}`,
+      `[LIVE STATUS] executions=${receivedExecutions} directional=${directionalExecutions} unknownToken=${unknownTokenExecutions} unknownDirection=${unknownDirectionExecutions} signals=${emittedSignals} stored=${signalStore.getSize(now)} lastExecution=${lastExecution}`,
     );
 
     const strongestMarkets = aggregator
@@ -297,6 +331,7 @@ const main = async (): Promise<void> => {
     clearInterval(statusTimer);
     webSocketClient.close();
     aggregator.clear();
+    signalStore.clear();
     process.exitCode = 0;
   };
 
