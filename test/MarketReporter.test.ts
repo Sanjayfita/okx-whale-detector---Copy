@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MarketReporter } from '../src/reporting/MarketReporter';
 
+import type { MarketEvaluation } from '../src/types/marketEvaluation';
 import type { Whale, WhaleChange } from '../src/types/whale';
 
 const createWhale = (overrides: Partial<Whale> = {}): Whale => ({
@@ -249,5 +250,225 @@ describe('MarketReporter', () => {
     expect(output).toContain('⚪ NEUTRAL');
 
     expect(output).toContain('No active whale walls');
+  });
+
+  it('prints an agreement section with combined confidence', () => {
+    const reporter = new MarketReporter();
+    const evaluation: MarketEvaluation = {
+      marketSignal: {
+        bias: 'BULLISH',
+        confidence: 68,
+        reason: 'Strong OKX pressure',
+        bidPressure: 70,
+        askPressure: 20,
+        netPressure: 50,
+        timestamp: 1_700_000,
+      },
+      correlatedSignal: {
+        symbol: 'BTC-USDT',
+        bias: 'BULLISH',
+        confidence: 51,
+        okxBias: 'BULLISH',
+        okxConfidence: 68,
+        externalBias: 'BULLISH',
+        externalConfidence: 42,
+        agreement: 'AGREEMENT',
+        bullishExternalScore: 1,
+        bearishExternalScore: 0,
+        neutralExternalSignals: 0,
+        consideredSignals: 1,
+        ignoredSignals: 2,
+        contributions: [],
+        reason: 'OKX and external intelligence agree.',
+        timestamp: 1_700_000,
+      },
+    };
+
+    reporter.reportSummary({
+      ...createNeutralSummary('BTC-USDT', 100.5, 100, 101),
+      evaluation,
+    } as never);
+
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+    expect(output).toContain('📊 CORRELATED INTELLIGENCE');
+    expect(output).toContain('Relationship: AGREEMENT');
+    expect(output).toContain('Combined Confidence: 51.0%');
+    expect(output).toContain('External signals used: 1');
+    expect(output).toContain('Ignored external signals: 2');
+  });
+
+  it('prints a contradiction section with reduced confidence', () => {
+    const reporter = new MarketReporter();
+    const evaluation: MarketEvaluation = {
+      marketSignal: {
+        bias: 'BULLISH',
+        confidence: 68,
+        reason: 'Strong OKX pressure',
+        bidPressure: 70,
+        askPressure: 20,
+        netPressure: 50,
+        timestamp: 1_700_000,
+      },
+      correlatedSignal: {
+        symbol: 'BTC-USDT',
+        bias: 'BEARISH',
+        confidence: 42,
+        okxBias: 'BULLISH',
+        okxConfidence: 68,
+        externalBias: 'BEARISH',
+        externalConfidence: 42,
+        agreement: 'CONTRADICTION',
+        bullishExternalScore: 0,
+        bearishExternalScore: 1,
+        neutralExternalSignals: 0,
+        consideredSignals: 1,
+        ignoredSignals: 0,
+        contributions: [],
+        reason: 'External intelligence contradicts the OKX market signal.',
+        timestamp: 1_700_000,
+      },
+    };
+
+    reporter.reportSummary({
+      ...createNeutralSummary('BTC-USDT', 100.5, 100, 101),
+      evaluation,
+    } as never);
+
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+    expect(output).toContain('Relationship: CONTRADICTION');
+    expect(output).toContain('Combined Confidence: 42.0%');
+  });
+
+  it('prints external-only context when no OKX bias is present', () => {
+    const reporter = new MarketReporter();
+    const evaluation: MarketEvaluation = {
+      marketSignal: {
+        bias: 'NEUTRAL',
+        confidence: 0,
+        reason: 'No active whale walls',
+        bidPressure: 0,
+        askPressure: 0,
+        netPressure: 0,
+        timestamp: 1_700_000,
+      },
+      correlatedSignal: {
+        symbol: 'BTC-USDT',
+        bias: 'BULLISH',
+        confidence: 70,
+        okxBias: 'NEUTRAL',
+        okxConfidence: 0,
+        externalBias: 'BULLISH',
+        externalConfidence: 70,
+        agreement: 'EXTERNAL_ONLY',
+        bullishExternalScore: 1,
+        bearishExternalScore: 0,
+        neutralExternalSignals: 0,
+        consideredSignals: 1,
+        ignoredSignals: 0,
+        contributions: [],
+        reason: 'Only external directional intelligence is currently available.',
+        timestamp: 1_700_000,
+      },
+    };
+
+    reporter.reportSummary({
+      ...createNeutralSummary('BTC-USDT', 100.5, 100, 101),
+      evaluation,
+    } as never);
+
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+    expect(output).toContain('Relationship: EXTERNAL_ONLY');
+    expect(output).toContain('External Bias: BULLISH');
+  });
+
+  it('preserves the normal OKX summary for OKX-only correlation results', () => {
+    const reporter = new MarketReporter();
+    const evaluation: MarketEvaluation = {
+      marketSignal: {
+        bias: 'BULLISH',
+        confidence: 68,
+        reason: 'Strong OKX pressure',
+        bidPressure: 70,
+        askPressure: 20,
+        netPressure: 50,
+        timestamp: 1_700_000,
+      },
+      correlatedSignal: {
+        symbol: 'BTC-USDT',
+        bias: 'BULLISH',
+        confidence: 68,
+        okxBias: 'BULLISH',
+        okxConfidence: 68,
+        externalBias: 'NEUTRAL',
+        externalConfidence: 0,
+        agreement: 'OKX_ONLY',
+        bullishExternalScore: 0,
+        bearishExternalScore: 0,
+        neutralExternalSignals: 1,
+        consideredSignals: 0,
+        ignoredSignals: 2,
+        contributions: [],
+        reason: 'No qualifying external intelligence affected this result.',
+        timestamp: 1_700_000,
+      },
+    };
+
+    reporter.reportSummary({
+      ...createNeutralSummary('BTC-USDT', 100.5, 100, 101),
+      evaluation,
+    } as never);
+
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+    expect(output).toContain('📊 MARKET BIAS');
+    expect(output).not.toContain('External Bias:');
+    expect(output).not.toContain('External signals used: 0');
+  });
+
+  it('does not print misleading Polymarket values when no external signals exist', () => {
+    const reporter = new MarketReporter();
+    const evaluation: MarketEvaluation = {
+      marketSignal: {
+        bias: 'BULLISH',
+        confidence: 68,
+        reason: 'Strong OKX pressure',
+        bidPressure: 70,
+        askPressure: 20,
+        netPressure: 50,
+        timestamp: 1_700_000,
+      },
+      correlatedSignal: {
+        symbol: 'BTC-USDT',
+        bias: 'BULLISH',
+        confidence: 68,
+        okxBias: 'BULLISH',
+        okxConfidence: 68,
+        externalBias: 'NEUTRAL',
+        externalConfidence: 0,
+        agreement: 'OKX_ONLY',
+        bullishExternalScore: 0,
+        bearishExternalScore: 0,
+        neutralExternalSignals: 0,
+        consideredSignals: 0,
+        ignoredSignals: 2,
+        contributions: [],
+        reason: 'No qualifying external intelligence affected this result.',
+        timestamp: 1_700_000,
+      },
+    };
+
+    reporter.reportSummary({
+      ...createNeutralSummary('BTC-USDT', 100.5, 100, 101),
+      evaluation,
+    } as never);
+
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+    expect(output).not.toContain('External Bias: NEUTRAL');
+    expect(output).not.toContain('External signals used: 0');
+    expect(output).not.toContain('Ignored external signals: 0');
   });
 });
