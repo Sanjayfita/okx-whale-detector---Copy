@@ -29,32 +29,37 @@ const DEFAULT_CONFIG: PolymarketWhaleDetectorConfig = {
   maximumTradeAgeMs: 60 * 60 * 1_000,
 };
 
-const CRYPTO_KEYWORDS = [
-  'bitcoin',
-  'btc',
-  'ethereum',
-  'eth',
-  'crypto',
-  'solana',
-  'sol',
-  'xrp',
-  'dogecoin',
-  'doge',
-  'stablecoin',
-  'usdt',
-  'usdc',
+const ASSET_PATTERNS: ReadonlyArray<{
+  asset: string;
+  pattern: RegExp;
+}> = [
+  { asset: 'BTC', pattern: /\b(?:bitcoin|btc)\b/i },
+  { asset: 'ETH', pattern: /\b(?:ethereum|ether|eth)\b/i },
+  { asset: 'SOL', pattern: /\b(?:solana|sol)\b/i },
+  { asset: 'XRP', pattern: /\bxrp\b/i },
+  { asset: 'DOGE', pattern: /\b(?:dogecoin|doge)\b/i },
+  { asset: 'USDT', pattern: /\busdt\b/i },
+  { asset: 'USDC', pattern: /\busdc\b/i },
 ];
 
-const MACRO_KEYWORDS = [
-  'federal reserve',
-  'fed rate',
-  'interest rate',
-  'rate cut',
-  'inflation',
-  'cpi',
-  'recession',
-  'sec',
-  'etf',
+const GENERAL_CRYPTO_PATTERNS = [
+  /\bcrypto(?:currency|currencies)?\b/i,
+  /\bstablecoin(?:s)?\b/i,
+  /\bblockchain\b/i,
+];
+
+const MACRO_PATTERNS = [
+  /\bfederal reserve\b/i,
+  /\bfed (?:funds |interest )?rate\b/i,
+  /\binterest rates?\b/i,
+  /\brate cuts?\b/i,
+  /\binflation\b/i,
+  /\bcpi\b/i,
+  /\brecession\b/i,
+  /\bsec\b/i,
+  /\bcrypto etf\b/i,
+  /\bbitcoin etf\b/i,
+  /\bethereum etf\b/i,
 ];
 
 const NEGATIVE_PATTERNS = [
@@ -103,17 +108,8 @@ const BEARISH_OUTCOMES = new Set([
   'yes - down',
 ]);
 
-export const inferPolymarketAsset = (text: string): string | undefined => {
-  const normalized = text.toLowerCase();
-  if (normalized.includes('bitcoin') || normalized.includes('btc')) return 'BTC';
-  if (normalized.includes('ethereum') || normalized.includes('eth')) return 'ETH';
-  if (normalized.includes('solana') || normalized.includes(' sol')) return 'SOL';
-  if (normalized.includes('xrp')) return 'XRP';
-  if (normalized.includes('dogecoin') || normalized.includes('doge')) return 'DOGE';
-  if (normalized.includes('usdt')) return 'USDT';
-  if (normalized.includes('usdc')) return 'USDC';
-  return undefined;
-};
+export const inferPolymarketAsset = (text: string): string | undefined =>
+  ASSET_PATTERNS.find(({ pattern }) => pattern.test(text))?.asset;
 
 const reverseDirection = (
   direction: ExternalSignalDirection,
@@ -122,6 +118,9 @@ const reverseDirection = (
   if (direction === 'BEARISH') return 'BULLISH';
   return direction;
 };
+
+const toMilliseconds = (timestamp: number): number =>
+  timestamp < 10_000_000_000 ? timestamp * 1_000 : timestamp;
 
 export class PolymarketWhaleDetector {
   private readonly config: PolymarketWhaleDetectorConfig;
@@ -135,9 +134,11 @@ export class PolymarketWhaleDetector {
       return false;
     }
 
-    const text = `${market.question} ${market.category ?? ''}`.toLowerCase();
-    return [...CRYPTO_KEYWORDS, ...MACRO_KEYWORDS].some((keyword) =>
-      text.includes(keyword),
+    const text = `${market.question} ${market.category ?? ''}`;
+    return (
+      ASSET_PATTERNS.some(({ pattern }) => pattern.test(text)) ||
+      GENERAL_CRYPTO_PATTERNS.some((pattern) => pattern.test(text)) ||
+      MACRO_PATTERNS.some((pattern) => pattern.test(text))
     );
   }
 
@@ -181,8 +182,11 @@ export class PolymarketWhaleDetector {
       }
     }
 
-    if (trade.side === 'SELL' && normalizedOutcome !== 'yes' && normalizedOutcome !== 'no') {
-      // Selling a directional outcome expresses the opposite view.
+    if (
+      trade.side === 'SELL' &&
+      normalizedOutcome !== 'yes' &&
+      normalizedOutcome !== 'no'
+    ) {
       direction = reverseDirection(
         BULLISH_OUTCOMES.has(normalizedOutcome)
           ? 'BULLISH'
@@ -197,7 +201,7 @@ export class PolymarketWhaleDetector {
       polarity,
       supportsYes,
       notionalUsd: trade.size * trade.price,
-      occurredAt: trade.timestamp * 1_000,
+      occurredAt: toMilliseconds(trade.timestamp),
     };
   }
 
