@@ -81,6 +81,28 @@ const POSITIVE_PATTERNS = [
   /\brate cut\b/,
 ];
 
+const BULLISH_OUTCOMES = new Set([
+  'up',
+  'higher',
+  'above',
+  'rise',
+  'rises',
+  'increase',
+  'increases',
+  'yes - up',
+]);
+
+const BEARISH_OUTCOMES = new Set([
+  'down',
+  'lower',
+  'below',
+  'fall',
+  'falls',
+  'decrease',
+  'decreases',
+  'yes - down',
+]);
+
 export const inferPolymarketAsset = (text: string): string | undefined => {
   const normalized = text.toLowerCase();
   if (normalized.includes('bitcoin') || normalized.includes('btc')) return 'BTC';
@@ -91,6 +113,14 @@ export const inferPolymarketAsset = (text: string): string | undefined => {
   if (normalized.includes('usdt')) return 'USDT';
   if (normalized.includes('usdc')) return 'USDC';
   return undefined;
+};
+
+const reverseDirection = (
+  direction: ExternalSignalDirection,
+): ExternalSignalDirection => {
+  if (direction === 'BULLISH') return 'BEARISH';
+  if (direction === 'BEARISH') return 'BULLISH';
+  return direction;
 };
 
 export class PolymarketWhaleDetector {
@@ -129,16 +159,37 @@ export class PolymarketWhaleDetector {
     trade: PolymarketTrade,
     market: PolymarketMarket,
   ): InterpretedPolymarketTrade {
-    const outcomeIsNo = trade.outcome.trim().toLowerCase() === 'no';
+    const normalizedOutcome = trade.outcome.trim().toLowerCase();
     const supportsOutcome = trade.side === 'BUY';
-    const supportsYes = outcomeIsNo ? !supportsOutcome : supportsOutcome;
     const polarity = this.inferQuestionPolarity(market.question);
 
     let direction: ExternalSignalDirection = 'UNKNOWN';
-    if (polarity === 'POSITIVE') {
-      direction = supportsYes ? 'BULLISH' : 'BEARISH';
-    } else if (polarity === 'NEGATIVE') {
-      direction = supportsYes ? 'BEARISH' : 'BULLISH';
+    let supportsYes = false;
+
+    if (BULLISH_OUTCOMES.has(normalizedOutcome)) {
+      direction = supportsOutcome ? 'BULLISH' : 'BEARISH';
+    } else if (BEARISH_OUTCOMES.has(normalizedOutcome)) {
+      direction = supportsOutcome ? 'BEARISH' : 'BULLISH';
+    } else if (normalizedOutcome === 'yes' || normalizedOutcome === 'no') {
+      const outcomeIsNo = normalizedOutcome === 'no';
+      supportsYes = outcomeIsNo ? !supportsOutcome : supportsOutcome;
+
+      if (polarity === 'POSITIVE') {
+        direction = supportsYes ? 'BULLISH' : 'BEARISH';
+      } else if (polarity === 'NEGATIVE') {
+        direction = supportsYes ? 'BEARISH' : 'BULLISH';
+      }
+    }
+
+    if (trade.side === 'SELL' && normalizedOutcome !== 'yes' && normalizedOutcome !== 'no') {
+      // Selling a directional outcome expresses the opposite view.
+      direction = reverseDirection(
+        BULLISH_OUTCOMES.has(normalizedOutcome)
+          ? 'BULLISH'
+          : BEARISH_OUTCOMES.has(normalizedOutcome)
+            ? 'BEARISH'
+            : 'UNKNOWN',
+      );
     }
 
     return {
