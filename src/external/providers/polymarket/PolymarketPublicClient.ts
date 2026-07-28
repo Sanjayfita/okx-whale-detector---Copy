@@ -5,8 +5,8 @@ export interface PolymarketMarket {
   slug: string;
   liquidity: number;
   volume: number;
-  tokenIds: string[];
-  outcomes: string[];
+  tokenIds?: string[];
+  outcomes?: string[];
   endDate?: string;
   category?: string;
 }
