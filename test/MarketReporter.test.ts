@@ -224,6 +224,75 @@ describe('MarketReporter', () => {
     expect(output).toContain('Current Price: 0.12345679');
   });
 
+  it('preserves zero, small-price, and rounding-boundary output', () => {
+    const reporter = new MarketReporter();
+    const cases = [
+      { symbol: 'BTC-USDT', value: 0, expected: '0' },
+      { symbol: 'DOGE-USDT', value: 0.0000049, expected: '0' },
+      { symbol: 'DOGE-USDT', value: 0.000005, expected: '0.00001' },
+      { symbol: 'XRP-USDT', value: 1.23445, expected: '1.2345' },
+      { symbol: 'NEW-USDT', value: 0.000000005, expected: '0.00000001' },
+    ];
+
+    for (const testCase of cases) {
+      logSpy.mockClear();
+
+      reporter.reportSummary(
+        createNeutralSummary(
+          testCase.symbol,
+          testCase.value,
+          testCase.value,
+          testCase.value,
+        ),
+      );
+
+      const output = logSpy.mock.calls
+        .map((call) => String(call[0]))
+        .join('\n');
+
+      expect(output).toContain(`Current Price: ${testCase.expected}`);
+    }
+  });
+
+  it('preserves grouped quote totals and scored-whale price output', () => {
+    const reporter = new MarketReporter();
+    const whale = createWhale({
+      price: 64_665.149999999994,
+      notionalQuote: 9_876_543_210.6,
+    });
+
+    reporter.reportSummary({
+      ...createNeutralSummary(
+        'BTC-USDT',
+        64_665.149999999994,
+        64_665.14,
+        64_665.16,
+      ),
+      activeWhales: [whale],
+      scoredWhales: [
+        {
+          whale,
+          totalScore: 75,
+          strength: 'STRONG',
+          components: {
+            sizeScore: 25,
+            distanceScore: 20,
+            persistenceScore: 15,
+            stabilityScore: 15,
+          },
+          explanation: [],
+        },
+      ],
+    });
+
+    const output = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+
+    expect(output).toContain('Active BID Whales: 1 (9,876,543,211 USDT)');
+    expect(output).toContain(
+      'BID WHALE SCORE: 75/100 | STRONG | Price: 64665.15',
+    );
+  });
+
   it('reports unavailable bid and ask prices as N/A', () => {
     const reporter = new MarketReporter();
 

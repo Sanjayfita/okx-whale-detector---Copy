@@ -6,9 +6,15 @@ import { PipelineProfiler } from '../core/PipelineProfiler';
 import { ProcessingMonitor } from '../core/ProcessingMonitor';
 import { SummaryThrottle } from '../core/SummaryThrottle';
 import { MarketEngine } from '../market/MarketEngine';
-import { MarketReporter } from '../reporting/MarketReporter';
+import {
+  MarketReporter,
+  type MarketSummaryInput,
+} from '../reporting/MarketReporter';
+import type { WhaleScore } from '../core/WhaleScoreEngine';
 import type { MarketInstrumentConfig } from '../types/instrument';
 import type { OrderBookLevel } from '../types/orderbook';
+import { WallSide, WallStatus, type Wall } from '../types/wall';
+import type { Whale } from '../types/whale';
 
 interface ScenarioResult {
   name: string;
@@ -19,8 +25,18 @@ interface ScenarioResult {
   emittedCharacters: number;
 }
 
+export interface FormattingBenchmarkResult {
+  readonly scoredWhales: number;
+  readonly samples: number;
+  readonly medianMs: number;
+  readonly p95Ms: number;
+}
+
 const SYMBOLS = ['PERF-A-USDT', 'PERF-B-USDT', 'PERF-C-USDT'] as const;
 const DEPTH = 100;
+const FORMATTING_BENCHMARK_COUNTS = [0, 10, 100, 200] as const;
+const FORMATTING_BENCHMARK_SAMPLES = 100;
+const FORMATTING_BENCHMARK_WARMUPS = 20;
 
 class SilentMarketReporter extends MarketReporter {
   public override reportSequenceGap(): void {}
@@ -46,6 +62,113 @@ const instrument = (instId: string): MarketInstrumentConfig => ({
   quoteCurrency: 'USDT',
   baseUnitsPerSize: 1,
 });
+
+const benchmarkWhale = (index: number): Whale => ({
+  wallId: `benchmark-wall-${index}`,
+  side: index % 2 === 0 ? 'BID' : 'ASK',
+  price: 64_000.12345 + index * 0.01,
+  size: 10 + index,
+  notionalQuote: 1_000_000 + index * 1_000,
+  quoteCurrency: 'USDT',
+  detectedAt: 1_700_000_000_000,
+});
+
+const benchmarkScore = (index: number): WhaleScore => ({
+  whale: benchmarkWhale(index),
+  totalScore: 75,
+  strength: 'STRONG',
+  components: {
+    sizeScore: 25,
+    distanceScore: 20,
+    persistenceScore: 15,
+    stabilityScore: 15,
+  },
+  explanation: ['Deterministic formatting benchmark'],
+});
+
+const benchmarkWall = (index: number): Wall => ({
+  wallId: `benchmark-wall-${index}`,
+  side: index % 2 === 0 ? WallSide.BUY : WallSide.SELL,
+  initialPrice: 64_000 + index * 0.01,
+  currentPrice: 64_000 + index * 0.01,
+  initialNotional: 1_000_000 + index * 1_000,
+  currentNotional: 1_000_000 + index * 1_000,
+  highestNotional: 1_000_000 + index * 1_000,
+  lowestNotional: 1_000_000 + index * 1_000,
+  firstSeen: 1_700_000_000_000,
+  lastSeen: 1_700_000_000_000,
+  ageMs: 0,
+  priceMovementPercent: 0,
+  notionalChangePercent: 0,
+  status: [
+    WallStatus.NEW,
+    WallStatus.ACTIVE,
+    WallStatus.PERSISTENT,
+    WallStatus.STRONG,
+  ][index % 4] as WallStatus,
+});
+
+const formattingBenchmarkInput = (
+  scoredWhaleCount: number,
+): MarketSummaryInput => {
+  const scoredWhales = Array.from({ length: scoredWhaleCount }, (_, index) =>
+    benchmarkScore(index),
+  );
+
+  return {
+    symbol: 'BTC-USDT',
+    currentPrice: 64_000.125,
+    bestBidPrice: 64_000.12,
+    bestAskPrice: 64_000.13,
+    activeWhales: scoredWhales.map((score) => score.whale),
+    walls: Array.from({ length: scoredWhaleCount }, (_, index) =>
+      benchmarkWall(index),
+    ),
+    scoredWhales,
+    marketSignal: {
+      bias: 'NEUTRAL',
+      confidence: 0,
+      reason: 'Deterministic formatting benchmark',
+      bidPressure: 0,
+      askPressure: 0,
+    },
+  };
+};
+
+export const runFormattingBenchmark =
+  (): readonly FormattingBenchmarkResult[] => {
+    const reporter = new MarketReporter(() => undefined);
+
+    return FORMATTING_BENCHMARK_COUNTS.map((scoredWhales) => {
+      const input = formattingBenchmarkInput(scoredWhales);
+
+      for (let sample = 0; sample < FORMATTING_BENCHMARK_WARMUPS; sample += 1) {
+        reporter.reportSummary(input);
+      }
+
+      const profiler = new PipelineProfiler({
+        enabled: true,
+        maximumSamplesPerStage: FORMATTING_BENCHMARK_SAMPLES,
+      });
+
+      for (let sample = 0; sample < FORMATTING_BENCHMARK_SAMPLES; sample += 1) {
+        reporter.reportSummary(input, profiler);
+      }
+
+      const formatting = profiler.getRecentStage('summary.formatting');
+
+      if (!formatting) {
+        throw new Error('Summary formatting benchmark did not record timings');
+      }
+
+      return {
+        scoredWhales,
+        samples: formatting.count,
+        medianMs: formatting.p50Ms,
+        p95Ms: formatting.p95Ms,
+      };
+    });
+  };
 
 const snapshot = (symbol: string, basePrice: number): OKXOrderBookUpdate => ({
   instId: symbol,
@@ -278,6 +401,7 @@ export const runPerformanceReport = async (
     ((baseline.throughput - attributed.throughput) /
       Math.max(baseline.throughput, 0.001)) *
     100;
+  const formattingBenchmark = runFormattingBenchmark();
 
   console.log('\nLIVE PERFORMANCE ATTRIBUTION REPORT');
   console.log(
@@ -293,6 +417,14 @@ export const runPerformanceReport = async (
     `Attribution throughput impact: ${overheadPercent.toFixed(2)}% ` +
       '(positive means lower throughput with attribution)',
   );
+  console.log('\nSUMMARY FORMATTING BENCHMARK');
+  for (const result of formattingBenchmark) {
+    console.log(
+      `  scoredWhales=${result.scoredWhales.toString().padStart(3)} ` +
+        `n=${result.samples} median=${result.medianMs.toFixed(4)}ms ` +
+        `p95=${result.p95Ms.toFixed(4)}ms`,
+    );
+  }
   console.log(
     'Timings are observed elapsed time and may include GC or OS scheduling; they do not prove CPU ownership.',
   );

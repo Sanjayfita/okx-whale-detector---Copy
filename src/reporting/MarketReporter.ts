@@ -42,6 +42,19 @@ export class MarketReporter {
     'XRP-USDT': 4,
     'DOGE-USDT': 5,
   };
+  private readonly priceFormatters: ReadonlyMap<number, Intl.NumberFormat> =
+    new Map(
+      [2, 4, 5, 8].map((maximumFractionDigits) => [
+        maximumFractionDigits,
+        new Intl.NumberFormat('en-US', {
+          maximumFractionDigits,
+          useGrouping: false,
+        }),
+      ]),
+    );
+  private readonly quoteFormatter = new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: 0,
+  });
 
   public constructor(
     private readonly logger: (message: string) => void = console.log,
@@ -321,16 +334,18 @@ export class MarketReporter {
 
   private formatPrice(symbol: string, value: number): string {
     const maximumFractionDigits = this.priceFractionDigits[symbol] ?? 8;
+    const formatter = this.priceFormatters.get(maximumFractionDigits);
 
-    return value.toLocaleString('en-US', {
-      maximumFractionDigits,
-      useGrouping: false,
-    });
+    if (!formatter) {
+      throw new Error(
+        `No market price formatter for ${maximumFractionDigits} fraction digits`,
+      );
+    }
+
+    return formatter.format(value);
   }
 
   private formatQuote(value: number): string {
-    return value.toLocaleString('en-US', {
-      maximumFractionDigits: 0,
-    });
+    return this.quoteFormatter.format(value);
   }
 }
