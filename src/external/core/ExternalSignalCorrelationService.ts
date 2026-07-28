@@ -1,4 +1,7 @@
-import { ExternalSignalCorrelationEngine } from './ExternalSignalCorrelationEngine';
+import {
+  ExternalSignalCorrelationEngine,
+  type ExternalSignalCorrelationConfig,
+} from './ExternalSignalCorrelationEngine';
 import { ExternalSignalRelevanceEngine } from './ExternalSignalRelevanceEngine';
 import { ExternalSignalStore } from './ExternalSignalStore';
 import type {
@@ -12,6 +15,7 @@ export interface ExternalSignalCorrelationServiceConfig {
   maximumSignals?: number;
   retentionMs?: number;
   categoryMaximumAgeMs?: Record<string, number>;
+  correlation?: Partial<ExternalSignalCorrelationConfig>;
 }
 
 export class ExternalSignalCorrelationService {
@@ -30,7 +34,9 @@ export class ExternalSignalCorrelationService {
         number
       >,
     });
-    this.correlationEngine = new ExternalSignalCorrelationEngine();
+    this.correlationEngine = new ExternalSignalCorrelationEngine(
+      config.correlation,
+    );
   }
 
   public addSignal(

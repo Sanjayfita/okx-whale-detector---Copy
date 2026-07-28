@@ -18,6 +18,7 @@
     "replay": "tsx src/tools/replayRecording.ts",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "alerts:inspect": "npm run build --silent && node dist/tools/inspectCorrelatedAlerts.js",
+    "alerts:simulate": "npm run build --silent && node dist/tools/simulateCorrelatedAlerts.js",
     "external:demo": "tsx src/tools/demoExternalSignals.ts",
     "polymarket:scan": "tsx src/tools/scanPolymarketWhales.ts",
     "polymarket:live": "tsx src/tools/watchPolymarketWhales.ts",

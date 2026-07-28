@@ -27,6 +27,7 @@ export class MarketEngine {
     private readonly correlatedAlertEngine?: CorrelatedAlertEngine,
     private readonly correlatedAlertReporter: CorrelatedAlertReporter = new CorrelatedAlertReporter(),
     private readonly correlatedAlertRecorder?: CorrelatedAlertRecorder,
+    private readonly clock: () => number = Date.now,
   ) {}
 
   public processOrderBookUpdate(update: OKXOrderBookUpdate): void {
@@ -160,7 +161,7 @@ export class MarketEngine {
         const evaluation = this.correlationService?.correlateMarketSignal(
           update.instId,
           marketSignal,
-          Date.now(),
+          this.clock(),
         );
 
         if (evaluation) {
