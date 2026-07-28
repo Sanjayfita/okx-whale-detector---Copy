@@ -21,6 +21,9 @@ export interface PolymarketMarketAggregation {
   totalTrades: number;
   directionalTrades: number;
   ignoredTrades: number;
+  staleTrades: number;
+  unknownDirectionTrades: number;
+  mismatchedTrades: number;
   bullishNotionalUsd: number;
   bearishNotionalUsd: number;
   netDirectionalNotionalUsd: number;
@@ -32,7 +35,7 @@ export interface PolymarketMarketAggregation {
 const DEFAULT_CONFIG: PolymarketMarketAggregatorConfig = {
   minimumNetNotionalUsd: 5_000,
   minimumDominance: 0.15,
-  maximumTradeAgeMs: 60 * 60 * 1_000,
+  maximumTradeAgeMs: 24 * 60 * 60 * 1_000,
   maximumConfidence: 80,
 };
 
@@ -70,6 +73,9 @@ export class PolymarketMarketAggregator {
     let bullishNotionalUsd = 0;
     let bearishNotionalUsd = 0;
     let ignoredTrades = 0;
+    let staleTrades = 0;
+    let unknownDirectionTrades = 0;
+    let mismatchedTrades = 0;
     let directionalTrades = 0;
     let latestOccurredAt = 0;
 
@@ -80,11 +86,20 @@ export class PolymarketMarketAggregator {
       const interpreted = this.detector.interpretTrade(trade, market);
       const ageMs = Math.max(0, now - interpreted.occurredAt);
 
-      if (
-        trade.conditionId !== market.conditionId ||
-        ageMs > this.config.maximumTradeAgeMs ||
-        interpreted.direction === 'UNKNOWN'
-      ) {
+      if (trade.conditionId !== market.conditionId) {
+        mismatchedTrades += 1;
+        ignoredTrades += 1;
+        continue;
+      }
+
+      if (ageMs > this.config.maximumTradeAgeMs) {
+        staleTrades += 1;
+        ignoredTrades += 1;
+        continue;
+      }
+
+      if (interpreted.direction === 'UNKNOWN') {
+        unknownDirectionTrades += 1;
         ignoredTrades += 1;
         continue;
       }
@@ -127,6 +142,9 @@ export class PolymarketMarketAggregator {
       totalTrades: trades.length,
       directionalTrades,
       ignoredTrades,
+      staleTrades,
+      unknownDirectionTrades,
+      mismatchedTrades,
       bullishNotionalUsd,
       bearishNotionalUsd,
       netDirectionalNotionalUsd,
@@ -197,6 +215,9 @@ export class PolymarketMarketAggregator {
         dominance,
         directionalTrades,
         ignoredTrades,
+        staleTrades,
+        unknownDirectionTrades,
+        mismatchedTrades,
         uniqueWallets: walletNotional.size,
         largestWalletConcentration,
         liquidityUsd: market.liquidity,
