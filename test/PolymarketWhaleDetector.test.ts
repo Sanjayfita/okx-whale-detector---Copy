@@ -37,6 +37,29 @@ describe('PolymarketWhaleDetector', () => {
     expect(detector.isRelevantMarket(market)).toBe(true);
   });
 
+  it('does not match short asset symbols inside unrelated words', () => {
+    const detector = new PolymarketWhaleDetector();
+
+    expect(
+      detector.isRelevantMarket({
+        ...market,
+        question: 'Will the resolution determine whether Team A wins?',
+      }),
+    ).toBe(false);
+    expect(
+      detector.isRelevantMarket({
+        ...market,
+        question: 'Will ETH exceed $5,000?',
+      }),
+    ).toBe(true);
+    expect(
+      detector.isRelevantMarket({
+        ...market,
+        question: 'Will SOL exceed $300?',
+      }),
+    ).toBe(true);
+  });
+
   it('maps a large BUY YES trade on a positive question to bullish', () => {
     const detector = new PolymarketWhaleDetector();
     const signal = detector.detect(trade, market, 1_000_000);
@@ -77,7 +100,40 @@ describe('PolymarketWhaleDetector', () => {
     ).toBe('BULLISH');
   });
 
-  it('keeps ambiguous wording directionally unknown', () => {
+  it('maps direct UP and DOWN outcomes without question polarity', () => {
+    const detector = new PolymarketWhaleDetector();
+    const directionalMarket = {
+      ...market,
+      question: 'Bitcoin Up or Down - July 27?',
+    };
+
+    expect(
+      detector.interpretTrade(
+        { ...trade, outcome: 'Up', side: 'BUY' },
+        directionalMarket,
+      ).direction,
+    ).toBe('BULLISH');
+    expect(
+      detector.interpretTrade(
+        { ...trade, outcome: 'Down', side: 'BUY' },
+        directionalMarket,
+      ).direction,
+    ).toBe('BEARISH');
+    expect(
+      detector.interpretTrade(
+        { ...trade, outcome: 'Up', side: 'SELL' },
+        directionalMarket,
+      ).direction,
+    ).toBe('BEARISH');
+    expect(
+      detector.interpretTrade(
+        { ...trade, outcome: 'Down', side: 'SELL' },
+        directionalMarket,
+      ).direction,
+    ).toBe('BULLISH');
+  });
+
+  it('keeps ambiguous YES or NO wording directionally unknown', () => {
     const detector = new PolymarketWhaleDetector();
     const ambiguousMarket = {
       ...market,
@@ -87,6 +143,16 @@ describe('PolymarketWhaleDetector', () => {
     expect(detector.detect(trade, ambiguousMarket, 1_000_000)?.direction).toBe(
       'UNKNOWN',
     );
+  });
+
+  it('accepts both second and millisecond timestamps', () => {
+    const detector = new PolymarketWhaleDetector();
+
+    expect(detector.interpretTrade(trade, market).occurredAt).toBe(1_000_000);
+    expect(
+      detector.interpretTrade({ ...trade, timestamp: 1_700_000_000_000 }, market)
+        .occurredAt,
+    ).toBe(1_700_000_000_000);
   });
 
   it('rejects small, stale, or illiquid activity', () => {
