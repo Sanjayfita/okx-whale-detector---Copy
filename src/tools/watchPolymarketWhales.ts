@@ -126,10 +126,10 @@ const main = async (): Promise<void> => {
     `Minimum rolling net signal: $${options.minimumSignalUsd.toLocaleString('en-US')}`,
   );
   console.log(`Rolling window: ${options.windowSeconds}s`);
-  console.log(`Minimum dominance: ${(options.minimumDominance * 100).toFixed(1)}%`);
   console.log(
-    `Signal cooldown: ${options.signalCooldownSeconds}s per market`,
+    `Minimum dominance: ${(options.minimumDominance * 100).toFixed(1)}%`,
   );
+  console.log(`Signal cooldown: ${options.signalCooldownSeconds}s per market`);
   console.log('Waiting for real-time trades. Press Ctrl+C to stop.\n');
 
   const webSocketClient = new PolymarketMarketWebSocketClient(
@@ -183,18 +183,13 @@ const main = async (): Promise<void> => {
       const now = Date.now();
       const lastSignalAt =
         lastSignalAtByMarket.get(context.market.conditionId) ?? 0;
-      if (
-        now - lastSignalAt <
-        options.signalCooldownSeconds * 1_000
-      ) {
+      if (now - lastSignalAt < options.signalCooldownSeconds * 1_000) {
         return;
       }
       lastSignalAtByMarket.set(context.market.conditionId, now);
 
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log(
-        `${aggregation.direction} | ${context.market.question}`,
-      );
+      console.log(`${aggregation.direction} | ${context.market.question}`);
       console.log(
         `Rolling net: $${Math.abs(aggregation.netDirectionalNotionalUsd).toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
       );

@@ -52,10 +52,7 @@ export class PolymarketLiveAggregator {
     if (this.config.minimumNetNotionalUsd <= 0) {
       throw new Error('minimumNetNotionalUsd must be greater than zero');
     }
-    if (
-      this.config.minimumDominance < 0 ||
-      this.config.minimumDominance > 1
-    ) {
+    if (this.config.minimumDominance < 0 || this.config.minimumDominance > 1) {
       throw new Error('minimumDominance must be between 0 and 1');
     }
   }
@@ -65,7 +62,9 @@ export class PolymarketLiveAggregator {
     now = execution.occurredAt,
   ): PolymarketLiveAggregation {
     if (execution.notionalUsd < 0 || !Number.isFinite(execution.notionalUsd)) {
-      throw new Error('execution notionalUsd must be a finite non-negative number');
+      throw new Error(
+        'execution notionalUsd must be a finite non-negative number',
+      );
     }
 
     this.pruneMarket(execution.marketConditionId, now);
@@ -115,10 +114,8 @@ export class PolymarketLiveAggregator {
       }
     }
 
-    const totalDirectionalNotionalUsd =
-      bullishNotionalUsd + bearishNotionalUsd;
-    const netDirectionalNotionalUsd =
-      bullishNotionalUsd - bearishNotionalUsd;
+    const totalDirectionalNotionalUsd = bullishNotionalUsd + bearishNotionalUsd;
+    const netDirectionalNotionalUsd = bullishNotionalUsd - bearishNotionalUsd;
     const dominance =
       totalDirectionalNotionalUsd === 0
         ? 0
