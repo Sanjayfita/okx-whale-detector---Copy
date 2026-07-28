@@ -144,6 +144,14 @@ export class PolymarketLiveAggregator {
     };
   }
 
+  public getActive(now = Date.now()): PolymarketLiveAggregation[] {
+    const marketConditionIds = [...this.executionsByMarket.keys()];
+
+    return marketConditionIds
+      .map((marketConditionId) => this.get(marketConditionId, now))
+      .filter((aggregation) => aggregation.executionCount > 0);
+  }
+
   public clear(): void {
     this.executionsByMarket.clear();
     this.seenExecutionIds.clear();
