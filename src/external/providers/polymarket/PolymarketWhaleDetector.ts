@@ -64,9 +64,11 @@ const MACRO_PATTERNS = [
 
 const NEGATIVE_PATTERNS = [
   /\bcrash(?:es|ed|ing)?\b/,
-  /\bfall(?:s|en|ing)?\s+below\b/,
-  /\bdrop(?:s|ped|ping)?\s+below\b/,
-  /\bdecline(?:s|d)?\s+below\b/,
+  /\bdip(?:s|ped|ping)?(?:\s+(?:to|below|under))?\s+\$?[\d,.]+/,
+  /\bsink(?:s|ing)?(?:\s+(?:to|below|under))?\s+\$?[\d,.]+/,
+  /\bfall(?:s|en|ing)?\s+(?:to|below|under)\b/,
+  /\bdrop(?:s|ped|ping)?\s+(?:to|below|under)\b/,
+  /\bdecline(?:s|d)?\s+(?:to|below|under)\b/,
   /\b(?:be|trade|close|finish|settle)\s+below\b/,
   /\bbelow\s+\$?[\d,.]+/,
   /\bunder\s+\$?[\d,.]+/,
