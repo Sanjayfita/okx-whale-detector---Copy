@@ -5,9 +5,12 @@ import { PipelineProfiler } from '../core/PipelineProfiler';
 import { ProcessingMonitor } from '../core/ProcessingMonitor';
 import { SummaryThrottle } from '../core/SummaryThrottle';
 import { MarketReporter } from '../reporting/MarketReporter';
+import type { ExternalSignalCorrelationService } from '../external/core/ExternalSignalCorrelationService';
+import type { MarketEvaluation } from '../types/marketEvaluation';
 
 export class MarketEngine {
   private readonly sequenceGapSymbols = new Set<string>();
+  private readonly lastEvaluations = new Map<string, MarketEvaluation>();
 
   constructor(
     private readonly marketStates: Map<string, MarketState>,
@@ -17,6 +20,7 @@ export class MarketEngine {
       performanceConfig,
     ),
     private readonly pipelineProfiler: PipelineProfiler = new PipelineProfiler(),
+    private readonly correlationService?: ExternalSignalCorrelationService,
   ) {}
 
   public processOrderBookUpdate(update: OKXOrderBookUpdate): void {
@@ -147,6 +151,15 @@ export class MarketEngine {
           result.active,
           currentPrice,
         );
+        const evaluation = this.correlationService?.correlateMarketSignal(
+          update.instId,
+          marketSignal,
+          Date.now(),
+        );
+
+        if (evaluation) {
+          this.lastEvaluations.set(update.instId, evaluation);
+        }
 
         this.reporter.reportSummary({
           symbol: update.instId,
@@ -171,11 +184,16 @@ export class MarketEngine {
     return this.pipelineProfiler.getSnapshot();
   }
 
+  public getLastEvaluation(symbol: string): MarketEvaluation | undefined {
+    return this.lastEvaluations.get(symbol);
+  }
+
   public reset(): void {
     this.sequenceGapSymbols.clear();
     this.summaryThrottle.reset();
     this.processingMonitor.reset();
     this.pipelineProfiler.reset();
+    this.lastEvaluations.clear();
   }
 
   public resetSymbols(symbols: readonly string[]): void {
@@ -185,5 +203,9 @@ export class MarketEngine {
     }
 
     this.processingMonitor.resetSymbols(symbols);
+
+    for (const symbol of symbols) {
+      this.lastEvaluations.delete(symbol);
+    }
   }
 }

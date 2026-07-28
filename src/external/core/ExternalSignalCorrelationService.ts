@@ -1,0 +1,76 @@
+import { ExternalSignalCorrelationEngine } from './ExternalSignalCorrelationEngine';
+import { ExternalSignalRelevanceEngine } from './ExternalSignalRelevanceEngine';
+import { ExternalSignalStore } from './ExternalSignalStore';
+import type {
+  EffectiveExternalSignal,
+  ExternalWhaleSignal,
+} from '../types/ExternalWhaleSignal';
+import type { MarketSignal } from '../../types/signal';
+import type { MarketEvaluation } from '../../types/marketEvaluation';
+
+export interface ExternalSignalCorrelationServiceConfig {
+  maximumSignals?: number;
+  retentionMs?: number;
+  categoryMaximumAgeMs?: Record<string, number>;
+}
+
+export class ExternalSignalCorrelationService {
+  private readonly store: ExternalSignalStore;
+  private readonly relevanceEngine: ExternalSignalRelevanceEngine;
+  private readonly correlationEngine: ExternalSignalCorrelationEngine;
+
+  public constructor(config: ExternalSignalCorrelationServiceConfig = {}) {
+    this.store = new ExternalSignalStore({
+      maximumSignals: config.maximumSignals ?? 10_000,
+      retentionMs: config.retentionMs ?? 24 * 60 * 60 * 1_000,
+    });
+    this.relevanceEngine = new ExternalSignalRelevanceEngine({
+      categoryMaximumAgeMs: config.categoryMaximumAgeMs as Record<
+        string,
+        number
+      >,
+    });
+    this.correlationEngine = new ExternalSignalCorrelationEngine();
+  }
+
+  public addSignal(
+    signal: ExternalWhaleSignal,
+    now = Date.now(),
+  ): ExternalWhaleSignal {
+    return this.store.add(signal, now).signal;
+  }
+
+  public getFreshRelevantSignals(
+    marketSymbol: string,
+    now = Date.now(),
+  ): EffectiveExternalSignal[] {
+    return this.store
+      .getAll(now)
+      .map((signal) =>
+        this.relevanceEngine.evaluate(signal, marketSymbol, now),
+      );
+  }
+
+  public correlateMarketSignal(
+    marketSymbol: string,
+    marketSignal: MarketSignal,
+    now = Date.now(),
+  ): MarketEvaluation {
+    const effectiveSignals = this.getFreshRelevantSignals(marketSymbol, now);
+    const correlatedSignal = this.correlationEngine.correlate(
+      marketSymbol,
+      marketSignal,
+      effectiveSignals,
+      now,
+    );
+
+    return {
+      marketSignal,
+      correlatedSignal,
+    };
+  }
+
+  public clear(): void {
+    this.store.clear();
+  }
+}

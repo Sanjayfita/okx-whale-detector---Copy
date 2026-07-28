@@ -31,6 +31,7 @@ import { SubscriptionManager } from './core/SubscriptionManager';
 import { SummaryThrottle } from './core/SummaryThrottle';
 import { ThroughputMonitor } from './core/ThroughputMonitor';
 import { MarketEngine } from './market/MarketEngine';
+import { ExternalSignalCorrelationService } from './external/core/ExternalSignalCorrelationService';
 import { MarketDataRecorder } from './recording/MarketDataRecorder';
 
 const start = async (): Promise<void> => {
@@ -92,7 +93,16 @@ const start = async (): Promise<void> => {
   const recorder = recordingConfig.enabled
     ? new MarketDataRecorder(recordingConfig.directory, activeInstruments)
     : undefined;
-  const marketEngine = new MarketEngine(marketStates, summaryThrottle);
+  const externalSignalCorrelationService =
+    new ExternalSignalCorrelationService();
+  const marketEngine = new MarketEngine(
+    marketStates,
+    summaryThrottle,
+    undefined,
+    undefined,
+    undefined,
+    externalSignalCorrelationService,
+  );
   const candleUpdateHandler = new CandleUpdateHandler(marketStates);
   const activeSymbols = activeProfiles.map((profile) => profile.symbol);
   const healthMonitor = new MarketHealthMonitor(activeSymbols, healthConfig);
