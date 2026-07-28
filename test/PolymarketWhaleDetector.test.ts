@@ -80,7 +80,40 @@ describe('PolymarketWhaleDetector', () => {
     ).toBe('BULLISH');
   });
 
-  it('keeps ambiguous wording directionally unknown', () => {
+  it('maps direct UP and DOWN outcomes without question polarity', () => {
+    const detector = new PolymarketWhaleDetector();
+    const directionalMarket = {
+      ...market,
+      question: 'Bitcoin Up or Down - July 27?',
+    };
+
+    expect(
+      detector.interpretTrade(
+        { ...trade, outcome: 'Up', side: 'BUY' },
+        directionalMarket,
+      ).direction,
+    ).toBe('BULLISH');
+    expect(
+      detector.interpretTrade(
+        { ...trade, outcome: 'Down', side: 'BUY' },
+        directionalMarket,
+      ).direction,
+    ).toBe('BEARISH');
+    expect(
+      detector.interpretTrade(
+        { ...trade, outcome: 'Up', side: 'SELL' },
+        directionalMarket,
+      ).direction,
+    ).toBe('BEARISH');
+    expect(
+      detector.interpretTrade(
+        { ...trade, outcome: 'Down', side: 'SELL' },
+        directionalMarket,
+      ).direction,
+    ).toBe('BULLISH');
+  });
+
+  it('keeps ambiguous YES or NO wording directionally unknown', () => {
     const detector = new PolymarketWhaleDetector();
     const ambiguousMarket = {
       ...market,
