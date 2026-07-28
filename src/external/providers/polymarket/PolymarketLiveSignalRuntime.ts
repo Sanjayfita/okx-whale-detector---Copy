@@ -15,6 +15,7 @@ import {
   type PolymarketMarket,
 } from './PolymarketPublicClient';
 import { PolymarketWhaleDetector } from './PolymarketWhaleDetector';
+import type { PipelineProfiler } from '../../../core/PipelineProfiler';
 
 export interface PolymarketLiveSignalRuntimeOptions {
   minimumSignalUsd: number;
@@ -50,6 +51,7 @@ export interface PolymarketLiveSignalRuntimeDependencies {
     signal: ExternalWhaleSignal,
     effective: EffectiveExternalSignal,
   ) => void;
+  profiler?: PipelineProfiler;
 }
 
 interface TokenContextEntry {
@@ -77,6 +79,7 @@ export class PolymarketLiveSignalRuntime {
   private readonly relevanceEngine: ExternalSignalRelevanceEngine;
   private readonly logger: Pick<Console, 'log' | 'warn' | 'error'>;
   private readonly now: () => number;
+  private readonly profiler?: PipelineProfiler;
   private readonly timerApi: Pick<
     typeof globalThis,
     'setInterval' | 'clearInterval'
@@ -144,6 +147,7 @@ export class PolymarketLiveSignalRuntime {
       dependencies.relevanceEngine ?? new ExternalSignalRelevanceEngine();
     this.logger = dependencies.logger ?? console;
     this.now = dependencies.now ?? (() => Date.now());
+    this.profiler = dependencies.profiler;
     this.timerApi = dependencies.timerApi ?? globalThis;
   }
 
@@ -287,8 +291,11 @@ export class PolymarketLiveSignalRuntime {
       this.dependencies.webSocketClientFactory?.(tokenIds, (trade) =>
         this.handleTrade(trade),
       ) ??
-      new PolymarketMarketWebSocketClient(tokenIds, (trade) =>
-        this.handleTrade(trade),
+      new PolymarketMarketWebSocketClient(
+        tokenIds,
+        (trade) => this.handleTrade(trade),
+        {},
+        this.profiler,
       );
 
     if (!this.isActiveGeneration(generation)) {
@@ -322,27 +329,29 @@ export class PolymarketLiveSignalRuntime {
       return;
     }
 
-    const interpretation = this.detector.interpretTrade(
-      {
-        proxyWallet: '',
-        side: liveTrade.side,
-        asset: liveTrade.tokenId,
-        conditionId: context.market.conditionId,
-        size: liveTrade.size,
-        price: liveTrade.price,
-        timestamp: liveTrade.timestamp,
-        title: context.market.question,
-        slug: context.market.slug,
-        eventSlug: '',
-        outcome: context.outcome,
-        outcomeIndex: (context.market.tokenIds ?? []).indexOf(
-          liveTrade.tokenId,
-        ),
-        transactionHash:
-          liveTrade.transactionHash ??
-          `${liveTrade.tokenId}:${liveTrade.timestamp}:${liveTrade.price}:${liveTrade.size}:${liveTrade.side}`,
-      },
-      context.market,
+    const interpretation = this.measure('polymarket.interpretation', () =>
+      this.detector.interpretTrade(
+        {
+          proxyWallet: '',
+          side: liveTrade.side,
+          asset: liveTrade.tokenId,
+          conditionId: context.market.conditionId,
+          size: liveTrade.size,
+          price: liveTrade.price,
+          timestamp: liveTrade.timestamp,
+          title: context.market.question,
+          slug: context.market.slug,
+          eventSlug: '',
+          outcome: context.outcome,
+          outcomeIndex: (context.market.tokenIds ?? []).indexOf(
+            liveTrade.tokenId,
+          ),
+          transactionHash:
+            liveTrade.transactionHash ??
+            `${liveTrade.tokenId}:${liveTrade.timestamp}:${liveTrade.price}:${liveTrade.size}:${liveTrade.side}`,
+        },
+        context.market,
+      ),
     );
 
     if (
@@ -370,15 +379,17 @@ export class PolymarketLiveSignalRuntime {
       liveTrade.transactionHash ??
       `${liveTrade.tokenId}:${liveTrade.timestamp}:${liveTrade.price}:${liveTrade.size}:${liveTrade.side}`;
     const now = this.now();
-    const aggregation = this.aggregator.add(
-      {
-        id: executionId,
-        marketConditionId: context.market.conditionId,
-        occurredAt: interpretation.occurredAt,
-        direction: interpretation.direction,
-        notionalUsd: interpretation.notionalUsd,
-      },
-      now,
+    const aggregation = this.measure('polymarket.aggregation', () =>
+      this.aggregator.add(
+        {
+          id: executionId,
+          marketConditionId: context.market.conditionId,
+          occurredAt: interpretation.occurredAt,
+          direction: interpretation.direction,
+          notionalUsd: interpretation.notionalUsd,
+        },
+        now,
+      ),
     );
 
     if (!aggregation.qualifies) return;
@@ -390,8 +401,17 @@ export class PolymarketLiveSignalRuntime {
     }
 
     this.lastSignalAtByMarket.set(context.market.conditionId, now);
-    const signal = this.signalFactory.create(context.market, aggregation, now);
-    const storedSignal = this.correlationService.addSignal(signal, now);
+    const storedSignal = this.measure(
+      'polymarket.signalConstructionStore',
+      () => {
+        const signal = this.signalFactory.create(
+          context.market,
+          aggregation,
+          now,
+        );
+        return this.correlationService.addSignal(signal, now);
+      },
+    );
     const evaluationSymbol = storedSignal.asset
       ? `${storedSignal.asset}-USDT`
       : 'MACRO';
@@ -434,28 +454,47 @@ export class PolymarketLiveSignalRuntime {
   }
 
   private logStatus(): void {
-    const now = this.now();
-    const lastExecution = this.lastExecutionAt
-      ? `${Math.max(0, Math.round((now - this.lastExecutionAt) / 1_000))}s ago`
-      : 'none yet';
-    this.logger.log(
-      `[LIVE STATUS] executions=${this.receivedExecutions} directional=${this.directionalExecutions} unknownToken=${this.unknownTokenExecutions} unknownDirection=${this.unknownDirectionExecutions} signals=${this.emittedSignals} stored=${this.correlationService.getSize(now)} lastExecution=${lastExecution}`,
-    );
+    const startedAt = performance.now();
 
-    const strongestMarkets = this.aggregator
-      .getActive(now)
-      .sort(
-        (left, right) =>
-          Math.abs(right.netDirectionalNotionalUsd) -
-          Math.abs(left.netDirectionalNotionalUsd),
-      )
-      .slice(0, 3);
-
-    for (const aggregation of strongestMarkets) {
-      const market = this.marketByCondition.get(aggregation.marketConditionId);
+    try {
+      const now = this.now();
+      const lastExecution = this.lastExecutionAt
+        ? `${Math.max(0, Math.round((now - this.lastExecutionAt) / 1_000))}s ago`
+        : 'none yet';
       this.logger.log(
-        `  TOP FLOW | ${aggregation.direction} net=$${formatUsd(Math.abs(aggregation.netDirectionalNotionalUsd))} bull=$${formatUsd(aggregation.bullishNotionalUsd)} bear=$${formatUsd(aggregation.bearishNotionalUsd)} dominance=${(aggregation.dominance * 100).toFixed(1)}% executions=${aggregation.executionCount} | ${market?.question ?? aggregation.marketConditionId}`,
+        `[LIVE STATUS] executions=${this.receivedExecutions} directional=${this.directionalExecutions} unknownToken=${this.unknownTokenExecutions} unknownDirection=${this.unknownDirectionExecutions} signals=${this.emittedSignals} stored=${this.correlationService.getSize(now)} lastExecution=${lastExecution}`,
+      );
+
+      const strongestMarkets = this.aggregator
+        .getActive(now)
+        .sort(
+          (left, right) =>
+            Math.abs(right.netDirectionalNotionalUsd) -
+            Math.abs(left.netDirectionalNotionalUsd),
+        )
+        .slice(0, 3);
+
+      for (const aggregation of strongestMarkets) {
+        const market = this.marketByCondition.get(
+          aggregation.marketConditionId,
+        );
+        this.logger.log(
+          `  TOP FLOW | ${aggregation.direction} net=$${formatUsd(Math.abs(aggregation.netDirectionalNotionalUsd))} bull=$${formatUsd(aggregation.bullishNotionalUsd)} bear=$${formatUsd(aggregation.bearishNotionalUsd)} dominance=${(aggregation.dominance * 100).toFixed(1)}% executions=${aggregation.executionCount} | ${market?.question ?? aggregation.marketConditionId}`,
+        );
+      }
+    } finally {
+      this.profiler?.record(
+        'polymarket.statusReporting',
+        performance.now() - startedAt,
       );
     }
+  }
+
+  private measure<T>(stage: string, operation: () => T): T {
+    if (!this.profiler) {
+      return operation();
+    }
+
+    return this.profiler.measure(stage, operation);
   }
 }

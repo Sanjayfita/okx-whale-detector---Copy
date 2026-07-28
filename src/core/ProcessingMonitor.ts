@@ -1,4 +1,5 @@
 import type { PerformanceConfig } from '../config/performanceConfig';
+import type { PerformanceTrace } from './PerformanceTrace';
 
 export interface ProcessingStats {
   sampleCount: number;
@@ -22,6 +23,7 @@ export class ProcessingMonitor {
     symbol: string,
     durationMs: number,
     now: number = Date.now(),
+    trace?: PerformanceTrace,
   ): void {
     if (!Number.isFinite(durationMs) || durationMs < 0) {
       return;
@@ -50,9 +52,35 @@ export class ProcessingMonitor {
     }
 
     this.lastWarningAt.set(symbol, now);
+    const context = trace?.getSnapshot();
+    const expensiveStages = context
+      ? [...context.stages]
+          .sort((left, right) => right.durationMs - left.durationMs)
+          .slice(0, this.config.warningStageLimit)
+          .map(
+            ({ stage, durationMs: stageDurationMs }) =>
+              `${stage}=${stageDurationMs.toFixed(2)}ms`,
+          )
+          .join(', ')
+      : 'unavailable';
+    const formatOptional = (value: number | undefined): string =>
+      value === undefined ? 'n/a' : value.toFixed(2);
+
     this.logger(
       `⚠️ Slow market update for ${symbol}: ${durationMs.toFixed(2)}ms ` +
-        `(threshold ${this.config.slowUpdateThresholdMs}ms)`,
+        `(threshold ${this.config.slowUpdateThresholdMs}ms)\n` +
+        `Observed elapsed-time context (may include GC/OS scheduling; not definitive CPU ownership): ` +
+        `queue=${formatOptional(context?.queueDelayMs)}ms | ` +
+        `stages=${expensiveStages} | ` +
+        `depth=${context?.bidDepth ?? 'n/a'}/${context?.askDepth ?? 'n/a'} | ` +
+        `pruned=${context?.depthPruned ?? false} | ` +
+        `whales=${context?.activeWhales ?? 'n/a'} | ` +
+        `walls=${context?.activeWalls ?? 'n/a'} | ` +
+        `external=${context?.externalSignalStoreSize ?? 'n/a'} | ` +
+        `summary=${context?.summaryProcessed ?? false} | ` +
+        `alert=${context?.alertEmitted ?? false} | ` +
+        `persisted=${context?.alertPersisted ?? false} | ` +
+        `fsync=${context?.recorderFsync ?? false}`,
     );
   }
 

@@ -10,16 +10,28 @@ import type {
   MarketInstrumentConfig,
   SupportedInstType,
 } from '../types/instrument';
+import type { PipelineProfiler } from './PipelineProfiler';
+import type { MessagePerformanceContext } from './PerformanceTrace';
 
 interface OrderBookClient {
   onReconnect(callback: () => void): void;
-  onOrderBook(callback: (update: OKXOrderBookUpdate) => void): void;
+  onOrderBook(
+    callback: (
+      update: OKXOrderBookUpdate,
+      performanceContext?: MessagePerformanceContext,
+    ) => void,
+  ): void;
   subscribeToOrderBook(instId: string, instType: SupportedInstType): void;
   close(): void;
 }
 
 interface CandleClient {
-  onCandle(callback: (candle: OKXCandle) => void): void;
+  onCandle(
+    callback: (
+      candle: OKXCandle,
+      performanceContext?: MessagePerformanceContext,
+    ) => void,
+  ): void;
   subscribeToCandle(instId: string): void;
   close(): void;
 }
@@ -31,10 +43,17 @@ export interface SubscriptionShard {
 
 export interface SubscriptionManagerOptions {
   maximumSymbolsPerConnection: number;
+  profiler?: PipelineProfiler;
   createOrderBookClient?: () => OrderBookClient;
   createCandleClient?: () => CandleClient;
-  onOrderBook: (update: OKXOrderBookUpdate) => void;
-  onCandle: (candle: OKXCandle) => void;
+  onOrderBook: (
+    update: OKXOrderBookUpdate,
+    performanceContext?: MessagePerformanceContext,
+  ) => void;
+  onCandle: (
+    candle: OKXCandle,
+    performanceContext?: MessagePerformanceContext,
+  ) => void;
   onShardReconnect: (symbols: readonly string[]) => void;
 }
 
@@ -92,9 +111,11 @@ export class SubscriptionManager {
 
     for (const [index, group] of instrumentGroups.entries()) {
       const orderBookClient =
-        this.options.createOrderBookClient?.() ?? new OKXWebSocketClient();
+        this.options.createOrderBookClient?.() ??
+        new OKXWebSocketClient(this.options.profiler);
       const candleClient =
-        this.options.createCandleClient?.() ?? new OKXCandleWebSocketClient();
+        this.options.createCandleClient?.() ??
+        new OKXCandleWebSocketClient(this.options.profiler);
       const symbols = group.map((instrument) => instrument.instId);
 
       orderBookClient.onOrderBook(this.options.onOrderBook);

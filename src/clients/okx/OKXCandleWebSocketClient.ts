@@ -1,5 +1,10 @@
 import WebSocket from 'ws';
 import { isRecord } from './okxValidation';
+import type { PipelineProfiler } from '../../core/PipelineProfiler';
+import type {
+  MessagePerformanceContext,
+  ObservedStageTiming,
+} from '../../core/PerformanceTrace';
 
 export interface OKXCandle {
   instId: string;
@@ -25,9 +30,12 @@ export class OKXCandleWebSocketClient {
 
   private readonly candleSubscriptions = new Set<string>();
 
-  private onCandleUpdate?: (candle: OKXCandle) => void;
+  private onCandleUpdate?: (
+    candle: OKXCandle,
+    performanceContext?: MessagePerformanceContext,
+  ) => void;
 
-  constructor() {
+  constructor(private readonly profiler?: PipelineProfiler) {
     this.connect();
   }
 
@@ -52,7 +60,7 @@ export class OKXCandleWebSocketClient {
     });
 
     ws.on('message', (data) => {
-      this.handleMessage(data);
+      this.handleMessage(data, performance.now());
     });
 
     ws.on('error', (error) => {
@@ -70,14 +78,22 @@ export class OKXCandleWebSocketClient {
     });
   }
 
-  private handleMessage(data: WebSocket.RawData): void {
+  private handleMessage(data: WebSocket.RawData, receivedAt: number): void {
+    const timings: ObservedStageTiming[] = [];
+    const stringStartedAt = performance.now();
     const rawMessage = data.toString();
+    this.recordTiming(
+      'okx.candle.raw.toString',
+      performance.now() - stringStartedAt,
+      timings,
+    );
 
     if (rawMessage === 'pong') {
       return;
     }
 
     let message: unknown;
+    const parseStartedAt = performance.now();
 
     try {
       message = JSON.parse(rawMessage);
@@ -85,7 +101,15 @@ export class OKXCandleWebSocketClient {
       console.error('Failed to parse Candle WebSocket message:', error);
 
       return;
+    } finally {
+      this.recordTiming(
+        'okx.candle.json.parse',
+        performance.now() - parseStartedAt,
+        timings,
+      );
     }
+
+    const validationStartedAt = performance.now();
 
     if (!isRecord(message)) {
       console.error('Rejected non-object OKX candle message');
@@ -170,11 +194,27 @@ export class OKXCandleWebSocketClient {
       volumeCurrencyQuote,
       confirm: values[8] === '1',
     };
+    this.recordTiming(
+      'okx.candle.validationTransform',
+      performance.now() - validationStartedAt,
+      timings,
+    );
+    const handlerStartedAt = performance.now();
+    const queueDelayMs = Math.max(0, handlerStartedAt - receivedAt);
+    this.profiler?.record('okx.candle.queueDelay', queueDelayMs);
 
     try {
-      this.onCandleUpdate?.(candle);
+      this.onCandleUpdate?.(candle, {
+        queueDelayMs,
+        stages: timings,
+      });
     } catch (error) {
       console.error(`Candle callback failed for ` + `${candle.instId}:`, error);
+    } finally {
+      this.profiler?.record(
+        'okx.candle.handler',
+        performance.now() - handlerStartedAt,
+      );
     }
   }
 
@@ -240,7 +280,12 @@ export class OKXCandleWebSocketClient {
     console.log(`📈 Subscribed to ${instId} 1m candles`);
   }
 
-  public onCandle(callback: (candle: OKXCandle) => void): void {
+  public onCandle(
+    callback: (
+      candle: OKXCandle,
+      performanceContext?: MessagePerformanceContext,
+    ) => void,
+  ): void {
     this.onCandleUpdate = callback;
   }
 
@@ -269,5 +314,14 @@ export class OKXCandleWebSocketClient {
 
     this.ws?.close();
     this.ws = null;
+  }
+
+  private recordTiming(
+    stage: string,
+    durationMs: number,
+    timings: ObservedStageTiming[],
+  ): void {
+    this.profiler?.record(stage, durationMs);
+    timings.push({ stage, durationMs });
   }
 }

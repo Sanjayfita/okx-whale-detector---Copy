@@ -10,6 +10,7 @@ import type {
 } from '../types/ExternalWhaleSignal';
 import type { MarketSignal } from '../../types/signal';
 import type { MarketEvaluation } from '../../types/marketEvaluation';
+import type { PerformanceRecorder } from '../../core/PipelineProfiler';
 
 export interface ExternalSignalCorrelationServiceConfig {
   maximumSignals?: number;
@@ -61,8 +62,35 @@ export class ExternalSignalCorrelationService {
     marketSymbol: string,
     marketSignal: MarketSignal,
     now = Date.now(),
+    performanceRecorder?: PerformanceRecorder,
   ): MarketEvaluation {
-    const effectiveSignals = this.getFreshRelevantSignals(marketSymbol, now);
+    const retrieve = (): EffectiveExternalSignal[] =>
+      this.getFreshRelevantSignals(marketSymbol, now);
+    const effectiveSignals = performanceRecorder
+      ? performanceRecorder.measure(
+          'summary.externalSignals.retrieveRelevance',
+          retrieve,
+        )
+      : retrieve();
+    const correlate = (): MarketEvaluation =>
+      this.correlateEffectiveSignals(
+        marketSymbol,
+        marketSignal,
+        effectiveSignals,
+        now,
+      );
+
+    return performanceRecorder
+      ? performanceRecorder.measure('summary.correlation', correlate)
+      : correlate();
+  }
+
+  public correlateEffectiveSignals(
+    marketSymbol: string,
+    marketSignal: MarketSignal,
+    effectiveSignals: readonly EffectiveExternalSignal[],
+    now = Date.now(),
+  ): MarketEvaluation {
     const correlatedSignal = this.correlationEngine.correlate(
       marketSymbol,
       marketSignal,
@@ -78,6 +106,10 @@ export class ExternalSignalCorrelationService {
 
   public getSize(now = Date.now()): number {
     return this.store.getSize(now);
+  }
+
+  public getStoredSize(): number {
+    return this.store.getStoredSize();
   }
 
   public clear(): void {

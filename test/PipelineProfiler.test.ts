@@ -64,4 +64,45 @@ describe('PipelineProfiler', () => {
 
     expect(profiler.getSnapshot()).toEqual([]);
   });
+
+  it('calculates bounded recent percentile statistics', () => {
+    const profiler = new PipelineProfiler({ maximumSamplesPerStage: 3 });
+
+    for (const duration of [1, 2, 3, 4, 5]) {
+      profiler.record('bounded', duration);
+    }
+
+    expect(profiler.getRecentStage('bounded')).toEqual({
+      stage: 'bounded',
+      count: 3,
+      latestMs: 5,
+      totalMs: 12,
+      averageMs: 4,
+      maximumMs: 5,
+      p50Ms: 4,
+      p95Ms: 5,
+      p99Ms: 5,
+    });
+    expect(profiler.getSnapshot()[0]?.samples).toBe(5);
+  });
+
+  it('bounds the number of distinct metric stages', () => {
+    const profiler = new PipelineProfiler({ maximumStages: 2 });
+
+    profiler.record('one', 1);
+    profiler.record('two', 2);
+    profiler.record('three', 3);
+
+    expect(profiler.getStageCount()).toBe(2);
+    expect(profiler.getRecentStage('three')).toBeUndefined();
+  });
+
+  it('avoids timing work when instrumentation is disabled', () => {
+    const profiler = new PipelineProfiler({ enabled: false });
+    const operation = vi.fn(() => 42);
+
+    expect(profiler.measure('disabled', operation)).toBe(42);
+    expect(operation).toHaveBeenCalledOnce();
+    expect(profiler.getSnapshot()).toEqual([]);
+  });
 });

@@ -102,6 +102,27 @@ describe('OrderBookManager', () => {
     expect(manager.getBestBid()?.notionalQuote).toBe(5_000);
   });
 
+  it('reports whether the latest update pruned depth', () => {
+    const manager = new OrderBookManager(undefined, 1);
+
+    manager.applyUpdate(
+      [level('100', '1'), level('99', '1')],
+      [level('101', '1'), level('102', '1')],
+      1,
+      1,
+      -1,
+      'snapshot',
+    );
+
+    expect(manager.didLastUpdatePruneDepth()).toBe(true);
+    expect(manager.getOrderBook().bids.size).toBe(1);
+    expect(manager.getOrderBook().asks.size).toBe(1);
+
+    manager.applyUpdate([], [], 2, 2, 1, 'update');
+
+    expect(manager.didLastUpdatePruneDepth()).toBe(false);
+  });
+
   describe('best bid and ask selection', () => {
     it('returns undefined for empty sides', () => {
       const manager = new OrderBookManager();

@@ -3,6 +3,10 @@ import type { CorrelatedAlertEngine } from '../alerts/CorrelatedAlertEngine';
 import { performanceConfig } from '../config/performanceConfig';
 import type { MarketState } from '../core/MarketState';
 import { PipelineProfiler } from '../core/PipelineProfiler';
+import {
+  PerformanceTrace,
+  type MessagePerformanceContext,
+} from '../core/PerformanceTrace';
 import { ProcessingMonitor } from '../core/ProcessingMonitor';
 import { SummaryThrottle } from '../core/SummaryThrottle';
 import { MarketReporter } from '../reporting/MarketReporter';
@@ -30,8 +34,16 @@ export class MarketEngine {
     private readonly clock: () => number = Date.now,
   ) {}
 
-  public processOrderBookUpdate(update: OKXOrderBookUpdate): void {
+  public processOrderBookUpdate(
+    update: OKXOrderBookUpdate,
+    messagePerformance?: MessagePerformanceContext,
+  ): void {
     const startedAt = performance.now();
+    const trace = new PerformanceTrace(
+      this.pipelineProfiler,
+      performanceConfig.attributionEnabled && this.pipelineProfiler.isEnabled(),
+      messagePerformance,
+    );
 
     try {
       const state = this.marketStates.get(update.instId);
@@ -40,17 +52,15 @@ export class MarketEngine {
         return;
       }
 
-      const wasApplied = this.pipelineProfiler.measure(
-        'orderBook.applyUpdate',
-        () =>
-          state.orderBookManager.applyUpdate(
-            update.bids,
-            update.asks,
-            update.timestamp,
-            update.seqId,
-            update.prevSeqId,
-            update.action,
-          ),
+      const wasApplied = trace.measure('orderBook.applyUpdate', () =>
+        state.orderBookManager.applyUpdate(
+          update.bids,
+          update.asks,
+          update.timestamp,
+          update.seqId,
+          update.prevSeqId,
+          update.action,
+        ),
       );
 
       if (!wasApplied) {
@@ -67,12 +77,18 @@ export class MarketEngine {
       }
 
       const orderBook = state.orderBookManager.getOrderBook();
+      trace.updateDiagnostics({
+        bidDepth: orderBook.bids.size,
+        askDepth: orderBook.asks.size,
+        depthPruned: state.orderBookManager.didLastUpdatePruneDepth(),
+        externalSignalStoreSize: this.correlationService?.getStoredSize(),
+      });
 
       if (!orderBook.initialized || orderBook.status !== 'SYNCED') {
         return;
       }
 
-      const result = this.pipelineProfiler.measure('whaleTracker.scan', () =>
+      const result = trace.measure('whaleTracker.scan', () =>
         state.whaleTracker.scan(orderBook),
       );
       const currentPrice = state.orderBookManager.getMidPrice();
@@ -81,19 +97,16 @@ export class MarketEngine {
         return;
       }
 
-      const scoredWhales = this.pipelineProfiler.measure(
-        'whaleScore.scoreAndPrune',
-        () => {
-          const scored = state.whaleScoreEngine.scoreMany(
-            result.active,
-            currentPrice,
-          );
-          state.whaleScoreEngine.prune(result.active);
-          return scored;
-        },
-      );
+      const scoredWhales = trace.measure('whaleScore.scoreAndPrune', () => {
+        const scored = state.whaleScoreEngine.scoreMany(
+          result.active,
+          currentPrice,
+        );
+        state.whaleScoreEngine.prune(result.active);
+        return scored;
+      });
 
-      this.pipelineProfiler.measure('behavior.analyzeAndPrune', () => {
+      trace.measure('behavior.analyzeAndPrune', () => {
         for (const whale of result.active) {
           const currentBehaviors = state.whaleBehaviorEngine.analyze(whale);
           const enteredBehaviors =
@@ -111,11 +124,15 @@ export class MarketEngine {
         state.behaviorTransitionTracker.prune(result.active);
       });
 
-      const walls = this.pipelineProfiler.measure('wallDetector.detect', () =>
+      const walls = trace.measure('wallDetector.detect', () =>
         state.wallDetector.detect(orderBook),
       );
+      trace.updateDiagnostics({
+        activeWhales: result.active.length,
+        activeWalls: walls.length,
+      });
 
-      this.pipelineProfiler.measure('whaleEvents.detectAndReport', () => {
+      trace.measure('whaleEvents.detectAndReport', () => {
         const whaleEvents = state.whaleEventDetector.detect(result.active);
 
         for (const event of whaleEvents) {
@@ -131,7 +148,7 @@ export class MarketEngine {
         }
       });
 
-      this.pipelineProfiler.measure('refill.detectAndPrune', () => {
+      trace.measure('refill.detectAndPrune', () => {
         for (const whale of result.active) {
           const refill = state.whaleRefillDetector.detect(whale);
 
@@ -151,41 +168,49 @@ export class MarketEngine {
         return;
       }
 
-      this.pipelineProfiler.measure('summary.analyzeAndReport', () => {
+      trace.updateDiagnostics({ summaryProcessed: true });
+      trace.measure('summary.analyzeAndReport', () => {
         const bestBid = state.orderBookManager.getBestBid();
         const bestAsk = state.orderBookManager.getBestAsk();
-        const marketSignal = state.marketAnalyzer.analyze(
-          result.active,
-          currentPrice,
+        const marketSignal = trace.measure('summary.marketAnalysis', () =>
+          state.marketAnalyzer.analyze(result.active, currentPrice),
         );
+        const correlationNow = this.clock();
         const evaluation = this.correlationService?.correlateMarketSignal(
           update.instId,
           marketSignal,
-          this.clock(),
+          correlationNow,
+          trace,
         );
 
         if (evaluation) {
           this.lastEvaluations.set(update.instId, evaluation);
         }
 
-        this.reporter.reportSummary({
-          symbol: update.instId,
-          currentPrice,
-          bestBidPrice: bestBid?.price,
-          bestAskPrice: bestAsk?.price,
-          activeWhales: result.active,
-          walls,
-          scoredWhales,
-          marketSignal,
-          evaluation,
-        });
+        this.reporter.reportSummary(
+          {
+            symbol: update.instId,
+            currentPrice,
+            bestBidPrice: bestBid?.price,
+            bestAskPrice: bestAsk?.price,
+            activeWhales: result.active,
+            walls,
+            scoredWhales,
+            marketSignal,
+            evaluation,
+          },
+          trace,
+        );
 
         if (evaluation) {
-          const alert = this.correlatedAlertEngine?.evaluate(evaluation);
+          const alert = trace.measure('alert.evaluation', () =>
+            this.correlatedAlertEngine?.evaluate(evaluation),
+          );
 
           if (alert) {
-            this.correlatedAlertReporter.report(alert);
-            this.correlatedAlertRecorder?.record(alert);
+            trace.updateDiagnostics({ alertEmitted: true });
+            this.correlatedAlertReporter.report(alert, trace);
+            this.correlatedAlertRecorder?.record(alert, trace);
           }
         }
       });
@@ -193,6 +218,8 @@ export class MarketEngine {
       this.processingMonitor.record(
         update.instId,
         performance.now() - startedAt,
+        Date.now(),
+        trace,
       );
     }
   }

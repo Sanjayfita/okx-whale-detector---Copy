@@ -2,6 +2,11 @@ import WebSocket from 'ws';
 import type { SupportedInstType } from '../../types/instrument';
 import type { OrderBookLevel } from '../../types/orderbook';
 import { isOrderBookLevel, isRecord } from './okxValidation';
+import type { PipelineProfiler } from '../../core/PipelineProfiler';
+import type {
+  MessagePerformanceContext,
+  ObservedStageTiming,
+} from '../../core/PerformanceTrace';
 
 export interface OKXOrderBookUpdate {
   instId: string;
@@ -44,10 +49,16 @@ export class OKXWebSocketClient {
     string,
     { instId: string; interval: string }
   >();
-  private onOrderBookUpdate?: (update: OKXOrderBookUpdate) => void;
-  private onCandleUpdate?: (update: OKXCandleUpdate) => void;
+  private onOrderBookUpdate?: (
+    update: OKXOrderBookUpdate,
+    performanceContext?: MessagePerformanceContext,
+  ) => void;
+  private onCandleUpdate?: (
+    update: OKXCandleUpdate,
+    performanceContext?: MessagePerformanceContext,
+  ) => void;
 
-  public constructor() {
+  public constructor(private readonly profiler?: PipelineProfiler) {
     this.connect();
   }
 
@@ -84,7 +95,7 @@ export class OKXWebSocketClient {
     });
 
     ws.on('message', (data) => {
-      this.handleMessage(data);
+      this.handleMessage(data, performance.now());
     });
 
     ws.on('error', (error) => {
@@ -101,8 +112,13 @@ export class OKXWebSocketClient {
     });
   }
 
-  private handleMessage(data: WebSocket.RawData): void {
-    const rawMessage = data.toString();
+  private handleMessage(data: WebSocket.RawData, receivedAt: number): void {
+    const timings: ObservedStageTiming[] = [];
+    const rawMessage = this.measure(
+      'okx.raw.toString',
+      () => data.toString(),
+      timings,
+    );
 
     if (rawMessage === 'pong') {
       return;
@@ -111,7 +127,11 @@ export class OKXWebSocketClient {
     let message: unknown;
 
     try {
-      message = JSON.parse(rawMessage);
+      message = this.measure(
+        'okx.json.parse',
+        () => JSON.parse(rawMessage) as unknown,
+        timings,
+      );
     } catch (error) {
       console.error('Failed to parse OKX WebSocket message:', error);
       return;
@@ -150,19 +170,22 @@ export class OKXWebSocketClient {
     }
 
     if (channel === 'books') {
-      this.handleOrderBookMessage(message, instId);
+      this.handleOrderBookMessage(message, instId, receivedAt, timings);
       return;
     }
 
     if (channel.startsWith('candle')) {
-      this.handleCandleMessage(message, instId, channel);
+      this.handleCandleMessage(message, instId, channel, receivedAt, timings);
     }
   }
 
   private handleOrderBookMessage(
     message: Record<string, unknown>,
     instId: string,
+    receivedAt: number,
+    timings: ObservedStageTiming[],
   ): void {
+    const validationStartedAt = performance.now();
     const data = message.data;
 
     if (!Array.isArray(data)) {
@@ -213,11 +236,27 @@ export class OKXWebSocketClient {
       seqId,
       prevSeqId,
     };
+    this.recordTiming(
+      'okx.orderBook.validationTransform',
+      performance.now() - validationStartedAt,
+      timings,
+    );
+    const handlerStartedAt = performance.now();
+    const queueDelayMs = Math.max(0, handlerStartedAt - receivedAt);
+    this.profiler?.record('okx.orderBook.queueDelay', queueDelayMs);
 
     try {
-      this.onOrderBookUpdate?.(update);
+      this.onOrderBookUpdate?.(update, {
+        queueDelayMs,
+        stages: [...timings],
+      });
     } catch (error) {
       console.error(`Order-book callback failed for ${update.instId}:`, error);
+    } finally {
+      this.profiler?.record(
+        'okx.orderBook.handler',
+        performance.now() - handlerStartedAt,
+      );
     }
   }
 
@@ -225,7 +264,10 @@ export class OKXWebSocketClient {
     message: Record<string, unknown>,
     instId: string,
     channel: string,
+    receivedAt: number,
+    timings: ObservedStageTiming[],
   ): void {
+    const validationStartedAt = performance.now();
     const data = message.data;
 
     if (!Array.isArray(data)) {
@@ -271,11 +313,27 @@ export class OKXWebSocketClient {
         confirmed: rawCandle[8] === '1',
       },
     };
+    this.recordTiming(
+      'okx.candle.validationTransform',
+      performance.now() - validationStartedAt,
+      timings,
+    );
+    const handlerStartedAt = performance.now();
+    const queueDelayMs = Math.max(0, handlerStartedAt - receivedAt);
+    this.profiler?.record('okx.candle.queueDelay', queueDelayMs);
 
     try {
-      this.onCandleUpdate?.(update);
+      this.onCandleUpdate?.(update, {
+        queueDelayMs,
+        stages: [...timings],
+      });
     } catch (error) {
       console.error(`Candle callback failed for ${update.instId}:`, error);
+    } finally {
+      this.profiler?.record(
+        'okx.candle.handler',
+        performance.now() - handlerStartedAt,
+      );
     }
   }
 
@@ -362,11 +420,21 @@ export class OKXWebSocketClient {
     this.onReconnectCallback = callback;
   }
 
-  public onOrderBook(callback: (update: OKXOrderBookUpdate) => void): void {
+  public onOrderBook(
+    callback: (
+      update: OKXOrderBookUpdate,
+      performanceContext?: MessagePerformanceContext,
+    ) => void,
+  ): void {
     this.onOrderBookUpdate = callback;
   }
 
-  public onCandle(callback: (update: OKXCandleUpdate) => void): void {
+  public onCandle(
+    callback: (
+      update: OKXCandleUpdate,
+      performanceContext?: MessagePerformanceContext,
+    ) => void,
+  ): void {
     this.onCandleUpdate = callback;
   }
 
@@ -408,5 +476,28 @@ export class OKXWebSocketClient {
 
     this.ws?.close();
     this.ws = null;
+  }
+
+  private measure<T>(
+    stage: string,
+    operation: () => T,
+    timings: ObservedStageTiming[],
+  ): T {
+    const startedAt = performance.now();
+
+    try {
+      return operation();
+    } finally {
+      this.recordTiming(stage, performance.now() - startedAt, timings);
+    }
+  }
+
+  private recordTiming(
+    stage: string,
+    durationMs: number,
+    timings: ObservedStageTiming[],
+  ): void {
+    this.profiler?.record(stage, durationMs);
+    timings.push({ stage, durationMs });
   }
 }

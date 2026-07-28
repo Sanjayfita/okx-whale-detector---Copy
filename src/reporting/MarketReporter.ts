@@ -11,6 +11,7 @@ import type { WhaleRefillEvent } from '../core/WhaleRefillDetector';
 import type { WhaleScore } from '../core/WhaleScoreEngine';
 
 import type { MarketEvaluation } from '../types/marketEvaluation';
+import type { PerformanceRecorder } from '../core/PipelineProfiler';
 
 export interface MarketSummarySignal {
   bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
@@ -42,6 +43,10 @@ export class MarketReporter {
     'DOGE-USDT': 5,
   };
 
+  public constructor(
+    private readonly logger: (message: string) => void = console.log,
+  ) {}
+
   public reportSequenceGap(symbol: string): void {
     console.error(
       `Order-book sequence gap for ${symbol}. ` +
@@ -50,7 +55,7 @@ export class MarketReporter {
   }
 
   public reportBehavior(behavior: WhaleBehavior): void {
-    console.log(
+    this.logger(
       `🧠 ${behavior.type} | ` +
         `${behavior.whale.side} | ` +
         `Confidence: ${behavior.confidence.toFixed(0)}% | ` +
@@ -59,7 +64,7 @@ export class MarketReporter {
   }
 
   public reportSpoof(symbol: string, spoof: WhaleBehavior): void {
-    console.log(
+    this.logger(
       `🎭 SPOOF DETECTED | ` +
         `${spoof.whale.side} | ` +
         `Price: ${this.formatPrice(symbol, spoof.whale.price)} | ` +
@@ -77,7 +82,7 @@ export class MarketReporter {
 
     switch (event.type) {
       case 'NEW':
-        console.log(
+        this.logger(
           `🆕 NEW ${whale.side} WHALE | ` +
             `Price: ${price} | ` +
             `Value: ${value} USDT`,
@@ -85,7 +90,7 @@ export class MarketReporter {
         break;
 
       case 'REMOVED':
-        console.log(
+        this.logger(
           `💥 REMOVED ${whale.side} WHALE | ` +
             `Price: ${price} | ` +
             `Value: ${value} USDT`,
@@ -93,7 +98,7 @@ export class MarketReporter {
         break;
 
       case 'INCREASED':
-        console.log(
+        this.logger(
           `📈 INCREASED ${whale.side} WHALE | ` +
             `Price: ${price} | ` +
             `Value: ${value} USDT`,
@@ -101,7 +106,7 @@ export class MarketReporter {
         break;
 
       case 'DECREASED':
-        console.log(
+        this.logger(
           `📉 DECREASED ${whale.side} WHALE | ` +
             `Price: ${price} | ` +
             `Value: ${value} USDT`,
@@ -114,7 +119,7 @@ export class MarketReporter {
   }
 
   public reportRefill(symbol: string, refill: WhaleRefillEvent): void {
-    console.log(
+    this.logger(
       `🔄 REFILLING ${refill.whale.side} WHALE | ` +
         `Price: ${this.formatPrice(symbol, refill.whale.price)} | ` +
         `Refill: ${this.formatQuote(refill.refillAmountQuote)} USDT | ` +
@@ -128,7 +133,7 @@ export class MarketReporter {
         ? 'unknown'
         : this.formatPrice(symbol, moved.previousPrice);
 
-    console.log(
+    this.logger(
       `🚚 MOVED ${moved.side} WHALE | ` +
         `Price: ${previousPrice} → ` +
         `${this.formatPrice(symbol, moved.price)} | ` +
@@ -137,7 +142,7 @@ export class MarketReporter {
   }
 
   public reportWhaleScore(symbol: string, scored: WhaleScore): void {
-    console.log(
+    this.logger(
       `🐋 ${scored.whale.side} WHALE SCORE: ` +
         `${scored.totalScore}/100 | ` +
         `${scored.strength} | ` +
@@ -145,7 +150,29 @@ export class MarketReporter {
     );
   }
 
-  public reportSummary(input: MarketSummaryInput): void {
+  public reportSummary(
+    input: MarketSummaryInput,
+    performanceRecorder?: PerformanceRecorder,
+  ): void {
+    const format = (): string[] => this.formatSummary(input);
+    const lines = performanceRecorder
+      ? performanceRecorder.measure('summary.formatting', format)
+      : format();
+    const emit = (): void => {
+      for (const line of lines) {
+        this.logger(line);
+      }
+    };
+
+    if (performanceRecorder) {
+      performanceRecorder.measure('summary.consoleEmission', emit);
+    } else {
+      emit();
+    }
+  }
+
+  private formatSummary(input: MarketSummaryInput): string[] {
+    const lines: string[] = [];
     const bidWhales = input.activeWhales.filter(
       (whale) => whale.side === 'BID',
     );
@@ -175,14 +202,17 @@ export class MarketReporter {
     const strongWalls = input.walls.filter((wall) => wall.status === 'STRONG');
 
     for (const scored of input.scoredWhales) {
-      this.reportWhaleScore(input.symbol, scored);
+      lines.push(
+        `🐋 ${scored.whale.side} WHALE SCORE: ` +
+          `${scored.totalScore}/100 | ` +
+          `${scored.strength} | ` +
+          `Price: ${this.formatPrice(input.symbol, scored.whale.price)}`,
+      );
     }
 
-    console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-    console.log(`📡 ${input.symbol}`);
-
-    console.log(
+    lines.push('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    lines.push(`📡 ${input.symbol}`);
+    lines.push(
       `💵 Best Bid: ${this.formatOptionalPrice(
         input.symbol,
         input.bestBidPrice,
@@ -192,101 +222,90 @@ export class MarketReporter {
       )}`,
     );
 
-    console.log(
+    lines.push(
       `💵 Current Price: ${this.formatPrice(input.symbol, input.currentPrice)}`,
     );
 
-    console.log(
+    lines.push(
       `🟢 Active BID Whales: ${bidWhales.length} ` +
         `(${this.formatQuote(totalBidValue)} USDT)`,
     );
 
-    console.log(
+    lines.push(
       `🔴 Active ASK Whales: ${askWhales.length} ` +
         `(${this.formatQuote(totalAskValue)} USDT)`,
     );
 
-    console.log(`🐋 Total Active Whale Walls: ${input.activeWhales.length}`);
-
-    console.log(`🧱 Tracked Walls: ${input.walls.length}`);
-
-    console.log(`🆕 New Walls: ${newWalls.length}`);
-
-    console.log(`🔵 Active Walls: ${activeWalls.length}`);
-
-    console.log(`🟠 Persistent Walls: ${persistentWalls.length}`);
-
-    console.log(`🔴 Strong Walls: ${strongWalls.length}`);
-
-    console.log('\n📊 MARKET BIAS');
-
-    this.reportMarketBias(input.marketSignal);
-
-    console.log(`💡 ${input.marketSignal.reason}`);
-
-    this.reportCorrelatedIntelligence(input.evaluation);
-
-    console.log('\n📊 PRESSURE ANALYSIS');
-
-    console.log(
+    lines.push(`🐋 Total Active Whale Walls: ${input.activeWhales.length}`);
+    lines.push(`🧱 Tracked Walls: ${input.walls.length}`);
+    lines.push(`🆕 New Walls: ${newWalls.length}`);
+    lines.push(`🔵 Active Walls: ${activeWalls.length}`);
+    lines.push(`🟠 Persistent Walls: ${persistentWalls.length}`);
+    lines.push(`🔴 Strong Walls: ${strongWalls.length}`);
+    lines.push('\n📊 MARKET BIAS');
+    lines.push(this.formatMarketBias(input.marketSignal));
+    lines.push(`💡 ${input.marketSignal.reason}`);
+    lines.push(...this.formatCorrelatedIntelligence(input.evaluation));
+    lines.push('\n📊 PRESSURE ANALYSIS');
+    lines.push(
       `🟢 BID PRESSURE: ${input.marketSignal.bidPressure.toFixed(1)}%`,
     );
 
-    console.log(
+    lines.push(
       `🔴 ASK PRESSURE: ${input.marketSignal.askPressure.toFixed(1)}%`,
     );
 
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    lines.push('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+
+    return lines;
   }
 
-  private reportMarketBias(signal: MarketSummarySignal): void {
+  private formatMarketBias(signal: MarketSummarySignal): string {
     const confidence = signal.confidence.toFixed(1);
 
     if (signal.bias === 'BULLISH') {
-      console.log(`🟢 BULLISH | Pressure Strength: ${confidence}%`);
-      return;
+      return `🟢 BULLISH | Pressure Strength: ${confidence}%`;
     }
 
     if (signal.bias === 'BEARISH') {
-      console.log(`🔴 BEARISH | Pressure Strength: ${confidence}%`);
-      return;
+      return `🔴 BEARISH | Pressure Strength: ${confidence}%`;
     }
 
-    console.log(`⚪ NEUTRAL | Pressure Strength: ${confidence}%`);
+    return `⚪ NEUTRAL | Pressure Strength: ${confidence}%`;
   }
 
-  private reportCorrelatedIntelligence(
+  private formatCorrelatedIntelligence(
     evaluation: MarketEvaluation | undefined,
-  ): void {
+  ): string[] {
     const correlatedSignal = evaluation?.correlatedSignal;
 
     if (!correlatedSignal || correlatedSignal.consideredSignals === 0) {
-      return;
+      return [];
     }
 
-    console.log('\n📊 CORRELATED INTELLIGENCE');
-    console.log(`OKX Bias: ${correlatedSignal.okxBias}`);
-    console.log(`External Bias: ${correlatedSignal.externalBias}`);
-    console.log(`Relationship: ${correlatedSignal.agreement}`);
-    console.log(
+    const lines = [
+      '\n📊 CORRELATED INTELLIGENCE',
+      `OKX Bias: ${correlatedSignal.okxBias}`,
+      `External Bias: ${correlatedSignal.externalBias}`,
+      `Relationship: ${correlatedSignal.agreement}`,
       `OKX Confidence: ${correlatedSignal.okxConfidence.toFixed(1)}%`,
-    );
-    console.log(
       `External Confidence: ${correlatedSignal.externalConfidence.toFixed(1)}%`,
-    );
-    console.log(
       `Directional Confidence: ${correlatedSignal.confidence.toFixed(1)}%`,
-    );
-    console.log(
       `Alert Importance: ${correlatedSignal.alertImportance.toFixed(1)}%`,
-    );
+    ];
+
     if (correlatedSignal.agreement === 'CONTRADICTION') {
-      console.log(
+      lines.push(
         'Contradiction warning: alert importance measures source disagreement, not directional certainty.',
       );
     }
-    console.log(`External signals used: ${correlatedSignal.consideredSignals}`);
-    console.log(`Ignored external signals: ${correlatedSignal.ignoredSignals}`);
+
+    lines.push(
+      `External signals used: ${correlatedSignal.consideredSignals}`,
+      `Ignored external signals: ${correlatedSignal.ignoredSignals}`,
+    );
+
+    return lines;
   }
 
   private formatOptionalPrice(

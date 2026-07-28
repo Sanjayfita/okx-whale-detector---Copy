@@ -1,6 +1,7 @@
 import type { OKXCandle } from '../clients/okx/OKXCandleWebSocketClient';
 
 import type { MarketState } from './MarketState';
+import type { PipelineProfiler } from './PipelineProfiler';
 
 export type CandleLogger = (message: string) => void;
 
@@ -11,6 +12,7 @@ export class CandleUpdateHandler {
     private readonly marketStates: Map<string, MarketState>,
 
     private readonly logger: CandleLogger = console.log,
+    private readonly profiler?: PipelineProfiler,
   ) {}
 
   public handle(candle: OKXCandle): void {
@@ -25,7 +27,12 @@ export class CandleUpdateHandler {
      * CandleHistory, even when it is
      * not printed.
      */
+    const historyStartedAt = performance.now();
     state.candleHistory.add(candle);
+    this.profiler?.record(
+      'candle.history.handle',
+      performance.now() - historyStartedAt,
+    );
 
     const count = (this.candleCounters.get(candle.instId) ?? 0) + 1;
 
@@ -39,15 +46,20 @@ export class CandleUpdateHandler {
       return;
     }
 
-    this.logger(
+    const output =
       `🕯️ ${candle.instId} 1m | ` +
-        `O: ${candle.open} | ` +
-        `H: ${candle.high} | ` +
-        `L: ${candle.low} | ` +
-        `C: ${candle.close} | ` +
-        `Closed: ${candle.confirm} | ` +
-        `History: ` +
-        `${state.candleHistory.getSize()}`,
+      `O: ${candle.open} | ` +
+      `H: ${candle.high} | ` +
+      `L: ${candle.low} | ` +
+      `C: ${candle.close} | ` +
+      `Closed: ${candle.confirm} | ` +
+      `History: ` +
+      `${state.candleHistory.getSize()}`;
+    const consoleStartedAt = performance.now();
+    this.logger(output);
+    this.profiler?.record(
+      'candle.consoleEmission',
+      performance.now() - consoleStartedAt,
     );
   }
 

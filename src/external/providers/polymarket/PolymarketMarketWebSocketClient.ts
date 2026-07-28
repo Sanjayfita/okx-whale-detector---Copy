@@ -1,4 +1,5 @@
 import WebSocket from 'ws';
+import type { PipelineProfiler } from '../../../core/PipelineProfiler';
 
 export interface PolymarketLiveTrade {
   conditionId: string;
@@ -40,6 +41,7 @@ export class PolymarketMarketWebSocketClient {
     tokenIds: readonly string[],
     onTrade: (trade: PolymarketLiveTrade) => void,
     config: Partial<PolymarketMarketWebSocketClientConfig> = {},
+    private readonly profiler?: PipelineProfiler,
   ) {
     this.tokenIds = [...new Set(tokenIds.filter(Boolean))];
     this.onTrade = onTrade;
@@ -82,7 +84,14 @@ export class PolymarketMarketWebSocketClient {
     });
 
     this.ws.on('message', (data) => {
-      this.handleMessage(data.toString());
+      const receivedAt = performance.now();
+      const stringStartedAt = performance.now();
+      const raw = data.toString();
+      this.profiler?.record(
+        'polymarket.raw.toString',
+        performance.now() - stringStartedAt,
+      );
+      this.handleMessage(raw, receivedAt);
     });
 
     this.ws.on('close', () => {
@@ -100,18 +109,26 @@ export class PolymarketMarketWebSocketClient {
     });
   }
 
-  private handleMessage(raw: string): void {
+  private handleMessage(raw: string, receivedAt: number): void {
     if (raw === 'PONG' || !raw.trim()) return;
 
     let parsed: unknown;
+    const parseStartedAt = performance.now();
+
     try {
       parsed = JSON.parse(raw);
     } catch {
       return;
+    } finally {
+      this.profiler?.record(
+        'polymarket.json.parse',
+        performance.now() - parseStartedAt,
+      );
     }
 
     const messages = Array.isArray(parsed) ? parsed : [parsed];
     for (const message of messages) {
+      const validationStartedAt = performance.now();
       if (!message || typeof message !== 'object') continue;
 
       const value = message as Record<string, unknown>;
@@ -134,7 +151,7 @@ export class PolymarketMarketWebSocketClient {
             : parsedTimestamp
           : Date.now();
 
-      this.onTrade({
+      const trade: PolymarketLiveTrade = {
         conditionId: String(payloadValue.market ?? ''),
         tokenId: String(
           payloadValue.tokenId ??
@@ -152,7 +169,24 @@ export class PolymarketMarketWebSocketClient {
             : typeof payloadValue.transaction_hash === 'string'
               ? payloadValue.transaction_hash
               : undefined,
-      });
+      };
+      this.profiler?.record(
+        'polymarket.validationTransform',
+        performance.now() - validationStartedAt,
+      );
+      const handlerStartedAt = performance.now();
+      this.profiler?.record(
+        'polymarket.queueDelay',
+        Math.max(0, handlerStartedAt - receivedAt),
+      );
+      try {
+        this.onTrade(trade);
+      } finally {
+        this.profiler?.record(
+          'polymarket.handler',
+          performance.now() - handlerStartedAt,
+        );
+      }
     }
   }
 

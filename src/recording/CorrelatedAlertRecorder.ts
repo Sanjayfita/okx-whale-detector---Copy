@@ -8,6 +8,7 @@ import {
 import path from 'node:path';
 
 import { isSafeCorrelatedAlertOutputPath } from './correlatedAlertPath';
+import type { PerformanceTrace } from '../core/PerformanceTrace';
 import type { CorrelatedAlert } from '../types/correlatedAlert';
 
 export const CORRELATED_ALERT_SCHEMA_VERSION = 1 as const;
@@ -21,8 +22,18 @@ export interface CorrelatedAlertRecord {
 }
 
 export interface CorrelatedAlertRecordWriter {
-  append(line: string, flush: boolean): void;
+  append(line: string, flush: boolean): CorrelatedAlertWriterTimings | void;
   close(): void;
+}
+
+export interface CorrelatedAlertWriterTimings {
+  writeMs: number;
+  fsyncMs?: number;
+}
+
+export interface CorrelatedAlertRecordResult {
+  persisted: boolean;
+  fsynced: boolean;
 }
 
 export interface CorrelatedAlertRecorderOptions {
@@ -43,12 +54,21 @@ class AppendOnlyCorrelatedAlertWriter implements CorrelatedAlertRecordWriter {
     this.fileDescriptor = openSync(outputPath, 'a');
   }
 
-  public append(line: string, flush: boolean): void {
+  public append(line: string, flush: boolean): CorrelatedAlertWriterTimings {
+    const writeStartedAt = performance.now();
     writeFileSync(this.fileDescriptor, line, { encoding: 'utf8' });
+    const writeMs = performance.now() - writeStartedAt;
 
     if (flush) {
+      const fsyncStartedAt = performance.now();
       fsyncSync(this.fileDescriptor);
+      return {
+        writeMs,
+        fsyncMs: performance.now() - fsyncStartedAt,
+      };
     }
+
+    return { writeMs };
   }
 
   public close(): void {
@@ -88,7 +108,11 @@ export class CorrelatedAlertRecorder {
     outputPath: string,
   ) => CorrelatedAlertRecordWriter;
   private readonly warn: (message: string) => void;
-  private readonly pendingLines: string[] = [];
+  private readonly pendingLines: Array<{
+    line: string;
+    trace?: PerformanceTrace;
+    result: CorrelatedAlertRecordResult;
+  }> = [];
 
   private writer?: CorrelatedAlertRecordWriter;
   private failureWarned = false;
@@ -108,9 +132,14 @@ export class CorrelatedAlertRecorder {
     this.validateOptions();
   }
 
-  public record(alert: CorrelatedAlert): void {
+  public record(
+    alert: CorrelatedAlert,
+    trace?: PerformanceTrace,
+  ): CorrelatedAlertRecordResult {
+    const result = { persisted: false, fsynced: false };
+
     if (!this.enabled || this.closed) {
-      return;
+      return result;
     }
 
     const record: CorrelatedAlertRecord = {
@@ -119,8 +148,19 @@ export class CorrelatedAlertRecorder {
       alert,
     };
 
-    this.pendingLines.push(`${JSON.stringify(record)}\n`);
+    const serialize = (): string => `${JSON.stringify(record)}\n`;
+    const line = trace
+      ? trace.measure('alert.serialization', serialize)
+      : serialize();
+
+    this.pendingLines.push({ line, trace, result });
     this.flushPending();
+    trace?.updateDiagnostics({
+      alertPersisted: result.persisted,
+      recorderFsync: result.fsynced,
+    });
+
+    return result;
   }
 
   public close(): void {
@@ -149,13 +189,33 @@ export class CorrelatedAlertRecorder {
     while (this.pendingLines.length > 0) {
       try {
         this.writer ??= this.writerFactory(this.outputPath);
-        const line = this.pendingLines[0];
+        const pending = this.pendingLines[0];
 
-        if (line === undefined) {
+        if (pending === undefined) {
           return;
         }
 
-        this.writer.append(line, this.flushAfterEachAlert);
+        const appendStartedAt = performance.now();
+        const timings = this.writer.append(
+          pending.line,
+          this.flushAfterEachAlert,
+        );
+        const appendMs = performance.now() - appendStartedAt;
+
+        pending.trace?.record('alert.persistence.total', appendMs);
+
+        if (timings) {
+          pending.trace?.record('alert.persistence.write', timings.writeMs);
+
+          if (timings.fsyncMs !== undefined) {
+            pending.trace?.record('alert.persistence.fsync', timings.fsyncMs);
+          }
+        }
+
+        pending.result.persisted = true;
+        pending.result.fsynced =
+          this.flushAfterEachAlert &&
+          (timings?.fsyncMs !== undefined || timings === undefined);
         this.pendingLines.shift();
         this.failureWarned = false;
       } catch (error: unknown) {

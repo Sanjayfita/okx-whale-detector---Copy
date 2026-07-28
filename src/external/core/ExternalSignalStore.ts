@@ -79,6 +79,10 @@ export class ExternalSignalStore {
     return this.signals.size;
   }
 
+  public getStoredSize(): number {
+    return this.signals.size;
+  }
+
   public clear(): void {
     this.signals.clear();
   }

@@ -4,6 +4,7 @@ import { ExternalSignalCorrelationService } from '../src/external/core/ExternalS
 import { createAppRuntime, start } from '../src/index';
 import { PolymarketLiveSignalRuntime } from '../src/external/providers/polymarket/PolymarketLiveSignalRuntime';
 import type { PolymarketLiveTrade } from '../src/external/providers/polymarket/PolymarketMarketWebSocketClient';
+import { PipelineProfiler } from '../src/core/PipelineProfiler';
 
 class FakeWebSocketClient {
   public connected = false;
@@ -111,6 +112,7 @@ describe('PolymarketLiveSignalRuntime', () => {
 
   it('adds qualifying aggregations into the injected correlation service', async () => {
     const correlationService = new ExternalSignalCorrelationService();
+    const profiler = new PipelineProfiler();
     const publicClient = {
       getActiveMarkets: vi.fn().mockResolvedValue([
         {
@@ -151,6 +153,7 @@ describe('PolymarketLiveSignalRuntime', () => {
         publicClient: publicClient as never,
         webSocketClientFactory: webSocketClientFactory as never,
         correlationService,
+        profiler,
         logger,
         now: () => 1_700_000,
       },
@@ -175,6 +178,11 @@ describe('PolymarketLiveSignalRuntime', () => {
     expect(
       correlationService.getFreshRelevantSignals('BTC-USDT', 1_700_000),
     ).toHaveLength(1);
+    expect(profiler.getRecentStage('polymarket.interpretation')?.count).toBe(1);
+    expect(profiler.getRecentStage('polymarket.aggregation')?.count).toBe(1);
+    expect(
+      profiler.getRecentStage('polymarket.signalConstructionStore')?.count,
+    ).toBe(1);
   });
 
   it('does not add non-qualifying aggregations into the correlation service', async () => {

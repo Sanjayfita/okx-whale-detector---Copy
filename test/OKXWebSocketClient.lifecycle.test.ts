@@ -110,6 +110,7 @@ vi.mock('ws', () => ({
 }));
 
 import { OKXWebSocketClient } from '../src/clients/okx/OKXWebSocketClient';
+import { PipelineProfiler } from '../src/core/PipelineProfiler';
 
 const WATCHLIST = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT', 'XRP-USDT', 'DOGE-USDT'];
 
@@ -276,6 +277,45 @@ describe('OKXWebSocketClient lifecycle', () => {
     vi.advanceTimersByTime(20_000);
 
     expect(socket.sentMessages).toContain('ping');
+
+    client.close();
+  });
+
+  it('records callback queue delay separately from handler duration', () => {
+    const profiler = new PipelineProfiler();
+    const client = new OKXWebSocketClient(profiler);
+    const callback = vi.fn();
+
+    client.onOrderBook(callback);
+    requireSocket(0).triggerMessage(
+      JSON.stringify({
+        arg: { channel: 'books', instId: 'BTC-USDT' },
+        action: 'snapshot',
+        data: [
+          {
+            asks: [['101', '2', '0', '1']],
+            bids: [['100', '3', '0', '1']],
+            ts: '1000',
+            seqId: 1,
+            prevSeqId: -1,
+          },
+        ],
+      }),
+    );
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback.mock.calls[0]?.[1]).toMatchObject({
+      queueDelayMs: expect.any(Number),
+      stages: expect.arrayContaining([
+        expect.objectContaining({ stage: 'okx.raw.toString' }),
+        expect.objectContaining({ stage: 'okx.json.parse' }),
+        expect.objectContaining({
+          stage: 'okx.orderBook.validationTransform',
+        }),
+      ]),
+    });
+    expect(profiler.getRecentStage('okx.orderBook.queueDelay')?.count).toBe(1);
+    expect(profiler.getRecentStage('okx.orderBook.handler')?.count).toBe(1);
 
     client.close();
   });

@@ -1,4 +1,8 @@
 import type { ThroughputConfig } from '../config/throughputConfig';
+import type {
+  PipelineProfiler,
+  RecentPipelineStageStats,
+} from './PipelineProfiler';
 
 export type ThroughputLogger = (message: string) => void;
 
@@ -35,6 +39,7 @@ export class ThroughputMonitor {
     private readonly logger: ThroughputLogger = console.log,
     private readonly warningLogger: ThroughputLogger = console.warn,
     now: number = Date.now(),
+    private readonly profiler?: PipelineProfiler,
   ) {
     this.intervalStartedAt = now;
   }
@@ -64,9 +69,49 @@ export class ThroughputMonitor {
     }
 
     this.lastLagWarningAt = now;
+    const recent = this.profiler?.getRecentSnapshot() ?? [];
+    const busiestStages = [...recent]
+      .sort((left, right) => right.p95Ms - left.p95Ms)
+      .slice(0, 5)
+      .map(
+        (stage) =>
+          `${stage.stage}:p95=${stage.p95Ms.toFixed(2)}ms/n=${stage.count}`,
+      )
+      .join(', ');
+    const summarize = (
+      predicate: (stage: RecentPipelineStageStats) => boolean,
+    ): string => {
+      const matches = recent.filter(predicate);
+
+      if (matches.length === 0) {
+        return 'n/a';
+      }
+
+      const p95Ms = Math.max(...matches.map((stage) => stage.p95Ms));
+      const count = matches.reduce((total, stage) => total + stage.count, 0);
+      return `p95=${p95Ms.toFixed(2)}ms/n=${count}`;
+    };
+    let orderBookMessages = 0;
+    let candleMessages = 0;
+
+    for (const counts of this.counts.values()) {
+      orderBookMessages += counts.orderBook;
+      candleMessages += counts.candle;
+    }
+    const polymarketMessages =
+      recent.find((stage) => stage.stage === 'polymarket.queueDelay')?.count ??
+      0;
+
     this.warningLogger(
       `⚠️ Event-loop lag: ${lagMs.toFixed(2)}ms ` +
-        `(threshold ${this.config.eventLoopLagWarningMs}ms)`,
+        `(threshold ${this.config.eventLoopLagWarningMs}ms)\n` +
+        `Recent activity around lag sample (observed elapsed time may include GC/OS scheduling; not definitive causation): ` +
+        `stages=${busiestStages || 'n/a'} | ` +
+        `queue=${summarize((stage) => stage.stage.includes('queueDelay'))} | ` +
+        `messages=books:${orderBookMessages},candles:${candleMessages},polymarket:${polymarketMessages} | ` +
+        `console=${summarize((stage) => stage.stage.includes('console'))} | ` +
+        `polymarket=${summarize((stage) => stage.stage.startsWith('polymarket.'))} | ` +
+        `alertPersistence=${summarize((stage) => stage.stage.startsWith('alert.persistence'))}`,
     );
   }
 

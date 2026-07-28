@@ -11,6 +11,7 @@ import { ExternalSignalCorrelationService } from '../src/external/core/ExternalS
 import { CorrelatedAlertReporter } from '../src/reporting/CorrelatedAlertReporter';
 import { MarketReporter } from '../src/reporting/MarketReporter';
 import { CorrelatedAlertRecorder } from '../src/recording/CorrelatedAlertRecorder';
+import type { PerformanceTrace } from '../src/core/PerformanceTrace';
 
 import type { OKXOrderBookUpdate } from '../src/clients/okx/OKXWebSocketClient';
 import type { MarketEvaluation } from '../src/types/marketEvaluation';
@@ -382,6 +383,7 @@ describe('MarketEngine', () => {
     expect(evaluateSpy).toHaveBeenCalledWith(evaluation);
     expect(summarySpy).toHaveBeenCalledWith(
       expect.objectContaining({ evaluation }),
+      expect.anything(),
     );
     expect(alertReportSpy).toHaveBeenCalledTimes(1);
     expect(alertReportSpy).toHaveBeenCalledWith(
@@ -389,11 +391,19 @@ describe('MarketEngine', () => {
         symbol: 'BTC-USDT',
         relationship: 'AGREEMENT',
       }),
+      expect.anything(),
     );
     expect(alertRecordSpy).toHaveBeenCalledTimes(1);
     expect(alertRecordSpy.mock.calls[0]?.[0]).toBe(
       alertReportSpy.mock.calls[0]?.[0],
     );
+    const trace = summarySpy.mock.calls[0]?.[1] as PerformanceTrace;
+    expect(trace.getSnapshot()).toMatchObject({
+      summaryProcessed: true,
+      alertEmitted: true,
+      alertPersisted: true,
+      recorderFsync: true,
+    });
   });
 
   it('does not record when the alert engine emits no alert', () => {

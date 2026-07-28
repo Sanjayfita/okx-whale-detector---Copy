@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { ThroughputConfig } from '../src/config/throughputConfig';
 import { ThroughputMonitor } from '../src/core/ThroughputMonitor';
+import { PipelineProfiler } from '../src/core/PipelineProfiler';
 
 const config: ThroughputConfig = {
   reportIntervalMs: 60_000,
@@ -69,6 +70,31 @@ describe('ThroughputMonitor', () => {
     expect(warningLogger).toHaveBeenCalledTimes(2);
     expect(warningLogger).toHaveBeenCalledWith(
       expect.stringContaining('Event-loop lag'),
+    );
+  });
+
+  it('adds recent activity context without claiming causation', () => {
+    const warningLogger = vi.fn();
+    const profiler = new PipelineProfiler();
+    profiler.record('okx.orderBook.queueDelay', 12);
+    profiler.record('summary.consoleEmission', 8);
+    profiler.record('polymarket.aggregation', 6);
+    profiler.record('alert.persistence.fsync', 4);
+    const monitor = new ThroughputMonitor(
+      config,
+      vi.fn(),
+      warningLogger,
+      0,
+      profiler,
+    );
+    monitor.record('BTC-USDT', 'orderBook');
+
+    monitor.recordEventLoopLag(120, 1_000);
+
+    expect(warningLogger).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /Recent activity around lag sample[\s\S]*not definitive causation[\s\S]*queue=p95=12\.00ms[\s\S]*messages=books:1,candles:0[\s\S]*console=p95=8\.00ms[\s\S]*polymarket=p95=6\.00ms[\s\S]*alertPersistence=p95=4\.00ms/,
+      ),
     );
   });
 

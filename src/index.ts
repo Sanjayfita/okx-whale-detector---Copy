@@ -31,6 +31,8 @@ import { MarketState } from './core/MarketState';
 import { SubscriptionManager } from './core/SubscriptionManager';
 import { SummaryThrottle } from './core/SummaryThrottle';
 import { ThroughputMonitor } from './core/ThroughputMonitor';
+import { PipelineProfiler } from './core/PipelineProfiler';
+import { ProcessingMonitor } from './core/ProcessingMonitor';
 import { MarketEngine } from './market/MarketEngine';
 import { ExternalSignalCorrelationService } from './external/core/ExternalSignalCorrelationService';
 import { PolymarketLiveSignalRuntime } from './external/providers/polymarket/PolymarketLiveSignalRuntime';
@@ -87,6 +89,12 @@ export const createAppRuntime = async (
   console.log(`Loaded metadata for ${instruments.size} instruments.`);
 
   const marketStates = new Map<string, MarketState>();
+  const pipelineProfiler = new PipelineProfiler({
+    enabled: performanceConfig.attributionEnabled,
+    maximumSamplesPerStage: performanceConfig.maximumSamplesPerStage,
+    maximumStages: performanceConfig.maximumProfiledStages,
+  });
+  const processingMonitor = new ProcessingMonitor(performanceConfig);
   const summaryThrottle = new SummaryThrottle(
     appConfig.reporting.summaryIntervalMs,
   );
@@ -148,8 +156,8 @@ export const createAppRuntime = async (
     marketStates,
     summaryThrottle,
     undefined,
-    undefined,
-    undefined,
+    processingMonitor,
+    pipelineProfiler,
     externalSignalCorrelationService,
     correlatedAlertEngine,
     dependencies.correlatedAlertReporter,
@@ -172,26 +180,59 @@ export const createAppRuntime = async (
       },
       {
         correlationService: externalSignalCorrelationService,
+        profiler: pipelineProfiler,
       },
     );
-  const candleUpdateHandler = new CandleUpdateHandler(marketStates);
+  const candleUpdateHandler = new CandleUpdateHandler(
+    marketStates,
+    undefined,
+    pipelineProfiler,
+  );
   const activeSymbols = activeProfiles.map((profile) => profile.symbol);
   const healthMonitor = new MarketHealthMonitor(activeSymbols, healthConfig);
-  const throughputMonitor = new ThroughputMonitor(throughputConfig);
+  const throughputMonitor = new ThroughputMonitor(
+    throughputConfig,
+    undefined,
+    undefined,
+    Date.now(),
+    pipelineProfiler,
+  );
 
   const subscriptionManager = new SubscriptionManager({
     maximumSymbolsPerConnection: subscriptionConfig.maximumSymbolsPerConnection,
-    onOrderBook: (update) => {
-      recorder?.recordOrderBook(update);
+    profiler: pipelineProfiler,
+    onOrderBook: (update, messagePerformance) => {
+      if (recorder) {
+        const startedAt = performance.now();
+        recorder.recordOrderBook(update);
+        const durationMs = performance.now() - startedAt;
+        pipelineProfiler.record('recording.raw.orderBook', durationMs);
+        messagePerformance?.stages.push({
+          stage: 'recording.raw.orderBook',
+          durationMs,
+        });
+      }
       healthMonitor.recordOrderBook(update.instId);
       throughputMonitor.record(update.instId, 'orderBook');
-      marketEngine.processOrderBookUpdate(update);
+      marketEngine.processOrderBookUpdate(update, messagePerformance);
     },
     onCandle: (candle) => {
-      recorder?.recordCandle(candle);
+      if (recorder) {
+        const startedAt = performance.now();
+        recorder.recordCandle(candle);
+        pipelineProfiler.record(
+          'recording.raw.candle',
+          performance.now() - startedAt,
+        );
+      }
       healthMonitor.recordCandle(candle.instId);
       throughputMonitor.record(candle.instId, 'candle');
+      const startedAt = performance.now();
       candleUpdateHandler.handle(candle);
+      pipelineProfiler.record(
+        'candle.handler.total',
+        performance.now() - startedAt,
+      );
     },
     onShardReconnect: (symbols) => {
       console.warn(

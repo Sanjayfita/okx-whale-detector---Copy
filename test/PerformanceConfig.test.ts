@@ -16,6 +16,9 @@ describe('performance configuration', () => {
     ['warningCooldownMs', -1],
     ['maximumSamplesPerSymbol', 0],
     ['maximumSamplesPerSymbol', 1.5],
+    ['maximumSamplesPerStage', 0],
+    ['maximumProfiledStages', 0],
+    ['warningStageLimit', 0],
   ] as const)('rejects invalid %s', (field, value) => {
     const config: PerformanceConfig = {
       ...performanceConfig,
@@ -23,5 +26,14 @@ describe('performance configuration', () => {
     };
 
     expect(() => validatePerformanceConfig(config)).toThrow(field);
+  });
+
+  it('rejects a non-boolean attribution flag', () => {
+    expect(() =>
+      validatePerformanceConfig({
+        ...performanceConfig,
+        attributionEnabled: 'yes' as never,
+      }),
+    ).toThrow('attributionEnabled');
   });
 });

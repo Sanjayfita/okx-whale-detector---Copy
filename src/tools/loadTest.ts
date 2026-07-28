@@ -1,5 +1,6 @@
 import type { OKXOrderBookUpdate } from '../clients/okx/OKXWebSocketClient';
 import { appConfig } from '../config/appConfig';
+import { performanceConfig } from '../config/performanceConfig';
 import { MarketState } from '../core/MarketState';
 import { PipelineProfiler } from '../core/PipelineProfiler';
 import { ProcessingMonitor } from '../core/ProcessingMonitor';
@@ -51,9 +52,9 @@ const engine = new MarketEngine(
   new SummaryThrottle(Number.MAX_SAFE_INTEGER),
   new SilentMarketReporter(),
   new ProcessingMonitor({
+    ...performanceConfig,
     slowUpdateThresholdMs: Number.MAX_SAFE_INTEGER,
     warningCooldownMs: 0,
-    maximumSamplesPerSymbol: 100,
   }),
   profiler,
 );

@@ -9,6 +9,8 @@ import {
   type CorrelatedAlertRecord,
   type CorrelatedAlertRecordWriter,
 } from '../src/recording/CorrelatedAlertRecorder';
+import { PerformanceTrace } from '../src/core/PerformanceTrace';
+import { PipelineProfiler } from '../src/core/PipelineProfiler';
 
 import type { CorrelatedAlert } from '../src/types/correlatedAlert';
 
@@ -233,5 +235,35 @@ describe('CorrelatedAlertRecorder', () => {
     recorder.close();
 
     expect(persisted).toHaveLength(1);
+  });
+
+  it('attributes serialization, persistence, and measurable fsync', () => {
+    const profiler = new PipelineProfiler();
+    const trace = new PerformanceTrace(profiler, true);
+    const recorder = new CorrelatedAlertRecorder({
+      outputPath,
+      writerFactory: () => ({
+        append: () => ({ writeMs: 2, fsyncMs: 3 }),
+        close: vi.fn(),
+      }),
+    });
+
+    expect(recorder.record(createAlert(), trace)).toEqual({
+      persisted: true,
+      fsynced: true,
+    });
+
+    expect(profiler.getRecentStage('alert.serialization')?.count).toBe(1);
+    expect(profiler.getRecentStage('alert.persistence.total')?.count).toBe(1);
+    expect(profiler.getRecentStage('alert.persistence.write')?.latestMs).toBe(
+      2,
+    );
+    expect(profiler.getRecentStage('alert.persistence.fsync')?.latestMs).toBe(
+      3,
+    );
+    expect(trace.getSnapshot()).toMatchObject({
+      alertPersisted: true,
+      recorderFsync: true,
+    });
   });
 });

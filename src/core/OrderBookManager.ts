@@ -17,6 +17,7 @@ export class OrderBookManager {
     initialized: false,
     updatedAt: 0,
   };
+  private lastUpdatePrunedDepth = false;
 
   public constructor(
     private readonly instrument: MarketInstrumentConfig = DEFAULT_INSTRUMENT,
@@ -42,13 +43,15 @@ export class OrderBookManager {
     prevSeqId: number,
     action: 'snapshot' | 'update',
   ): boolean {
+    this.lastUpdatePrunedDepth = false;
+
     if (action === 'snapshot') {
       this.orderBook.bids.clear();
       this.orderBook.asks.clear();
 
       this.applyLevels(this.orderBook.bids, bids, timestamp);
       this.applyLevels(this.orderBook.asks, asks, timestamp);
-      this.pruneDepth();
+      this.lastUpdatePrunedDepth = this.pruneDepth();
 
       this.orderBook.lastSeqId = seqId;
       this.orderBook.updatedAt = timestamp;
@@ -71,7 +74,7 @@ export class OrderBookManager {
 
     this.applyLevels(this.orderBook.bids, bids, timestamp);
     this.applyLevels(this.orderBook.asks, asks, timestamp);
-    this.pruneDepth();
+    this.lastUpdatePrunedDepth = this.pruneDepth();
 
     this.orderBook.lastSeqId = seqId;
     this.orderBook.updatedAt = timestamp;
@@ -131,14 +134,19 @@ export class OrderBookManager {
     }
   }
 
-  private pruneDepth(): void {
-    this.pruneSide(this.orderBook.bids, true);
-    this.pruneSide(this.orderBook.asks, false);
+  private pruneDepth(): boolean {
+    const bidsPruned = this.pruneSide(this.orderBook.bids, true);
+    const asksPruned = this.pruneSide(this.orderBook.asks, false);
+
+    return bidsPruned || asksPruned;
   }
 
-  private pruneSide(side: Map<number, OrderLevel>, keepHighest: boolean): void {
+  private pruneSide(
+    side: Map<number, OrderLevel>,
+    keepHighest: boolean,
+  ): boolean {
     if (side.size <= this.maximumLevelsPerSide) {
-      return;
+      return false;
     }
 
     const retainedPrices = [...side.keys()]
@@ -151,6 +159,12 @@ export class OrderBookManager {
         side.delete(price);
       }
     }
+
+    return true;
+  }
+
+  public didLastUpdatePruneDepth(): boolean {
+    return this.lastUpdatePrunedDepth;
   }
 
   public getOrderBook(): OrderBook {

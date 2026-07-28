@@ -334,9 +334,9 @@ export const simulateCorrelatedAlerts = async (
       reportedAlerts.push(alert);
       reportAlert(alert);
     };
-    recorder.record = (alert) => {
+    recorder.record = (alert, trace) => {
       recordedAlerts.push(alert);
-      recordAlert(alert);
+      return recordAlert(alert, trace);
     };
 
     const states = new Map(
