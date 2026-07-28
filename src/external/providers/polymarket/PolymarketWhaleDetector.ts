@@ -230,7 +230,10 @@ export class PolymarketWhaleDetector {
       1,
       interpretation.notionalUsd / Math.max(market.liquidity, 1),
     );
-    const confidence = Math.min(75, 35 + tradeScale * 25 + liquidityImpact * 15);
+    const confidence = Math.min(
+      75,
+      35 + tradeScale * 25 + liquidityImpact * 15,
+    );
     const asset = inferPolymarketAsset(
       `${market.question} ${market.category ?? ''}`,
     );

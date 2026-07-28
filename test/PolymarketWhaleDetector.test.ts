@@ -150,8 +150,10 @@ describe('PolymarketWhaleDetector', () => {
 
     expect(detector.interpretTrade(trade, market).occurredAt).toBe(1_000_000);
     expect(
-      detector.interpretTrade({ ...trade, timestamp: 1_700_000_000_000 }, market)
-        .occurredAt,
+      detector.interpretTrade(
+        { ...trade, timestamp: 1_700_000_000_000 },
+        market,
+      ).occurredAt,
     ).toBe(1_700_000_000_000);
   });
 
