@@ -76,6 +76,10 @@ export const parseCorrelatedAlertRecord = (
     !MARKET_BIASES.has(String(alert.bias)) ||
     !RELATIONSHIPS.has(String(alert.relationship)) ||
     !isFiniteNumber(alert.combinedConfidence) ||
+    (alert.alertImportance !== undefined &&
+      (!isFiniteNumber(alert.alertImportance) ||
+        alert.alertImportance < 0 ||
+        alert.alertImportance > 100)) ||
     !isFiniteNumber(alert.okxConfidence) ||
     !isFiniteNumber(alert.externalEffectiveConfidence) ||
     !isFiniteNumber(alert.externalSignalsUsed) ||
@@ -86,7 +90,16 @@ export const parseCorrelatedAlertRecord = (
     throw new Error('Invalid correlated alert payload');
   }
 
-  return value as unknown as CorrelatedAlertRecord;
+  return {
+    ...value,
+    alert: {
+      ...alert,
+      alertImportance:
+        alert.alertImportance === undefined
+          ? alert.combinedConfidence
+          : alert.alertImportance,
+    },
+  } as unknown as CorrelatedAlertRecord;
 };
 
 export class CorrelatedAlertLogReader {

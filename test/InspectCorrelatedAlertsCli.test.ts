@@ -17,6 +17,7 @@ const createRecord = () => ({
     bias: 'BULLISH',
     relationship: 'AGREEMENT',
     combinedConfidence: 74,
+    alertImportance: 82,
     okxConfidence: 81,
     externalEffectiveConfidence: 53,
     externalSignalsUsed: 2,
@@ -135,6 +136,8 @@ describe('correlated alert inspection CLI', () => {
     expect(output).toContain('STRONG: 1');
     expect(output).toContain('AGREEMENT: 1');
     expect(output).toContain('BTC-USDT: 1');
+    expect(output).toContain('Average alert importance: 82.0%');
+    expect(output).toContain('Highest alert importance: 82.0%');
     expect(error).not.toHaveBeenCalled();
   });
 });

@@ -17,7 +17,10 @@ export interface CorrelatedAlert {
   eventType: CorrelatedAlertEventType;
   bias: MarketBias;
   relationship: CorrelatedMarketSignal['agreement'];
+  /** Certainty in the resulting directional bias. */
   combinedConfidence: number;
+  /** Operational significance of the correlated relationship. */
+  alertImportance: number;
   okxConfidence: number;
   externalEffectiveConfidence: number;
   externalSignalsUsed: number;

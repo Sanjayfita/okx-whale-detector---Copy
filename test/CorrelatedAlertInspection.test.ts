@@ -21,6 +21,7 @@ const createRecord = (
     bias: 'BULLISH',
     relationship: 'AGREEMENT',
     combinedConfidence: 70,
+    alertImportance: 70,
     okxConfidence: 75,
     externalEffectiveConfidence: 60,
     externalSignalsUsed: 1,
@@ -80,6 +81,16 @@ describe('correlated alert inspection', () => {
       'BTC-USDT': 2,
       'ETH-USDT': 1,
     });
+  });
+
+  it('summarizes alert importance independently of directional confidence', () => {
+    const inspection = aggregateCorrelatedAlerts([
+      createRecord({ combinedConfidence: 30, alertImportance: 80 }),
+      createRecord({ combinedConfidence: 70, alertImportance: 60 }),
+    ]);
+
+    expect(inspection.averageAlertImportance).toBe(70);
+    expect(inspection.highestAlertImportance).toBe(80);
   });
 
   it('returns the requested number of latest alerts', () => {

@@ -123,8 +123,7 @@ const createExternalSignal = (
   direction,
   occurredAt: SIMULATION_TIME,
   receivedAt: SIMULATION_TIME,
-  confidence: 100,
-  symbol,
+  confidence: 80,
   asset: symbol.split('-')[0],
   notionalUsd: 1_000_000,
   description: `Deterministic ${direction.toLowerCase()} Polymarket signal for ${symbol}`,
@@ -220,6 +219,15 @@ const validateResult = (
         `Expected ${record.alert.symbol} to use an external signal`,
       );
     }
+
+    if (
+      record.alert.relationship === 'CONTRADICTION' &&
+      record.alert.combinedConfidence >= record.alert.alertImportance
+    ) {
+      throw new Error(
+        'Expected contradiction directional confidence to remain below alert importance',
+      );
+    }
   }
 
   for (const [symbol, relationship] of Object.entries(EXPECTED_SCENARIOS)) {
@@ -253,7 +261,8 @@ const printResult = (
     log(
       `schemaVersion=${record.schemaVersion} | ${alert.symbol} | ` +
         `${alert.relationship} | ${alert.severity} | Bias: ${alert.bias} | ` +
-        `Confidence: ${alert.combinedConfidence.toFixed(1)}% | ` +
+        `Directional confidence: ${alert.combinedConfidence.toFixed(1)}% | ` +
+        `Alert importance: ${alert.alertImportance.toFixed(1)}% | ` +
         `External signals: ${alert.externalSignalsUsed}`,
     );
   }
@@ -282,11 +291,7 @@ export const simulateCorrelatedAlerts = async (
     cleanupAuthorized = true;
 
     const correlationService = new ExternalSignalCorrelationService({
-      correlation: {
-        okxWeight: 0.9,
-        externalWeight: 0.1,
-        contradictionPenalty: 5,
-      },
+      correlation: appConfig.correlation,
     });
     correlationService.addSignal(
       createExternalSignal('BTC-USDT', 'BULLISH'),
@@ -298,7 +303,15 @@ export const simulateCorrelatedAlerts = async (
     );
 
     const alertEngine = new CorrelatedAlertEngine({
-      minimumCombinedConfidence: 55,
+      minimumAgreementAlertImportance:
+        appConfig.correlatedAlerts.minimumAgreementAlertImportance,
+      minimumContradictionAlertImportance:
+        appConfig.correlatedAlerts.minimumContradictionAlertImportance,
+      externalOnlyAlertsEnabled:
+        appConfig.correlatedAlerts.externalOnlyAlertsEnabled,
+      minimumExternalOnlyAlertImportance:
+        appConfig.correlatedAlerts.minimumExternalOnlyAlertImportance,
+      severityThresholds: appConfig.correlatedAlerts.severityThresholds,
       cooldownMs: 0,
       clock: () => SIMULATION_TIME,
     });

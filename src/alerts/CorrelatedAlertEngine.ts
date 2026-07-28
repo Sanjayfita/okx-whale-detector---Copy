@@ -8,10 +8,20 @@ import type { MarketEvaluation } from '../types/marketEvaluation';
 
 export interface CorrelatedAlertEngineOptions {
   enabled?: boolean;
-  minimumCombinedConfidence?: number;
+  minimumAgreementAlertImportance?: number;
+  minimumContradictionAlertImportance?: number;
+  externalOnlyAlertsEnabled?: boolean;
+  minimumExternalOnlyAlertImportance?: number;
+  severityThresholds?: Partial<CorrelatedAlertSeverityThresholds>;
   cooldownMs?: number;
   confidenceChangeThreshold?: number;
   clock?: () => number;
+}
+
+export interface CorrelatedAlertSeverityThresholds {
+  watch: number;
+  strong: number;
+  critical: number;
 }
 
 interface CorrelatedAlertState {
@@ -19,15 +29,25 @@ interface CorrelatedAlertState {
   relationship: CorrelatedMarketSignal['agreement'];
   severity: CorrelatedAlertSeverity;
   combinedConfidence: number;
+  alertImportance: number;
   emittedAt: number;
 }
 
 const DEFAULT_OPTIONS = {
   enabled: true,
-  minimumCombinedConfidence: 55,
+  minimumAgreementAlertImportance: 55,
+  minimumContradictionAlertImportance: 55,
+  externalOnlyAlertsEnabled: false,
+  minimumExternalOnlyAlertImportance: 55,
   cooldownMs: 60_000,
   confidenceChangeThreshold: 10,
 } as const;
+
+const DEFAULT_SEVERITY_THRESHOLDS: CorrelatedAlertSeverityThresholds = {
+  watch: 55,
+  strong: 65,
+  critical: 80,
+};
 
 const SEVERITY_RANK: Readonly<Record<CorrelatedAlertSeverity, number>> = {
   INFO: 0,
@@ -38,7 +58,11 @@ const SEVERITY_RANK: Readonly<Record<CorrelatedAlertSeverity, number>> = {
 
 export class CorrelatedAlertEngine {
   private readonly enabled: boolean;
-  private readonly minimumCombinedConfidence: number;
+  private readonly minimumAgreementAlertImportance: number;
+  private readonly minimumContradictionAlertImportance: number;
+  private readonly externalOnlyAlertsEnabled: boolean;
+  private readonly minimumExternalOnlyAlertImportance: number;
+  private readonly severityThresholds: CorrelatedAlertSeverityThresholds;
   private readonly cooldownMs: number;
   private readonly confidenceChangeThreshold: number;
   private readonly clock: () => number;
@@ -47,9 +71,22 @@ export class CorrelatedAlertEngine {
 
   public constructor(options: CorrelatedAlertEngineOptions = {}) {
     this.enabled = options.enabled ?? DEFAULT_OPTIONS.enabled;
-    this.minimumCombinedConfidence =
-      options.minimumCombinedConfidence ??
-      DEFAULT_OPTIONS.minimumCombinedConfidence;
+    this.minimumAgreementAlertImportance =
+      options.minimumAgreementAlertImportance ??
+      DEFAULT_OPTIONS.minimumAgreementAlertImportance;
+    this.minimumContradictionAlertImportance =
+      options.minimumContradictionAlertImportance ??
+      DEFAULT_OPTIONS.minimumContradictionAlertImportance;
+    this.externalOnlyAlertsEnabled =
+      options.externalOnlyAlertsEnabled ??
+      DEFAULT_OPTIONS.externalOnlyAlertsEnabled;
+    this.minimumExternalOnlyAlertImportance =
+      options.minimumExternalOnlyAlertImportance ??
+      DEFAULT_OPTIONS.minimumExternalOnlyAlertImportance;
+    this.severityThresholds = {
+      ...DEFAULT_SEVERITY_THRESHOLDS,
+      ...options.severityThresholds,
+    };
     this.cooldownMs = options.cooldownMs ?? DEFAULT_OPTIONS.cooldownMs;
     this.confidenceChangeThreshold =
       options.confidenceChangeThreshold ??
@@ -66,13 +103,12 @@ export class CorrelatedAlertEngine {
       !this.enabled ||
       !correlatedSignal ||
       correlatedSignal.consideredSignals === 0 ||
-      correlatedSignal.agreement === 'OKX_ONLY' ||
-      correlatedSignal.confidence < this.minimumCombinedConfidence
+      !this.qualifies(correlatedSignal)
     ) {
       return undefined;
     }
 
-    const severity = this.getSeverity(correlatedSignal.confidence);
+    const severity = this.getSeverity(correlatedSignal.alertImportance);
     const previous = this.states.get(correlatedSignal.symbol);
     const createdAt = this.clock();
 
@@ -93,6 +129,7 @@ export class CorrelatedAlertEngine {
       bias: correlatedSignal.bias,
       relationship: correlatedSignal.agreement,
       combinedConfidence: correlatedSignal.confidence,
+      alertImportance: correlatedSignal.alertImportance,
       okxConfidence: correlatedSignal.okxConfidence,
       externalEffectiveConfidence: correlatedSignal.externalConfidence,
       externalSignalsUsed: correlatedSignal.consideredSignals,
@@ -107,6 +144,7 @@ export class CorrelatedAlertEngine {
       relationship: correlatedSignal.agreement,
       severity,
       combinedConfidence: correlatedSignal.confidence,
+      alertImportance: correlatedSignal.alertImportance,
       emittedAt: createdAt,
     });
 
@@ -132,6 +170,8 @@ export class CorrelatedAlertEngine {
         previous.relationship !== 'CONTRADICTION') ||
       SEVERITY_RANK[severity] > SEVERITY_RANK[previous.severity] ||
       Math.abs(signal.confidence - previous.combinedConfidence) >=
+        this.confidenceChangeThreshold ||
+      Math.abs(signal.alertImportance - previous.alertImportance) >=
         this.confidenceChangeThreshold
     );
   }
@@ -167,16 +207,35 @@ export class CorrelatedAlertEngine {
     return 'NEW_SIGNAL';
   }
 
-  private getSeverity(confidence: number): CorrelatedAlertSeverity {
-    if (confidence >= 80) {
+  private qualifies(signal: CorrelatedMarketSignal): boolean {
+    if (signal.agreement === 'AGREEMENT') {
+      return signal.alertImportance >= this.minimumAgreementAlertImportance;
+    }
+
+    if (signal.agreement === 'CONTRADICTION') {
+      return signal.alertImportance >= this.minimumContradictionAlertImportance;
+    }
+
+    if (signal.agreement === 'EXTERNAL_ONLY') {
+      return (
+        this.externalOnlyAlertsEnabled &&
+        signal.alertImportance >= this.minimumExternalOnlyAlertImportance
+      );
+    }
+
+    return false;
+  }
+
+  private getSeverity(alertImportance: number): CorrelatedAlertSeverity {
+    if (alertImportance >= this.severityThresholds.critical) {
       return 'CRITICAL';
     }
 
-    if (confidence >= 65) {
+    if (alertImportance >= this.severityThresholds.strong) {
       return 'STRONG';
     }
 
-    if (confidence >= 55) {
+    if (alertImportance >= this.severityThresholds.watch) {
       return 'WATCH';
     }
 
@@ -199,12 +258,42 @@ export class CorrelatedAlertEngine {
       throw new Error('enabled must be a boolean');
     }
 
+    const importanceThresholds = [
+      ['minimumAgreementAlertImportance', this.minimumAgreementAlertImportance],
+      [
+        'minimumContradictionAlertImportance',
+        this.minimumContradictionAlertImportance,
+      ],
+      [
+        'minimumExternalOnlyAlertImportance',
+        this.minimumExternalOnlyAlertImportance,
+      ],
+    ] as const;
+
+    for (const [name, value] of importanceThresholds) {
+      if (!Number.isFinite(value) || value < 0 || value > 100) {
+        throw new Error(`${name} must be between 0 and 100`);
+      }
+    }
+
+    if (typeof this.externalOnlyAlertsEnabled !== 'boolean') {
+      throw new Error('externalOnlyAlertsEnabled must be a boolean');
+    }
+
+    const { watch, strong, critical } = this.severityThresholds;
+
     if (
-      !Number.isFinite(this.minimumCombinedConfidence) ||
-      this.minimumCombinedConfidence < 0 ||
-      this.minimumCombinedConfidence > 100
+      !Number.isFinite(watch) ||
+      !Number.isFinite(strong) ||
+      !Number.isFinite(critical) ||
+      watch < 0 ||
+      critical > 100 ||
+      watch >= strong ||
+      strong >= critical
     ) {
-      throw new Error('minimumCombinedConfidence must be between 0 and 100');
+      throw new Error(
+        'severity thresholds must be finite values between 0 and 100 that increase from watch to strong to critical',
+      );
     }
 
     if (!Number.isFinite(this.cooldownMs) || this.cooldownMs < 0) {

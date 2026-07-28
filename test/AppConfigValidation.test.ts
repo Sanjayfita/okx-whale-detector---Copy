@@ -39,14 +39,45 @@ describe('application configuration validation', () => {
     const config = cloneConfig();
 
     config.correlatedAlerts.enabled = 'yes' as never;
-    config.correlatedAlerts.minimumCombinedConfidence = 101;
+    config.correlatedAlerts.minimumAgreementAlertImportance = 101;
     config.correlatedAlerts.cooldownSeconds = 0;
     config.correlatedAlerts.confidenceChangeThreshold = 0;
 
     expect(() => validateAppConfig(config)).toThrowError(
       expect.objectContaining({
         message: expect.stringMatching(
-          /correlatedAlerts\.enabled[\s\S]*correlatedAlerts\.minimumCombinedConfidence[\s\S]*correlatedAlerts\.cooldownSeconds[\s\S]*correlatedAlerts\.confidenceChangeThreshold/,
+          /correlatedAlerts\.enabled[\s\S]*correlatedAlerts\.minimumAgreementAlertImportance[\s\S]*correlatedAlerts\.cooldownSeconds[\s\S]*correlatedAlerts\.confidenceChangeThreshold/,
+        ),
+      }),
+    );
+  });
+
+  it('rejects invalid correlation weights and confidence settings', () => {
+    const config = cloneConfig();
+
+    config.correlation.okxWeight = 0.8;
+    config.correlation.externalWeight = 0.3;
+    config.correlation.contradictionPenalty = 101;
+
+    expect(() => validateAppConfig(config)).toThrowError(
+      expect.objectContaining({
+        message: expect.stringMatching(
+          /correlation weights must sum to 1[\s\S]*correlation\.contradictionPenalty/,
+        ),
+      }),
+    );
+  });
+
+  it('rejects unordered severity thresholds and unreachable gates', () => {
+    const config = cloneConfig();
+
+    config.correlatedAlerts.severityThresholds.strong = 50;
+    config.correlatedAlerts.minimumContradictionAlertImportance = 40;
+
+    expect(() => validateAppConfig(config)).toThrowError(
+      expect.objectContaining({
+        message: expect.stringMatching(
+          /severity thresholds must increase[\s\S]*minimum importance thresholds must be greater than or equal to the watch severity threshold/,
         ),
       }),
     );

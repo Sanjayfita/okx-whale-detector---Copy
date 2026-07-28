@@ -275,8 +275,16 @@ export class MarketReporter {
       `External Confidence: ${correlatedSignal.externalConfidence.toFixed(1)}%`,
     );
     console.log(
-      `Combined Confidence: ${correlatedSignal.confidence.toFixed(1)}%`,
+      `Directional Confidence: ${correlatedSignal.confidence.toFixed(1)}%`,
     );
+    console.log(
+      `Alert Importance: ${correlatedSignal.alertImportance.toFixed(1)}%`,
+    );
+    if (correlatedSignal.agreement === 'CONTRADICTION') {
+      console.log(
+        'Contradiction warning: alert importance measures source disagreement, not directional certainty.',
+      );
+    }
     console.log(`External signals used: ${correlatedSignal.consideredSignals}`);
     console.log(`Ignored external signals: ${correlatedSignal.ignoredSignals}`);
   }

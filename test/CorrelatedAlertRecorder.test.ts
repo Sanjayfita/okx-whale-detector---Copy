@@ -22,6 +22,7 @@ const createAlert = (
   bias: 'BULLISH',
   relationship: 'AGREEMENT',
   combinedConfidence: 74,
+  alertImportance: 74,
   okxConfidence: 81,
   externalEffectiveConfidence: 53,
   externalSignalsUsed: 2,

@@ -11,10 +11,12 @@ import type { MarketEvaluation } from '../src/types/marketEvaluation';
 const createEvaluation = (
   overrides: Partial<CorrelatedMarketSignal> = {},
 ): MarketEvaluation => {
+  const confidence = overrides.confidence ?? 70;
   const correlatedSignal: CorrelatedMarketSignal = {
     symbol: 'BTC-USDT',
     bias: 'BULLISH',
-    confidence: 70,
+    confidence,
+    alertImportance: overrides.alertImportance ?? confidence,
     okxBias: 'BULLISH',
     okxConfidence: 75,
     externalBias: 'BULLISH',
@@ -112,7 +114,8 @@ describe('CorrelatedAlertEngine', () => {
 
     const alert = engine.evaluate(
       createEvaluation({
-        confidence: 68,
+        confidence: 25,
+        alertImportance: 68,
         agreement: 'CONTRADICTION',
         externalBias: 'BEARISH',
         reason: 'Sources disagree.',
@@ -123,6 +126,8 @@ describe('CorrelatedAlertEngine', () => {
       severity: 'STRONG',
       eventType: 'CONTRADICTION',
       relationship: 'CONTRADICTION',
+      combinedConfidence: 25,
+      alertImportance: 68,
     });
     expect(alert?.reason).toContain('Contradiction warning:');
   });
@@ -295,6 +300,7 @@ describe('CorrelatedAlertEngine', () => {
     const evaluation = createEvaluation({
       bias: 'BEARISH',
       confidence: 73,
+      alertImportance: 57,
       okxBias: 'BULLISH',
       okxConfidence: 91,
       externalBias: 'BEARISH',
@@ -308,6 +314,7 @@ describe('CorrelatedAlertEngine', () => {
     expect(engine.evaluate(evaluation)).toMatchObject({
       bias: 'BEARISH',
       combinedConfidence: 73,
+      alertImportance: 57,
       okxConfidence: 91,
       externalEffectiveConfidence: 57,
       relationship: 'CONTRADICTION',
@@ -320,14 +327,16 @@ describe('CorrelatedAlertEngine', () => {
     [65, 'STRONG'],
     [80, 'CRITICAL'],
   ] as const)('classifies %s confidence as %s', (confidence, severity) => {
-    const { engine } = createHarness({ minimumCombinedConfidence: 40 });
+    const { engine } = createHarness({
+      minimumAgreementAlertImportance: 40,
+    });
 
     expect(engine.evaluate(createEvaluation({ confidence }))).toMatchObject({
       severity,
     });
   });
 
-  it('uses NEW_SIGNAL for a qualifying external-only evaluation', () => {
+  it('suppresses external-only evaluations by default', () => {
     const { engine } = createHarness();
 
     expect(
@@ -339,9 +348,6 @@ describe('CorrelatedAlertEngine', () => {
           externalBias: 'BULLISH',
         }),
       ),
-    ).toMatchObject({
-      eventType: 'NEW_SIGNAL',
-      relationship: 'EXTERNAL_ONLY',
-    });
+    ).toBeUndefined();
   });
 });

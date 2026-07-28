@@ -69,6 +69,20 @@ export const inspectCorrelatedAlerts = async (
   log(`File: ${options.filePath}`);
   log(`Valid alerts: ${inspection.totalValidAlerts}`);
   log(`Malformed lines: ${result.malformedLines.length}`);
+  log(
+    `Average alert importance: ${
+      inspection.averageAlertImportance === undefined
+        ? 'N/A'
+        : `${inspection.averageAlertImportance.toFixed(1)}%`
+    }`,
+  );
+  log(
+    `Highest alert importance: ${
+      inspection.highestAlertImportance === undefined
+        ? 'N/A'
+        : `${inspection.highestAlertImportance.toFixed(1)}%`
+    }`,
+  );
 
   for (const malformed of result.malformedLines) {
     warn(`Malformed line ${malformed.lineNumber}: ${malformed.message}`);
@@ -110,7 +124,8 @@ export const inspectCorrelatedAlerts = async (
     log(
       `${new Date(alert.createdAt).toISOString()} | ${alert.symbol} | ` +
         `${alert.severity} | ${alert.eventType} | ` +
-        `${alert.combinedConfidence.toFixed(1)}%`,
+        `Direction ${alert.combinedConfidence.toFixed(1)}% | ` +
+        `Importance ${alert.alertImportance.toFixed(1)}%`,
     );
   }
 };

@@ -27,7 +27,10 @@ export interface CorrelatedSignalContribution {
 export interface CorrelatedMarketSignal {
   symbol: string;
   bias: MarketBias;
+  /** Certainty in the resulting directional bias. */
   confidence: number;
+  /** Operational significance of the relationship between the two sources. */
+  alertImportance: number;
   okxBias: MarketBias;
   okxConfidence: number;
   externalBias: MarketBias;
@@ -44,14 +47,15 @@ export interface CorrelatedMarketSignal {
   timestamp: number;
 }
 
-const DEFAULT_CONFIG: ExternalSignalCorrelationConfig = {
-  okxWeight: 0.7,
-  externalWeight: 0.3,
-  minimumEffectiveConfidence: 5,
-  agreementBonus: 8,
-  contradictionPenalty: 15,
-  maximumConfidence: 100,
-};
+export const DEFAULT_EXTERNAL_SIGNAL_CORRELATION_CONFIG: ExternalSignalCorrelationConfig =
+  {
+    okxWeight: 0.7,
+    externalWeight: 0.3,
+    minimumEffectiveConfidence: 5,
+    agreementBonus: 8,
+    contradictionPenalty: 15,
+    maximumConfidence: 100,
+  };
 
 const directionToScore = (direction: ExternalSignalDirection): number => {
   if (direction === 'BULLISH') {
@@ -81,7 +85,10 @@ export class ExternalSignalCorrelationEngine {
   private readonly config: ExternalSignalCorrelationConfig;
 
   public constructor(config: Partial<ExternalSignalCorrelationConfig> = {}) {
-    this.config = { ...DEFAULT_CONFIG, ...config };
+    this.config = {
+      ...DEFAULT_EXTERNAL_SIGNAL_CORRELATION_CONFIG,
+      ...config,
+    };
     this.validateConfig();
   }
 
@@ -182,11 +189,18 @@ export class ExternalSignalCorrelationEngine {
       this.config.maximumConfidence,
       Math.max(0, Math.abs(combinedScore)),
     );
+    const alertImportance = this.calculateAlertImportance(
+      agreement,
+      confidence,
+      okxSignal.confidence,
+      externalConfidence,
+    );
 
     return {
       symbol,
       bias,
       confidence,
+      alertImportance,
       okxBias: okxSignal.bias,
       okxConfidence: okxSignal.confidence,
       externalBias,
@@ -258,6 +272,29 @@ export class ExternalSignalCorrelationEngine {
     return 'Both OKX and external evidence are neutral.';
   }
 
+  private calculateAlertImportance(
+    relationship: CorrelatedMarketSignal['agreement'],
+    directionalConfidence: number,
+    okxConfidence: number,
+    externalConfidence: number,
+  ): number {
+    let importance: number;
+
+    if (relationship === 'AGREEMENT') {
+      importance = directionalConfidence;
+    } else if (relationship === 'CONTRADICTION') {
+      importance = Math.min(okxConfidence, externalConfidence);
+    } else if (relationship === 'EXTERNAL_ONLY') {
+      importance = externalConfidence;
+    } else if (relationship === 'OKX_ONLY') {
+      importance = okxConfidence;
+    } else {
+      importance = 0;
+    }
+
+    return Math.min(this.config.maximumConfidence, Math.max(0, importance));
+  }
+
   private validateConfig(): void {
     const {
       okxWeight,
@@ -269,22 +306,36 @@ export class ExternalSignalCorrelationEngine {
     } = this.config;
 
     if (
+      !Number.isFinite(okxWeight) ||
+      !Number.isFinite(externalWeight) ||
       okxWeight < 0 ||
+      okxWeight > 1 ||
       externalWeight < 0 ||
-      okxWeight + externalWeight <= 0
+      externalWeight > 1 ||
+      Math.abs(okxWeight + externalWeight - 1) > 1e-9
     ) {
       throw new Error(
-        'Correlation weights must be non-negative with a positive total',
+        'Correlation weights must be finite values between 0 and 1 that sum to 1',
       );
     }
 
     if (
+      !Number.isFinite(minimumEffectiveConfidence) ||
+      !Number.isFinite(agreementBonus) ||
+      !Number.isFinite(contradictionPenalty) ||
+      !Number.isFinite(maximumConfidence) ||
       minimumEffectiveConfidence < 0 ||
+      minimumEffectiveConfidence > 100 ||
       agreementBonus < 0 ||
+      agreementBonus > 100 ||
       contradictionPenalty < 0 ||
-      maximumConfidence <= 0
+      contradictionPenalty > 100 ||
+      maximumConfidence <= 0 ||
+      maximumConfidence > 100
     ) {
-      throw new Error('Correlation confidence settings must be non-negative');
+      throw new Error(
+        'Correlation confidence settings must be finite values within 0 to 100, with maximumConfidence greater than 0',
+      );
     }
   }
 }

@@ -393,13 +393,72 @@ export const validateAppConfig = (config: AppConfig): void => {
     'reporting.summaryIntervalMs',
     config.reporting.summaryIntervalMs,
   );
+  requireRatio(
+    errors,
+    'correlation.okxWeight',
+    config.correlation.okxWeight,
+    true,
+  );
+  requireRatio(
+    errors,
+    'correlation.externalWeight',
+    config.correlation.externalWeight,
+    true,
+  );
+  if (
+    Number.isFinite(config.correlation.okxWeight) &&
+    Number.isFinite(config.correlation.externalWeight) &&
+    Math.abs(
+      config.correlation.okxWeight + config.correlation.externalWeight - 1,
+    ) > 1e-9
+  ) {
+    errors.push('correlation weights must sum to 1');
+  }
+  requirePercent(
+    errors,
+    'correlation.minimumEffectiveConfidence',
+    config.correlation.minimumEffectiveConfidence,
+    true,
+  );
+  requirePercent(
+    errors,
+    'correlation.agreementBonus',
+    config.correlation.agreementBonus,
+    true,
+  );
+  requirePercent(
+    errors,
+    'correlation.contradictionPenalty',
+    config.correlation.contradictionPenalty,
+    true,
+  );
+  requirePercent(
+    errors,
+    'correlation.maximumConfidence',
+    config.correlation.maximumConfidence,
+  );
   if (typeof config.correlatedAlerts.enabled !== 'boolean') {
     errors.push('correlatedAlerts.enabled must be a boolean');
   }
   requirePercent(
     errors,
-    'correlatedAlerts.minimumCombinedConfidence',
-    config.correlatedAlerts.minimumCombinedConfidence,
+    'correlatedAlerts.minimumAgreementAlertImportance',
+    config.correlatedAlerts.minimumAgreementAlertImportance,
+    true,
+  );
+  requirePercent(
+    errors,
+    'correlatedAlerts.minimumContradictionAlertImportance',
+    config.correlatedAlerts.minimumContradictionAlertImportance,
+    true,
+  );
+  if (typeof config.correlatedAlerts.externalOnlyAlertsEnabled !== 'boolean') {
+    errors.push('correlatedAlerts.externalOnlyAlertsEnabled must be a boolean');
+  }
+  requirePercent(
+    errors,
+    'correlatedAlerts.minimumExternalOnlyAlertImportance',
+    config.correlatedAlerts.minimumExternalOnlyAlertImportance,
     true,
   );
   requireFinitePositive(
@@ -412,6 +471,48 @@ export const validateAppConfig = (config: AppConfig): void => {
     'correlatedAlerts.confidenceChangeThreshold',
     config.correlatedAlerts.confidenceChangeThreshold,
   );
+  const severityThresholds = config.correlatedAlerts.severityThresholds;
+  requirePercent(
+    errors,
+    'correlatedAlerts.severityThresholds.watch',
+    severityThresholds.watch,
+    true,
+  );
+  requirePercent(
+    errors,
+    'correlatedAlerts.severityThresholds.strong',
+    severityThresholds.strong,
+  );
+  requirePercent(
+    errors,
+    'correlatedAlerts.severityThresholds.critical',
+    severityThresholds.critical,
+  );
+  if (
+    severityThresholds.watch >= severityThresholds.strong ||
+    severityThresholds.strong >= severityThresholds.critical
+  ) {
+    errors.push(
+      'correlatedAlerts severity thresholds must increase from watch to strong to critical',
+    );
+  }
+  if (
+    config.correlatedAlerts.minimumAgreementAlertImportance <
+      severityThresholds.watch ||
+    config.correlatedAlerts.minimumContradictionAlertImportance <
+      severityThresholds.watch ||
+    config.correlatedAlerts.minimumExternalOnlyAlertImportance <
+      severityThresholds.watch
+  ) {
+    errors.push(
+      'correlated alert minimum importance thresholds must be greater than or equal to the watch severity threshold',
+    );
+  }
+  if (config.correlation.maximumConfidence < severityThresholds.critical) {
+    errors.push(
+      'correlation.maximumConfidence must be greater than or equal to the critical severity threshold',
+    );
+  }
   if (typeof config.correlatedAlertRecording.enabled !== 'boolean') {
     errors.push('correlatedAlertRecording.enabled must be a boolean');
   }

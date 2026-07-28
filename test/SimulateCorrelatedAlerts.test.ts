@@ -72,6 +72,16 @@ describe('correlated alert simulation', () => {
     expect(
       result.records.every((record) => record.alert.externalSignalsUsed === 1),
     ).toBe(true);
+    const contradiction = result.records.find(
+      ({ alert }) => alert.relationship === 'CONTRADICTION',
+    )?.alert;
+
+    expect(contradiction?.combinedConfidence).toBeLessThan(
+      contradiction?.alertImportance ?? 0,
+    );
+    expect(contradiction?.alertImportance).toBeGreaterThanOrEqual(
+      appConfig.correlatedAlerts.severityThresholds.strong,
+    );
     expect(reporterSpy).toHaveBeenCalledTimes(2);
     expect(recorderSpy).toHaveBeenCalledTimes(2);
     expect(reporterSpy.mock.calls[0]?.[0]).toBe(recorderSpy.mock.calls[0]?.[0]);

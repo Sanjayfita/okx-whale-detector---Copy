@@ -252,7 +252,7 @@ describe('MarketReporter', () => {
     expect(output).toContain('No active whale walls');
   });
 
-  it('prints an agreement section with combined confidence', () => {
+  it('prints agreement directional confidence and alert importance', () => {
     const reporter = new MarketReporter();
     const evaluation: MarketEvaluation = {
       marketSignal: {
@@ -268,6 +268,7 @@ describe('MarketReporter', () => {
         symbol: 'BTC-USDT',
         bias: 'BULLISH',
         confidence: 51,
+        alertImportance: 51,
         okxBias: 'BULLISH',
         okxConfidence: 68,
         externalBias: 'BULLISH',
@@ -293,7 +294,8 @@ describe('MarketReporter', () => {
 
     expect(output).toContain('📊 CORRELATED INTELLIGENCE');
     expect(output).toContain('Relationship: AGREEMENT');
-    expect(output).toContain('Combined Confidence: 51.0%');
+    expect(output).toContain('Directional Confidence: 51.0%');
+    expect(output).toContain('Alert Importance: 51.0%');
     expect(output).toContain('External signals used: 1');
     expect(output).toContain('Ignored external signals: 2');
   });
@@ -314,6 +316,7 @@ describe('MarketReporter', () => {
         symbol: 'BTC-USDT',
         bias: 'BEARISH',
         confidence: 42,
+        alertImportance: 68,
         okxBias: 'BULLISH',
         okxConfidence: 68,
         externalBias: 'BEARISH',
@@ -338,7 +341,11 @@ describe('MarketReporter', () => {
     const output = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
 
     expect(output).toContain('Relationship: CONTRADICTION');
-    expect(output).toContain('Combined Confidence: 42.0%');
+    expect(output).toContain('Directional Confidence: 42.0%');
+    expect(output).toContain('Alert Importance: 68.0%');
+    expect(output).toContain(
+      'Contradiction warning: alert importance measures source disagreement, not directional certainty.',
+    );
   });
 
   it('prints external-only context when no OKX bias is present', () => {
@@ -357,6 +364,7 @@ describe('MarketReporter', () => {
         symbol: 'BTC-USDT',
         bias: 'BULLISH',
         confidence: 70,
+        alertImportance: 70,
         okxBias: 'NEUTRAL',
         okxConfidence: 0,
         externalBias: 'BULLISH',
@@ -401,6 +409,7 @@ describe('MarketReporter', () => {
         symbol: 'BTC-USDT',
         bias: 'BULLISH',
         confidence: 68,
+        alertImportance: 68,
         okxBias: 'BULLISH',
         okxConfidence: 68,
         externalBias: 'NEUTRAL',
@@ -445,6 +454,7 @@ describe('MarketReporter', () => {
         symbol: 'BTC-USDT',
         bias: 'BULLISH',
         confidence: 68,
+        alertImportance: 68,
         okxBias: 'BULLISH',
         okxConfidence: 68,
         externalBias: 'NEUTRAL',

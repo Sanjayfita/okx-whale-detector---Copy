@@ -116,13 +116,22 @@ export const createAppRuntime = async (
     : undefined;
   const externalSignalCorrelationService =
     dependencies.externalSignalCorrelationService ??
-    new ExternalSignalCorrelationService();
+    new ExternalSignalCorrelationService({
+      correlation: appConfig.correlation,
+    });
   const correlatedAlertEngine =
     dependencies.correlatedAlertEngine ??
     new CorrelatedAlertEngine({
       enabled: appConfig.correlatedAlerts.enabled,
-      minimumCombinedConfidence:
-        appConfig.correlatedAlerts.minimumCombinedConfidence,
+      minimumAgreementAlertImportance:
+        appConfig.correlatedAlerts.minimumAgreementAlertImportance,
+      minimumContradictionAlertImportance:
+        appConfig.correlatedAlerts.minimumContradictionAlertImportance,
+      externalOnlyAlertsEnabled:
+        appConfig.correlatedAlerts.externalOnlyAlertsEnabled,
+      minimumExternalOnlyAlertImportance:
+        appConfig.correlatedAlerts.minimumExternalOnlyAlertImportance,
+      severityThresholds: appConfig.correlatedAlerts.severityThresholds,
       cooldownMs: appConfig.correlatedAlerts.cooldownSeconds * 1_000,
       confidenceChangeThreshold:
         appConfig.correlatedAlerts.confidenceChangeThreshold,

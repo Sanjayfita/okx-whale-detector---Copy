@@ -15,6 +15,8 @@ export interface CorrelatedAlertInspection {
   countsBySeverity: Record<CorrelatedAlertSeverity, number>;
   countsByEventType: Record<CorrelatedAlertEventType, number>;
   countsBySymbol: Record<string, number>;
+  averageAlertImportance?: number;
+  highestAlertImportance?: number;
   latestAlertTimestamp?: number;
   latestAlerts: CorrelatedAlertRecord[];
 }
@@ -89,6 +91,8 @@ export const aggregateCorrelatedAlerts = (
     CONTRADICTION: 0,
   };
   const countsBySymbol: Record<string, number> = {};
+  let totalAlertImportance = 0;
+  let highestAlertImportance: number | undefined;
   let latestAlertTimestamp: number | undefined;
 
   for (const record of records) {
@@ -96,6 +100,11 @@ export const aggregateCorrelatedAlerts = (
     countsBySeverity[alert.severity] += 1;
     countsByEventType[alert.eventType] += 1;
     countsBySymbol[alert.symbol] = (countsBySymbol[alert.symbol] ?? 0) + 1;
+    totalAlertImportance += alert.alertImportance;
+    highestAlertImportance = Math.max(
+      highestAlertImportance ?? alert.alertImportance,
+      alert.alertImportance,
+    );
     latestAlertTimestamp = Math.max(
       latestAlertTimestamp ?? alert.createdAt,
       alert.createdAt,
@@ -111,6 +120,9 @@ export const aggregateCorrelatedAlerts = (
     countsBySeverity,
     countsByEventType,
     countsBySymbol,
+    averageAlertImportance:
+      records.length === 0 ? undefined : totalAlertImportance / records.length,
+    highestAlertImportance,
     latestAlertTimestamp,
     latestAlerts,
   };

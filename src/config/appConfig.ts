@@ -68,11 +68,27 @@ export interface AppConfig {
   reporting: {
     summaryIntervalMs: number;
   };
+  correlation: {
+    okxWeight: number;
+    externalWeight: number;
+    minimumEffectiveConfidence: number;
+    agreementBonus: number;
+    contradictionPenalty: number;
+    maximumConfidence: number;
+  };
   correlatedAlerts: {
     enabled: boolean;
-    minimumCombinedConfidence: number;
+    minimumAgreementAlertImportance: number;
+    minimumContradictionAlertImportance: number;
+    externalOnlyAlertsEnabled: boolean;
+    minimumExternalOnlyAlertImportance: number;
     cooldownSeconds: number;
     confidenceChangeThreshold: number;
+    severityThresholds: {
+      watch: number;
+      strong: number;
+      critical: number;
+    };
   };
   correlatedAlertRecording: {
     enabled: boolean;
@@ -167,11 +183,27 @@ export const appConfig: AppConfig = {
   reporting: {
     summaryIntervalMs: 5_000,
   },
+  correlation: {
+    okxWeight: 0.7,
+    externalWeight: 0.3,
+    minimumEffectiveConfidence: 5,
+    agreementBonus: 8,
+    contradictionPenalty: 15,
+    maximumConfidence: 100,
+  },
   correlatedAlerts: {
     enabled: true,
-    minimumCombinedConfidence: 55,
+    minimumAgreementAlertImportance: 55,
+    minimumContradictionAlertImportance: 55,
+    externalOnlyAlertsEnabled: false,
+    minimumExternalOnlyAlertImportance: 55,
     cooldownSeconds: 60,
     confidenceChangeThreshold: 10,
+    severityThresholds: {
+      watch: 55,
+      strong: 65,
+      critical: 80,
+    },
   },
   correlatedAlertRecording: {
     enabled: true,

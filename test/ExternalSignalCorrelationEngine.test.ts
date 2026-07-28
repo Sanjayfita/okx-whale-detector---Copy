@@ -53,6 +53,7 @@ describe('ExternalSignalCorrelationEngine', () => {
     expect(result.bias).toBe('BULLISH');
     expect(result.agreement).toBe('AGREEMENT');
     expect(result.confidence).toBeGreaterThan(60);
+    expect(result.alertImportance).toBe(result.confidence);
     expect(result.consideredSignals).toBe(1);
   });
 
@@ -67,6 +68,7 @@ describe('ExternalSignalCorrelationEngine', () => {
 
     expect(result.agreement).toBe('CONTRADICTION');
     expect(result.confidence).toBeLessThan(60);
+    expect(result.alertImportance).toBe(60);
     expect(result.reason).toContain('conflicts');
   });
 
@@ -82,6 +84,7 @@ describe('ExternalSignalCorrelationEngine', () => {
     expect(result.bias).toBe('BEARISH');
     expect(result.agreement).toBe('EXTERNAL_ONLY');
     expect(result.externalConfidence).toBe(80);
+    expect(result.alertImportance).toBe(80);
   });
 
   it('does not let neutral or unknown evidence vote directionally', () => {
@@ -95,6 +98,7 @@ describe('ExternalSignalCorrelationEngine', () => {
 
     expect(result.bias).toBe('BULLISH');
     expect(result.agreement).toBe('OKX_ONLY');
+    expect(result.alertImportance).toBe(60);
     expect(result.neutralExternalSignals).toBe(2);
     expect(result.externalConfidence).toBe(0);
   });
@@ -152,5 +156,20 @@ describe('ExternalSignalCorrelationEngine', () => {
           externalWeight: 0,
         }),
     ).toThrow('weights');
+  });
+
+  it('rejects non-finite and out-of-range confidence configuration', () => {
+    expect(
+      () =>
+        new ExternalSignalCorrelationEngine({
+          contradictionPenalty: Number.NaN,
+        }),
+    ).toThrow('confidence settings');
+    expect(
+      () =>
+        new ExternalSignalCorrelationEngine({
+          maximumConfidence: 101,
+        }),
+    ).toThrow('confidence settings');
   });
 });

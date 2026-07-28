@@ -45,11 +45,28 @@ describe('central configuration injection', () => {
 
     expect(appConfig.reporting.summaryIntervalMs).toBe(5_000);
 
+    expect(appConfig.correlation).toEqual({
+      okxWeight: 0.7,
+      externalWeight: 0.3,
+      minimumEffectiveConfidence: 5,
+      agreementBonus: 8,
+      contradictionPenalty: 15,
+      maximumConfidence: 100,
+    });
+
     expect(appConfig.correlatedAlerts).toEqual({
       enabled: true,
-      minimumCombinedConfidence: 55,
+      minimumAgreementAlertImportance: 55,
+      minimumContradictionAlertImportance: 55,
+      externalOnlyAlertsEnabled: false,
+      minimumExternalOnlyAlertImportance: 55,
       cooldownSeconds: 60,
       confidenceChangeThreshold: 10,
+      severityThresholds: {
+        watch: 55,
+        strong: 65,
+        critical: 80,
+      },
     });
 
     expect(appConfig.correlatedAlertRecording).toEqual({

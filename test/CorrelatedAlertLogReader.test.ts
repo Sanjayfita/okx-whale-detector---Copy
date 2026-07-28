@@ -46,7 +46,30 @@ describe('CorrelatedAlertLogReader', () => {
 
     expect(result.records).toHaveLength(1);
     expect(result.records[0]?.alert.id).toBe('one');
+    expect(result.records[0]?.alert.alertImportance).toBe(74);
     expect(result.malformedLines).toEqual([]);
+  });
+
+  it('preserves an explicitly recorded alert importance', async () => {
+    const record = createRecord('one');
+    record.alert.alertImportance = 82;
+    writeFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
+
+    const result = await new CorrelatedAlertLogReader().read(filePath);
+
+    expect(result.records[0]?.alert.alertImportance).toBe(82);
+    expect(result.malformedLines).toEqual([]);
+  });
+
+  it('rejects invalid alert importance values', async () => {
+    const record = createRecord('one');
+    record.alert.alertImportance = 101;
+    writeFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
+
+    const result = await new CorrelatedAlertLogReader().read(filePath);
+
+    expect(result.records).toHaveLength(0);
+    expect(result.malformedLines).toHaveLength(1);
   });
 
   it('ignores blank lines', async () => {

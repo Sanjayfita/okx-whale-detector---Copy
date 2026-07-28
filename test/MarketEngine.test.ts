@@ -69,6 +69,7 @@ const createCorrelatedEvaluation = (): MarketEvaluation => ({
     symbol: 'BTC-USDT',
     bias: 'BULLISH',
     confidence: 70,
+    alertImportance: 70,
     okxBias: 'BULLISH',
     okxConfidence: 75,
     externalBias: 'BULLISH',
