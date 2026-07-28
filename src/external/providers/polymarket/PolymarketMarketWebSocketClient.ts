@@ -137,7 +137,10 @@ export class PolymarketMarketWebSocketClient {
       this.onTrade({
         conditionId: String(payloadValue.market ?? ''),
         tokenId: String(
-          payloadValue.tokenId ?? payloadValue.asset_id ?? payloadValue.assetId ?? '',
+          payloadValue.tokenId ??
+            payloadValue.asset_id ??
+            payloadValue.assetId ??
+            '',
         ),
         price: toFiniteNumber(payloadValue.price),
         size: toFiniteNumber(payloadValue.size),

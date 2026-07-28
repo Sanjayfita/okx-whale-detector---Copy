@@ -9,7 +9,10 @@ interface WatchOptions {
   watchMarkets: number;
 }
 
-const parsePositiveNumber = (value: string | undefined, flag: string): number => {
+const parsePositiveNumber = (
+  value: string | undefined,
+  flag: string,
+): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new Error(`${flag} requires a positive number`);

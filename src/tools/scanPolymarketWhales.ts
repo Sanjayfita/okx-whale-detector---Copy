@@ -151,7 +151,8 @@ const main = async (): Promise<void> => {
   const lowDominanceMarkets = aggregations.filter(
     (aggregation) =>
       !aggregation.signal &&
-      Math.abs(aggregation.netDirectionalNotionalUsd) >= options.minimumTradeUsd &&
+      Math.abs(aggregation.netDirectionalNotionalUsd) >=
+        options.minimumTradeUsd &&
       aggregation.dominance < 0.15,
   ).length;
   const topUnknownExamples = [...unknownExamples.entries()]
@@ -170,7 +171,9 @@ const main = async (): Promise<void> => {
     `Fresh directional trades (≤${options.maximumTradeAgeHours}h): ${freshDirectionalTrades}`,
   );
   console.log(`Stale trades discarded: ${staleTrades}`);
-  console.log(`Markets with fresh directional activity: ${aggregations.length}`);
+  console.log(
+    `Markets with fresh directional activity: ${aggregations.length}`,
+  );
   console.log(`Markets rejected for weak net flow: ${weakNetFlowMarkets}`);
   console.log(`Markets rejected for low dominance: ${lowDominanceMarkets}`);
   console.log(`Aggregated whale signals detected: ${signals.length}`);
