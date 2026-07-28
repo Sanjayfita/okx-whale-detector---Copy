@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { ExternalSignalStore } from '../external/core/ExternalSignalStore';
+import { PolymarketMarketAggregator } from '../external/providers/polymarket/PolymarketMarketAggregator';
 import { PolymarketPublicClient } from '../external/providers/polymarket/PolymarketPublicClient';
 import { PolymarketWhaleDetector } from '../external/providers/polymarket/PolymarketWhaleDetector';
 
@@ -65,6 +66,9 @@ const main = async (): Promise<void> => {
     minimumLiquidityUsd: options.minimumLiquidityUsd,
     minimumTradeNotionalUsd: options.minimumTradeUsd,
   });
+  const aggregator = new PolymarketMarketAggregator(detector, {
+    minimumNetNotionalUsd: options.minimumTradeUsd,
+  });
   const store = new ExternalSignalStore();
 
   const markets = await client.getActiveMarkets(options.marketLimit);
@@ -80,13 +84,24 @@ const main = async (): Promise<void> => {
     options.tradeLimit,
   );
 
+  const tradesByCondition = new Map<string, typeof trades>();
   let matchedTrades = 0;
   for (const trade of trades) {
-    const market = marketsByCondition.get(trade.conditionId);
-    if (!market) continue;
+    if (!marketsByCondition.has(trade.conditionId)) continue;
     matchedTrades += 1;
-    const signal = detector.detect(trade, market);
-    if (signal) store.add(signal);
+    const marketTrades = tradesByCondition.get(trade.conditionId) ?? [];
+    marketTrades.push(trade);
+    tradesByCondition.set(trade.conditionId, marketTrades);
+  }
+
+  const aggregations = relevantMarkets
+    .map((market) =>
+      aggregator.aggregate(market, tradesByCondition.get(market.conditionId) ?? []),
+    )
+    .filter((aggregation) => aggregation.directionalTrades > 0);
+
+  for (const aggregation of aggregations) {
+    if (aggregation.signal) store.add(aggregation.signal);
   }
 
   const signals = store.getAll();
@@ -96,15 +111,35 @@ const main = async (): Promise<void> => {
   console.log(`Relevant liquid markets: ${relevantMarkets.length}`);
   console.log(`Relevant-market trades fetched: ${trades.length}`);
   console.log(`Trades matched to discovered markets: ${matchedTrades}`);
-  console.log(`Whale signals detected: ${signals.length}`);
+  console.log(`Markets with directional activity: ${aggregations.length}`);
+  console.log(`Aggregated whale signals detected: ${signals.length}`);
 
   for (const signal of signals.slice(0, 20)) {
+    const metadata = signal.metadata ?? {};
+    const bullishNotionalUsd = Number(metadata.bullishNotionalUsd ?? 0);
+    const bearishNotionalUsd = Number(metadata.bearishNotionalUsd ?? 0);
+    const dominance = Number(metadata.dominance ?? 0);
+    const uniqueWallets = Number(metadata.uniqueWallets ?? 0);
+    const largestWalletConcentration = Number(
+      metadata.largestWalletConcentration ?? 0,
+    );
+
     console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
     console.log(`${signal.direction} | ${signal.asset ?? 'MACRO'}`);
     console.log(
-      `Notional: $${(signal.notionalUsd ?? 0).toLocaleString('en-US', {
+      `Net flow: $${(signal.notionalUsd ?? 0).toLocaleString('en-US', {
         maximumFractionDigits: 2,
       })}`,
+    );
+    console.log(
+      `Bullish: $${bullishNotionalUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+    );
+    console.log(
+      `Bearish: $${bearishNotionalUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+    );
+    console.log(`Dominance: ${(dominance * 100).toFixed(1)}%`);
+    console.log(
+      `Wallets: ${uniqueWallets} | Largest wallet: ${(largestWalletConcentration * 100).toFixed(1)}%`,
     );
     console.log(`Confidence: ${signal.confidence.toFixed(1)}%`);
     console.log(signal.description);
@@ -118,6 +153,8 @@ const main = async (): Promise<void> => {
       relevantMarkets: relevantMarkets.length,
       relevantMarketTradesFetched: trades.length,
       matchedTrades,
+      marketsWithDirectionalActivity: aggregations.length,
+      aggregations,
       whaleSignals: signals,
     };
     mkdirSync(path.dirname(options.reportPath), { recursive: true });
