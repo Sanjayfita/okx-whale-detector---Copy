@@ -10,6 +10,8 @@ import type { WhaleRefillEvent } from '../core/WhaleRefillDetector';
 
 import type { WhaleScore } from '../core/WhaleScoreEngine';
 
+import type { MarketEvaluation } from '../types/marketEvaluation';
+
 export interface MarketSummarySignal {
   bias: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
 
@@ -28,6 +30,7 @@ export interface MarketSummaryInput {
   walls: Wall[];
   scoredWhales: WhaleScore[];
   marketSignal: MarketSummarySignal;
+  evaluation?: MarketEvaluation;
 }
 
 export class MarketReporter {
@@ -221,6 +224,8 @@ export class MarketReporter {
 
     console.log(`💡 ${input.marketSignal.reason}`);
 
+    this.reportCorrelatedIntelligence(input.evaluation);
+
     console.log('\n📊 PRESSURE ANALYSIS');
 
     console.log(
@@ -248,6 +253,32 @@ export class MarketReporter {
     }
 
     console.log(`⚪ NEUTRAL | Pressure Strength: ${confidence}%`);
+  }
+
+  private reportCorrelatedIntelligence(
+    evaluation: MarketEvaluation | undefined,
+  ): void {
+    const correlatedSignal = evaluation?.correlatedSignal;
+
+    if (!correlatedSignal || correlatedSignal.consideredSignals === 0) {
+      return;
+    }
+
+    console.log('\n📊 CORRELATED INTELLIGENCE');
+    console.log(`OKX Bias: ${correlatedSignal.okxBias}`);
+    console.log(`External Bias: ${correlatedSignal.externalBias}`);
+    console.log(`Relationship: ${correlatedSignal.agreement}`);
+    console.log(
+      `OKX Confidence: ${correlatedSignal.okxConfidence.toFixed(1)}%`,
+    );
+    console.log(
+      `External Confidence: ${correlatedSignal.externalConfidence.toFixed(1)}%`,
+    );
+    console.log(
+      `Combined Confidence: ${correlatedSignal.confidence.toFixed(1)}%`,
+    );
+    console.log(`External signals used: ${correlatedSignal.consideredSignals}`);
+    console.log(`Ignored external signals: ${correlatedSignal.ignoredSignals}`);
   }
 
   private formatOptionalPrice(

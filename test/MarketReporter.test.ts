@@ -368,7 +368,8 @@ describe('MarketReporter', () => {
         consideredSignals: 1,
         ignoredSignals: 0,
         contributions: [],
-        reason: 'Only external directional intelligence is currently available.',
+        reason:
+          'Only external directional intelligence is currently available.',
         timestamp: 1_700_000,
       },
     };

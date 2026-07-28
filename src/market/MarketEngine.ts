@@ -170,6 +170,7 @@ export class MarketEngine {
           walls,
           scoredWhales,
           marketSignal,
+          evaluation,
         });
       });
     } finally {
