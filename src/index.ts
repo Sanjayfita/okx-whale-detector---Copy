@@ -224,9 +224,11 @@ export const createAppRuntime = async (
   };
 };
 
-const start = async (): Promise<void> => {
-  const appRuntime = await createAppRuntime();
-  await appRuntime.polymarketRuntime.start();
+export const start = async (
+  dependencies: AppRuntimeDependencies = {},
+): Promise<void> => {
+  const appRuntime = await createAppRuntime(dependencies);
+  void appRuntime.polymarketRuntime.start();
 };
 
 void start().catch((error: unknown) => {

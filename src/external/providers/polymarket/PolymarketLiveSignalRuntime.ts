@@ -88,6 +88,7 @@ export class PolymarketLiveSignalRuntime {
   private readonly emittedSignalIds = new Set<string>();
   private started = false;
   private startPromise: Promise<void> | undefined;
+  private lifecycleGeneration = 0;
   private statusTimer: ReturnType<typeof globalThis.setInterval> | undefined;
   private webSocketClient: PolymarketMarketWebSocketClient | undefined;
   private marketByCondition = new Map<string, PolymarketMarket>();
@@ -160,24 +161,32 @@ export class PolymarketLiveSignalRuntime {
       return this.startPromise;
     }
 
-    this.startPromise = this.initialize();
+    const generation = ++this.lifecycleGeneration;
+    this.logger.log('Starting Polymarket live ingestion in background...');
+    this.startPromise = this.initialize(generation);
 
     try {
       await this.startPromise;
     } catch (error) {
-      this.logger.warn(
-        'Polymarket live ingestion is unavailable; continuing in OKX-only mode.',
-        error,
-      );
-      this.startPromise = undefined;
+      if (this.isActiveGeneration(generation)) {
+        this.logger.warn(
+          'Polymarket live ingestion is unavailable; continuing in OKX-only mode.',
+          error,
+        );
+      }
+    } finally {
+      if (this.isActiveGeneration(generation)) {
+        this.startPromise = undefined;
+      }
     }
   }
 
   public stop(): void {
-    if (!this.started) {
+    if (!this.started && !this.startPromise) {
       return;
     }
 
+    this.lifecycleGeneration += 1;
     this.started = false;
 
     if (this.statusTimer) {
@@ -192,10 +201,14 @@ export class PolymarketLiveSignalRuntime {
     this.emittedSignalIds.clear();
   }
 
-  private async initialize(): Promise<void> {
+  private async initialize(generation: number): Promise<void> {
     const markets = await this.publicClient.getActiveMarkets(
       this.options.marketLimit,
     );
+
+    if (!this.isActiveGeneration(generation)) {
+      return;
+    }
     const discoveryTime = this.now();
     const watchedMarkets = markets
       .filter((market) => this.detector.isRelevantMarket(market))
@@ -214,6 +227,10 @@ export class PolymarketLiveSignalRuntime {
       })
       .slice(0, this.options.watchMarkets);
 
+    if (!this.isActiveGeneration(generation)) {
+      return;
+    }
+
     this.marketByCondition = new Map(
       watchedMarkets.map((market) => [market.conditionId, market]),
     );
@@ -229,6 +246,10 @@ export class PolymarketLiveSignalRuntime {
           outcome: outcomes[index] ?? `Outcome ${index + 1}`,
         });
       });
+    }
+
+    if (!this.isActiveGeneration(generation)) {
+      return;
     }
 
     if (this.tokenContext.size === 0) {
@@ -257,6 +278,10 @@ export class PolymarketLiveSignalRuntime {
     );
     this.logger.log('Waiting for real-time trades. Press Ctrl+C to stop.\n');
 
+    if (!this.isActiveGeneration(generation)) {
+      return;
+    }
+
     const tokenIds = [...this.tokenContext.keys()];
     this.webSocketClient =
       this.dependencies.webSocketClientFactory?.(tokenIds, (trade) =>
@@ -265,12 +290,26 @@ export class PolymarketLiveSignalRuntime {
       new PolymarketMarketWebSocketClient(tokenIds, (trade) =>
         this.handleTrade(trade),
       );
+
+    if (!this.isActiveGeneration(generation)) {
+      return;
+    }
+
     this.statusTimer = this.timerApi.setInterval(() => {
       this.logStatus();
     }, this.options.statusSeconds * 1_000);
 
+    if (!this.isActiveGeneration(generation)) {
+      return;
+    }
+
     this.started = true;
     this.webSocketClient.connect();
+    this.logger.log('Polymarket live ingestion ready.');
+  }
+
+  private isActiveGeneration(generation: number): boolean {
+    return this.lifecycleGeneration === generation;
   }
 
   private handleTrade(liveTrade: PolymarketLiveTrade): void {
