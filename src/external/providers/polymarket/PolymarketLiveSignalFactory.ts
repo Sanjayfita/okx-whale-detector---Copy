@@ -33,7 +33,9 @@ export class PolymarketLiveSignalFactory {
     receivedAt = Date.now(),
   ): ExternalWhaleSignal {
     if (!aggregation.qualifies) {
-      throw new Error('Cannot create a signal from a non-qualifying aggregation');
+      throw new Error(
+        'Cannot create a signal from a non-qualifying aggregation',
+      );
     }
     if (
       aggregation.direction !== 'BULLISH' &&
