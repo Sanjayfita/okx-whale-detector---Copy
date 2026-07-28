@@ -61,7 +61,7 @@ const main = async (): Promise<void> => {
   const markets = await publicClient.getActiveMarkets(options.marketLimit);
   const watchedMarkets = markets
     .filter((market) => detector.isRelevantMarket(market))
-    .filter((market) => market.tokenIds.length > 0)
+    .filter((market) => (market.tokenIds?.length ?? 0) > 0)
     .slice(0, options.watchMarkets);
 
   const tokenContext = new Map<
@@ -70,10 +70,13 @@ const main = async (): Promise<void> => {
   >();
 
   for (const market of watchedMarkets) {
-    market.tokenIds.forEach((tokenId, index) => {
+    const tokenIds = market.tokenIds ?? [];
+    const outcomes = market.outcomes ?? [];
+
+    tokenIds.forEach((tokenId, index) => {
       tokenContext.set(tokenId, {
         market,
-        outcome: market.outcomes[index] ?? `Outcome ${index + 1}`,
+        outcome: outcomes[index] ?? `Outcome ${index + 1}`,
       });
     });
   }
@@ -86,7 +89,9 @@ const main = async (): Promise<void> => {
   console.log(`Markets discovered: ${markets.length}`);
   console.log(`Relevant markets watched: ${watchedMarkets.length}`);
   console.log(`Outcome tokens subscribed: ${tokenContext.size}`);
-  console.log(`Minimum live trade: $${options.minimumTradeUsd.toLocaleString('en-US')}`);
+  console.log(
+    `Minimum live trade: $${options.minimumTradeUsd.toLocaleString('en-US')}`,
+  );
   console.log('Waiting for real-time trades. Press Ctrl+C to stop.\n');
 
   const webSocketClient = new PolymarketMarketWebSocketClient(
@@ -98,6 +103,7 @@ const main = async (): Promise<void> => {
       const notionalUsd = liveTrade.size * liveTrade.price;
       if (notionalUsd < options.minimumTradeUsd) return;
 
+      const tokenIds = context.market.tokenIds ?? [];
       const interpretation = detector.interpretTrade(
         {
           proxyWallet: '',
@@ -111,7 +117,7 @@ const main = async (): Promise<void> => {
           slug: context.market.slug,
           eventSlug: '',
           outcome: context.outcome,
-          outcomeIndex: context.market.tokenIds.indexOf(liveTrade.tokenId),
+          outcomeIndex: tokenIds.indexOf(liveTrade.tokenId),
           transactionHash:
             liveTrade.transactionHash ??
             `${liveTrade.tokenId}:${liveTrade.timestamp}:${liveTrade.price}`,
@@ -121,7 +127,9 @@ const main = async (): Promise<void> => {
 
       const time = new Date(liveTrade.timestamp).toLocaleTimeString('en-US');
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-      console.log(`${interpretation.direction} | ${context.outcome} | ${liveTrade.side}`);
+      console.log(
+        `${interpretation.direction} | ${context.outcome} | ${liveTrade.side}`,
+      );
       console.log(`Time: ${time}`);
       console.log(
         `Notional: $${notionalUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
