@@ -91,6 +91,9 @@ const resolutionTime = (endDate: string | undefined): number => {
   return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
 };
 
+const formatUsd = (value: number): string =>
+  value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+
 const main = async (): Promise<void> => {
   const options = parseOptions(process.argv.slice(2));
   const publicClient = new PolymarketPublicClient();
@@ -125,6 +128,9 @@ const main = async (): Promise<void> => {
     })
     .slice(0, options.watchMarkets);
 
+  const marketByCondition = new Map(
+    watchedMarkets.map((market) => [market.conditionId, market]),
+  );
   const tokenContext = new Map<
     string,
     { market: (typeof watchedMarkets)[number]; outcome: string }
@@ -217,7 +223,7 @@ const main = async (): Promise<void> => {
 
       if (options.showExecutions) {
         console.log(
-          `EXECUTION | ${interpretation.direction} | $${interpretation.notionalUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })} | ${context.market.question}`,
+          `EXECUTION | ${interpretation.direction} | $${formatUsd(interpretation.notionalUsd)} | ${context.market.question}`,
         );
       }
 
@@ -249,14 +255,10 @@ const main = async (): Promise<void> => {
       console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
       console.log(`${aggregation.direction} | ${context.market.question}`);
       console.log(
-        `Rolling net: $${Math.abs(aggregation.netDirectionalNotionalUsd).toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
+        `Rolling net: $${formatUsd(Math.abs(aggregation.netDirectionalNotionalUsd))}`,
       );
-      console.log(
-        `Bullish: $${aggregation.bullishNotionalUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-      );
-      console.log(
-        `Bearish: $${aggregation.bearishNotionalUsd.toLocaleString('en-US', { maximumFractionDigits: 2 })}`,
-      );
+      console.log(`Bullish: $${formatUsd(aggregation.bullishNotionalUsd)}`);
+      console.log(`Bearish: $${formatUsd(aggregation.bearishNotionalUsd)}`);
       console.log(
         `Dominance: ${(aggregation.dominance * 100).toFixed(1)}% | Executions: ${aggregation.executionCount}`,
       );
@@ -265,12 +267,29 @@ const main = async (): Promise<void> => {
   );
 
   const statusTimer = setInterval(() => {
+    const now = Date.now();
     const lastExecution = lastExecutionAt
-      ? `${Math.max(0, Math.round((Date.now() - lastExecutionAt) / 1_000))}s ago`
+      ? `${Math.max(0, Math.round((now - lastExecutionAt) / 1_000))}s ago`
       : 'none yet';
     console.log(
       `[LIVE STATUS] executions=${receivedExecutions} directional=${directionalExecutions} unknownToken=${unknownTokenExecutions} unknownDirection=${unknownDirectionExecutions} signals=${emittedSignals} lastExecution=${lastExecution}`,
     );
+
+    const strongestMarkets = aggregator
+      .getActive(now)
+      .sort(
+        (left, right) =>
+          Math.abs(right.netDirectionalNotionalUsd) -
+          Math.abs(left.netDirectionalNotionalUsd),
+      )
+      .slice(0, 3);
+
+    for (const aggregation of strongestMarkets) {
+      const market = marketByCondition.get(aggregation.marketConditionId);
+      console.log(
+        `  TOP FLOW | ${aggregation.direction} net=$${formatUsd(Math.abs(aggregation.netDirectionalNotionalUsd))} bull=$${formatUsd(aggregation.bullishNotionalUsd)} bear=$${formatUsd(aggregation.bearishNotionalUsd)} dominance=${(aggregation.dominance * 100).toFixed(1)}% executions=${aggregation.executionCount} | ${market?.question ?? aggregation.marketConditionId}`,
+      );
+    }
   }, options.statusSeconds * 1_000);
 
   const shutdown = (): void => {
