@@ -85,18 +85,36 @@ const main = async (): Promise<void> => {
   );
 
   const tradesByCondition = new Map<string, typeof trades>();
+  const unknownExamples = new Map<string, number>();
   let matchedTrades = 0;
+  let directionalTrades = 0;
+  let unknownDirectionTrades = 0;
+
   for (const trade of trades) {
-    if (!marketsByCondition.has(trade.conditionId)) continue;
+    const market = marketsByCondition.get(trade.conditionId);
+    if (!market) continue;
+
     matchedTrades += 1;
     const marketTrades = tradesByCondition.get(trade.conditionId) ?? [];
     marketTrades.push(trade);
     tradesByCondition.set(trade.conditionId, marketTrades);
+
+    const interpretation = detector.interpretTrade(trade, market);
+    if (interpretation.direction === 'UNKNOWN') {
+      unknownDirectionTrades += 1;
+      const key = `${trade.outcome || '(blank outcome)'} | ${market.question}`;
+      unknownExamples.set(key, (unknownExamples.get(key) ?? 0) + 1);
+    } else {
+      directionalTrades += 1;
+    }
   }
 
   const aggregations = relevantMarkets
     .map((market) =>
-      aggregator.aggregate(market, tradesByCondition.get(market.conditionId) ?? []),
+      aggregator.aggregate(
+        market,
+        tradesByCondition.get(market.conditionId) ?? [],
+      ),
     )
     .filter((aggregation) => aggregation.directionalTrades > 0);
 
@@ -105,14 +123,27 @@ const main = async (): Promise<void> => {
   }
 
   const signals = store.getAll();
+  const topUnknownExamples = [...unknownExamples.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 5)
+    .map(([example, count]) => ({ example, count }));
 
   console.log('\nPOLYMARKET WHALE SCAN');
   console.log(`Active markets fetched: ${markets.length}`);
   console.log(`Relevant liquid markets: ${relevantMarkets.length}`);
   console.log(`Relevant-market trades fetched: ${trades.length}`);
   console.log(`Trades matched to discovered markets: ${matchedTrades}`);
+  console.log(`Directionally interpreted trades: ${directionalTrades}`);
+  console.log(`Unknown-direction trades: ${unknownDirectionTrades}`);
   console.log(`Markets with directional activity: ${aggregations.length}`);
   console.log(`Aggregated whale signals detected: ${signals.length}`);
+
+  if (topUnknownExamples.length > 0) {
+    console.log('\nTop unknown outcome/question examples:');
+    for (const item of topUnknownExamples) {
+      console.log(`- ${item.count}× ${item.example}`);
+    }
+  }
 
   for (const signal of signals.slice(0, 20)) {
     const metadata = signal.metadata ?? {};
@@ -153,6 +184,9 @@ const main = async (): Promise<void> => {
       relevantMarkets: relevantMarkets.length,
       relevantMarketTradesFetched: trades.length,
       matchedTrades,
+      directionalTrades,
+      unknownDirectionTrades,
+      topUnknownExamples,
       marketsWithDirectionalActivity: aggregations.length,
       aggregations,
       whaleSignals: signals,
