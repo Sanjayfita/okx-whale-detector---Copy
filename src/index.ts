@@ -35,12 +35,14 @@ import { MarketEngine } from './market/MarketEngine';
 import { ExternalSignalCorrelationService } from './external/core/ExternalSignalCorrelationService';
 import { PolymarketLiveSignalRuntime } from './external/providers/polymarket/PolymarketLiveSignalRuntime';
 import { MarketDataRecorder } from './recording/MarketDataRecorder';
+import { CorrelatedAlertRecorder } from './recording/CorrelatedAlertRecorder';
 import { CorrelatedAlertReporter } from './reporting/CorrelatedAlertReporter';
 
 export interface AppRuntimeDependencies {
   externalSignalCorrelationService?: ExternalSignalCorrelationService;
   correlatedAlertEngine?: CorrelatedAlertEngine;
   correlatedAlertReporter?: CorrelatedAlertReporter;
+  correlatedAlertRecorder?: CorrelatedAlertRecorder;
   polymarketRuntime?: PolymarketLiveSignalRuntime;
 }
 
@@ -49,6 +51,7 @@ export const createAppRuntime = async (
 ): Promise<{
   externalSignalCorrelationService: ExternalSignalCorrelationService;
   correlatedAlertEngine: CorrelatedAlertEngine;
+  correlatedAlertRecorder: CorrelatedAlertRecorder;
   marketEngine: MarketEngine;
   polymarketRuntime: PolymarketLiveSignalRuntime;
   shutdown: (signal: NodeJS.Signals) => void;
@@ -124,6 +127,14 @@ export const createAppRuntime = async (
       confidenceChangeThreshold:
         appConfig.correlatedAlerts.confidenceChangeThreshold,
     });
+  const correlatedAlertRecorder =
+    dependencies.correlatedAlertRecorder ??
+    new CorrelatedAlertRecorder({
+      enabled: appConfig.correlatedAlertRecording.enabled,
+      outputPath: appConfig.correlatedAlertRecording.outputPath,
+      flushAfterEachAlert:
+        appConfig.correlatedAlertRecording.flushAfterEachAlert,
+    });
   const marketEngine = new MarketEngine(
     marketStates,
     summaryThrottle,
@@ -133,6 +144,7 @@ export const createAppRuntime = async (
     externalSignalCorrelationService,
     correlatedAlertEngine,
     dependencies.correlatedAlertReporter,
+    correlatedAlertRecorder,
   );
   const polymarketRuntime =
     dependencies.polymarketRuntime ??
@@ -228,6 +240,7 @@ export const createAppRuntime = async (
     throughputMonitor.stop();
     recorder?.close();
     subscriptionManager.close();
+    correlatedAlertRecorder.close();
   };
 
   process.once('SIGINT', () => shutdown('SIGINT'));
@@ -236,6 +249,7 @@ export const createAppRuntime = async (
   return {
     externalSignalCorrelationService,
     correlatedAlertEngine,
+    correlatedAlertRecorder,
     marketEngine,
     polymarketRuntime,
     shutdown,

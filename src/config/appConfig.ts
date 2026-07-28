@@ -74,6 +74,11 @@ export interface AppConfig {
     cooldownSeconds: number;
     confidenceChangeThreshold: number;
   };
+  correlatedAlertRecording: {
+    enabled: boolean;
+    outputPath: string;
+    flushAfterEachAlert: boolean;
+  };
   polymarket: {
     enabled: boolean;
     minimumSignalUsd: number;
@@ -167,6 +172,11 @@ export const appConfig: AppConfig = {
     minimumCombinedConfidence: 55,
     cooldownSeconds: 60,
     confidenceChangeThreshold: 10,
+  },
+  correlatedAlertRecording: {
+    enabled: true,
+    outputPath: 'data/alerts/correlated-alerts.jsonl',
+    flushAfterEachAlert: true,
   },
   polymarket: {
     enabled: true,

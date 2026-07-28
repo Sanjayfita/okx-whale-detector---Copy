@@ -10,6 +10,7 @@ import { CorrelatedAlertEngine } from '../src/alerts/CorrelatedAlertEngine';
 import { ExternalSignalCorrelationService } from '../src/external/core/ExternalSignalCorrelationService';
 import { CorrelatedAlertReporter } from '../src/reporting/CorrelatedAlertReporter';
 import { MarketReporter } from '../src/reporting/MarketReporter';
+import { CorrelatedAlertRecorder } from '../src/recording/CorrelatedAlertRecorder';
 
 import type { OKXOrderBookUpdate } from '../src/clients/okx/OKXWebSocketClient';
 import type { MarketEvaluation } from '../src/types/marketEvaluation';
@@ -52,6 +53,36 @@ const createUpdate = (
   prevSeqId: 10,
 
   ...overrides,
+});
+
+const createCorrelatedEvaluation = (): MarketEvaluation => ({
+  marketSignal: {
+    bias: 'BULLISH',
+    confidence: 75,
+    reason: 'Strong OKX pressure',
+    bidPressure: 80,
+    askPressure: 20,
+    netPressure: 60,
+    timestamp: Date.now(),
+  },
+  correlatedSignal: {
+    symbol: 'BTC-USDT',
+    bias: 'BULLISH',
+    confidence: 70,
+    okxBias: 'BULLISH',
+    okxConfidence: 75,
+    externalBias: 'BULLISH',
+    externalConfidence: 60,
+    agreement: 'AGREEMENT',
+    bullishExternalScore: 60,
+    bearishExternalScore: 0,
+    neutralExternalSignals: 0,
+    consideredSignals: 1,
+    ignoredSignals: 0,
+    contributions: [],
+    reason: 'OKX and external intelligence agree.',
+    timestamp: Date.now(),
+  },
 });
 
 describe('MarketEngine', () => {
@@ -310,35 +341,7 @@ describe('MarketEngine', () => {
   });
 
   it('correlates once and passes the same evaluation to reporting and alerts', () => {
-    const evaluation: MarketEvaluation = {
-      marketSignal: {
-        bias: 'BULLISH',
-        confidence: 75,
-        reason: 'Strong OKX pressure',
-        bidPressure: 80,
-        askPressure: 20,
-        netPressure: 60,
-        timestamp: Date.now(),
-      },
-      correlatedSignal: {
-        symbol: 'BTC-USDT',
-        bias: 'BULLISH',
-        confidence: 70,
-        okxBias: 'BULLISH',
-        okxConfidence: 75,
-        externalBias: 'BULLISH',
-        externalConfidence: 60,
-        agreement: 'AGREEMENT',
-        bullishExternalScore: 60,
-        bearishExternalScore: 0,
-        neutralExternalSignals: 0,
-        consideredSignals: 1,
-        ignoredSignals: 0,
-        contributions: [],
-        reason: 'OKX and external intelligence agree.',
-        timestamp: Date.now(),
-      },
-    };
+    const evaluation = createCorrelatedEvaluation();
     const correlationService = new ExternalSignalCorrelationService();
     const correlateSpy = vi
       .spyOn(correlationService, 'correlateMarketSignal')
@@ -349,6 +352,14 @@ describe('MarketEngine', () => {
     const evaluateSpy = vi.spyOn(alertEngine, 'evaluate');
     const alertReporter = new CorrelatedAlertReporter();
     const alertReportSpy = vi.spyOn(alertReporter, 'report');
+    const alertRecorder = new CorrelatedAlertRecorder({
+      outputPath: 'data/alerts/test-market-engine.jsonl',
+      writerFactory: () => ({
+        append: vi.fn(),
+        close: vi.fn(),
+      }),
+    });
+    const alertRecordSpy = vi.spyOn(alertRecorder, 'record');
     const marketReporter = new MarketReporter();
     const summarySpy = vi.spyOn(marketReporter, 'reportSummary');
     const integratedEngine = new MarketEngine(
@@ -360,6 +371,7 @@ describe('MarketEngine', () => {
       correlationService,
       alertEngine,
       alertReporter,
+      alertRecorder,
     );
 
     integratedEngine.processOrderBookUpdate(createSnapshot());
@@ -377,5 +389,75 @@ describe('MarketEngine', () => {
         relationship: 'AGREEMENT',
       }),
     );
+    expect(alertRecordSpy).toHaveBeenCalledTimes(1);
+    expect(alertRecordSpy.mock.calls[0]?.[0]).toBe(
+      alertReportSpy.mock.calls[0]?.[0],
+    );
+  });
+
+  it('does not record when the alert engine emits no alert', () => {
+    const evaluation = createCorrelatedEvaluation();
+    const correlationService = new ExternalSignalCorrelationService();
+    vi.spyOn(correlationService, 'correlateMarketSignal').mockReturnValue(
+      evaluation,
+    );
+    const alertRecorder = new CorrelatedAlertRecorder({
+      outputPath: 'data/alerts/test-no-alert.jsonl',
+      writerFactory: () => ({
+        append: vi.fn(),
+        close: vi.fn(),
+      }),
+    });
+    const alertRecordSpy = vi.spyOn(alertRecorder, 'record');
+    const integratedEngine = new MarketEngine(
+      marketStates,
+      new SummaryThrottle(5_000),
+      undefined,
+      undefined,
+      undefined,
+      correlationService,
+      new CorrelatedAlertEngine({ enabled: false }),
+      undefined,
+      alertRecorder,
+    );
+
+    integratedEngine.processOrderBookUpdate(createSnapshot());
+
+    expect(alertRecordSpy).not.toHaveBeenCalled();
+  });
+
+  it('continues processing when correlated alert recording fails', () => {
+    const evaluation = createCorrelatedEvaluation();
+    const correlationService = new ExternalSignalCorrelationService();
+    vi.spyOn(correlationService, 'correlateMarketSignal').mockReturnValue(
+      evaluation,
+    );
+    const warn = vi.fn();
+    const alertRecorder = new CorrelatedAlertRecorder({
+      outputPath: 'data/alerts/test-write-failure.jsonl',
+      warn,
+      writerFactory: () => ({
+        append: () => {
+          throw new Error('disk unavailable');
+        },
+        close: vi.fn(),
+      }),
+    });
+    const integratedEngine = new MarketEngine(
+      marketStates,
+      new SummaryThrottle(5_000),
+      undefined,
+      undefined,
+      undefined,
+      correlationService,
+      new CorrelatedAlertEngine(),
+      undefined,
+      alertRecorder,
+    );
+
+    expect(() =>
+      integratedEngine.processOrderBookUpdate(createSnapshot()),
+    ).not.toThrow();
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

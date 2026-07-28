@@ -4,7 +4,7 @@ import type { SupportedInstType } from '../types/instrument';
 
 type SymbolConfigSection = Exclude<
   keyof AppConfig,
-  'reporting' | 'correlatedAlerts'
+  'reporting' | 'correlatedAlerts' | 'correlatedAlertRecording'
 >;
 
 export type AppConfigOverride = {
@@ -45,6 +45,7 @@ const mergeConfig = (
   market: { ...baseConfig.market, ...override.market },
   reporting: { ...baseConfig.reporting },
   correlatedAlerts: { ...baseConfig.correlatedAlerts },
+  correlatedAlertRecording: { ...baseConfig.correlatedAlertRecording },
   polymarket: { ...baseConfig.polymarket, ...override.polymarket },
   history: { ...baseConfig.history, ...override.history },
 });

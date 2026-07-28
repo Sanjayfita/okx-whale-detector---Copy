@@ -8,6 +8,7 @@ import { SummaryThrottle } from '../core/SummaryThrottle';
 import { MarketReporter } from '../reporting/MarketReporter';
 import { CorrelatedAlertReporter } from '../reporting/CorrelatedAlertReporter';
 import type { ExternalSignalCorrelationService } from '../external/core/ExternalSignalCorrelationService';
+import type { CorrelatedAlertRecorder } from '../recording/CorrelatedAlertRecorder';
 import type { MarketEvaluation } from '../types/marketEvaluation';
 
 export class MarketEngine {
@@ -25,6 +26,7 @@ export class MarketEngine {
     private readonly correlationService?: ExternalSignalCorrelationService,
     private readonly correlatedAlertEngine?: CorrelatedAlertEngine,
     private readonly correlatedAlertReporter: CorrelatedAlertReporter = new CorrelatedAlertReporter(),
+    private readonly correlatedAlertRecorder?: CorrelatedAlertRecorder,
   ) {}
 
   public processOrderBookUpdate(update: OKXOrderBookUpdate): void {
@@ -182,6 +184,7 @@ export class MarketEngine {
 
           if (alert) {
             this.correlatedAlertReporter.report(alert);
+            this.correlatedAlertRecorder?.record(alert);
           }
         }
       });

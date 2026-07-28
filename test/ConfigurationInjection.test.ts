@@ -51,6 +51,12 @@ describe('central configuration injection', () => {
       cooldownSeconds: 60,
       confidenceChangeThreshold: 10,
     });
+
+    expect(appConfig.correlatedAlertRecording).toEqual({
+      enabled: true,
+      outputPath: 'data/alerts/correlated-alerts.jsonl',
+      flushAfterEachAlert: true,
+    });
   });
 
   it('changes wall detection when a smaller threshold is injected', () => {

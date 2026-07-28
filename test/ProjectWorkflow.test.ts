@@ -80,6 +80,10 @@ describe('project workflow documentation', () => {
     expect(readme).not.toContain('npx.cmd');
   });
 
+  it('ignores generated correlated alert JSONL files', () => {
+    expect(readProjectFile('.gitignore')).toContain('data/alerts/*.jsonl');
+  });
+
   it('has balanced Markdown code fences', () => {
     const codeFenceCount = (readme.match(/```/g) ?? []).length;
 

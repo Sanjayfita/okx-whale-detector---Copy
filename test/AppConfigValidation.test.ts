@@ -52,6 +52,46 @@ describe('application configuration validation', () => {
     );
   });
 
+  it('accepts valid correlated alert recording configuration', () => {
+    const config = cloneConfig();
+
+    config.correlatedAlertRecording = {
+      enabled: true,
+      outputPath: 'data/alerts/custom.jsonl',
+      flushAfterEachAlert: false,
+    };
+
+    expect(() => validateAppConfig(config)).not.toThrow();
+  });
+
+  it('rejects an empty correlated alert recording path', () => {
+    const config = cloneConfig();
+
+    config.correlatedAlertRecording.outputPath = '   ';
+
+    expect(() => validateAppConfig(config)).toThrowError(
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'correlatedAlertRecording.outputPath must be a non-empty string',
+        ),
+      }),
+    );
+  });
+
+  it('rejects relative alert recording paths outside the project', () => {
+    const config = cloneConfig();
+
+    config.correlatedAlertRecording.outputPath = '../outside/alerts.jsonl';
+
+    expect(() => validateAppConfig(config)).toThrowError(
+      expect.objectContaining({
+        message: expect.stringContaining(
+          'correlatedAlertRecording.outputPath must not traverse outside the project',
+        ),
+      }),
+    );
+  });
+
   it('rejects strong ages below persistent ages', () => {
     const config = cloneConfig();
 

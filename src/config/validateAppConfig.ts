@@ -1,4 +1,5 @@
 import type { AppConfig } from './appConfig';
+import { isSafeCorrelatedAlertOutputPath } from '../recording/correlatedAlertPath';
 
 const requireFinitePositive = (
   errors: string[],
@@ -411,6 +412,30 @@ export const validateAppConfig = (config: AppConfig): void => {
     'correlatedAlerts.confidenceChangeThreshold',
     config.correlatedAlerts.confidenceChangeThreshold,
   );
+  if (typeof config.correlatedAlertRecording.enabled !== 'boolean') {
+    errors.push('correlatedAlertRecording.enabled must be a boolean');
+  }
+  if (
+    typeof config.correlatedAlertRecording.outputPath !== 'string' ||
+    config.correlatedAlertRecording.outputPath.trim().length === 0
+  ) {
+    errors.push(
+      'correlatedAlertRecording.outputPath must be a non-empty string',
+    );
+  } else if (
+    !isSafeCorrelatedAlertOutputPath(config.correlatedAlertRecording.outputPath)
+  ) {
+    errors.push(
+      'correlatedAlertRecording.outputPath must not traverse outside the project',
+    );
+  }
+  if (
+    typeof config.correlatedAlertRecording.flushAfterEachAlert !== 'boolean'
+  ) {
+    errors.push(
+      'correlatedAlertRecording.flushAfterEachAlert must be a boolean',
+    );
+  }
   requireFinitePositive(
     errors,
     'history.candleLimit',
