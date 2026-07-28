@@ -37,7 +37,7 @@ describe('PolymarketWhaleDetector', () => {
     expect(detector.isRelevantMarket(market)).toBe(true);
   });
 
-  it('maps a large BUY YES trade to a bullish external signal', () => {
+  it('maps a large BUY YES trade on a positive question to bullish', () => {
     const detector = new PolymarketWhaleDetector();
     const signal = detector.detect(trade, market, 1_000_000);
 
@@ -50,7 +50,7 @@ describe('PolymarketWhaleDetector', () => {
     });
   });
 
-  it('maps a BUY NO trade to bearish direction', () => {
+  it('maps BUY NO on a positive question to bearish direction', () => {
     const detector = new PolymarketWhaleDetector();
     const signal = detector.detect(
       { ...trade, outcome: 'NO' },
@@ -59,6 +59,37 @@ describe('PolymarketWhaleDetector', () => {
     );
 
     expect(signal?.direction).toBe('BEARISH');
+  });
+
+  it('reverses direction for negatively worded questions', () => {
+    const detector = new PolymarketWhaleDetector();
+    const negativeMarket = {
+      ...market,
+      question: 'Will Bitcoin crash below $50,000 this year?',
+    };
+
+    expect(detector.detect(trade, negativeMarket, 1_000_000)?.direction).toBe(
+      'BEARISH',
+    );
+    expect(
+      detector.detect(
+        { ...trade, outcome: 'NO' },
+        negativeMarket,
+        1_000_000,
+      )?.direction,
+    ).toBe('BULLISH');
+  });
+
+  it('keeps ambiguous wording directionally unknown', () => {
+    const detector = new PolymarketWhaleDetector();
+    const ambiguousMarket = {
+      ...market,
+      question: 'What will happen to Bitcoin this month?',
+    };
+
+    expect(detector.detect(trade, ambiguousMarket, 1_000_000)?.direction).toBe(
+      'UNKNOWN',
+    );
   });
 
   it('rejects small, stale, or illiquid activity', () => {
