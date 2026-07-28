@@ -115,9 +115,7 @@ describe('PolymarketPublicClient', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const firstUrl = new URL(String(fetchMock.mock.calls[0]?.[0]));
     const secondUrl = new URL(String(fetchMock.mock.calls[1]?.[0]));
-    expect(firstUrl.searchParams.get('market')).toBe(
-      'condition-a,condition-b',
-    );
+    expect(firstUrl.searchParams.get('market')).toBe('condition-a,condition-b');
     expect(secondUrl.searchParams.get('market')).toBe('condition-c');
     expect(firstUrl.searchParams.get('filterType')).toBe('CASH');
     expect(firstUrl.searchParams.get('filterAmount')).toBe('5000');
@@ -155,9 +153,9 @@ describe('PolymarketPublicClient', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch');
     const client = new PolymarketPublicClient();
 
-    await expect(client.getRecentTradesForMarkets(5_000, [], 100)).resolves.toEqual(
-      [],
-    );
+    await expect(
+      client.getRecentTradesForMarkets(5_000, [], 100),
+    ).resolves.toEqual([]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

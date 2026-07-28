@@ -72,11 +72,8 @@ describe('PolymarketWhaleDetector', () => {
       'BEARISH',
     );
     expect(
-      detector.detect(
-        { ...trade, outcome: 'NO' },
-        negativeMarket,
-        1_000_000,
-      )?.direction,
+      detector.detect({ ...trade, outcome: 'NO' }, negativeMarket, 1_000_000)
+        ?.direction,
     ).toBe('BULLISH');
   });
 
@@ -98,9 +95,7 @@ describe('PolymarketWhaleDetector', () => {
     expect(
       detector.detect({ ...trade, size: 100 }, market, 1_000_000),
     ).toBeUndefined();
-    expect(
-      detector.detect(trade, market, 2_100_001),
-    ).toBeUndefined();
+    expect(detector.detect(trade, market, 2_100_001)).toBeUndefined();
     expect(
       detector.detect(trade, { ...market, liquidity: 100 }, 1_000_000),
     ).toBeUndefined();

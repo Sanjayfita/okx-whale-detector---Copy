@@ -14,7 +14,10 @@ interface ScanOptions {
   reportPath?: string;
 }
 
-const parsePositiveNumber = (value: string | undefined, flag: string): number => {
+const parsePositiveNumber = (
+  value: string | undefined,
+  flag: string,
+): number => {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) {
     throw new Error(`${flag} requires a positive number`);
@@ -49,7 +52,7 @@ const parseOptions = (args: readonly string[]): ScanOptions => {
     } else if (flag === '--report') {
       options.reportPath = value?.startsWith('--')
         ? 'data/reports/polymarket-whale-scan.json'
-        : value ?? 'data/reports/polymarket-whale-scan.json';
+        : (value ?? 'data/reports/polymarket-whale-scan.json');
       if (value && !value.startsWith('--')) index += 1;
     } else {
       throw new Error(`Unknown Polymarket scan option: ${flag}`);
@@ -96,7 +99,10 @@ const main = async (): Promise<void> => {
 
   const aggregations = relevantMarkets
     .map((market) =>
-      aggregator.aggregate(market, tradesByCondition.get(market.conditionId) ?? []),
+      aggregator.aggregate(
+        market,
+        tradesByCondition.get(market.conditionId) ?? [],
+      ),
     )
     .filter((aggregation) => aggregation.directionalTrades > 0);
 

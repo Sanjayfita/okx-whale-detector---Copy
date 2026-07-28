@@ -110,10 +110,8 @@ export class PolymarketMarketAggregator {
       });
     }
 
-    const totalDirectionalNotionalUsd =
-      bullishNotionalUsd + bearishNotionalUsd;
-    const netDirectionalNotionalUsd =
-      bullishNotionalUsd - bearishNotionalUsd;
+    const totalDirectionalNotionalUsd = bullishNotionalUsd + bearishNotionalUsd;
+    const netDirectionalNotionalUsd = bullishNotionalUsd - bearishNotionalUsd;
     const dominance =
       totalDirectionalNotionalUsd === 0
         ? 0
@@ -145,8 +143,7 @@ export class PolymarketMarketAggregator {
       return result;
     }
 
-    const direction =
-      netDirectionalNotionalUsd > 0 ? 'BULLISH' : 'BEARISH';
+    const direction = netDirectionalNotionalUsd > 0 ? 'BULLISH' : 'BEARISH';
     const sizeScale = Math.min(
       1,
       Math.abs(netDirectionalNotionalUsd) /
@@ -157,9 +154,7 @@ export class PolymarketMarketAggregator {
       Math.abs(netDirectionalNotionalUsd) / Math.max(market.liquidity, 1),
     );
     const independentWalletFactor =
-      walletNotional.size <= 1
-        ? 0
-        : Math.min(1, (walletNotional.size - 1) / 4);
+      walletNotional.size <= 1 ? 0 : Math.min(1, (walletNotional.size - 1) / 4);
     const concentrationAdjustment =
       independentWalletFactor * (1 - largestWalletConcentration);
     const resolutionFactor = getResolutionFactor(market, now);

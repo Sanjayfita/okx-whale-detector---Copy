@@ -83,11 +83,15 @@ const POSITIVE_PATTERNS = [
 
 export const inferPolymarketAsset = (text: string): string | undefined => {
   const normalized = text.toLowerCase();
-  if (normalized.includes('bitcoin') || normalized.includes('btc')) return 'BTC';
-  if (normalized.includes('ethereum') || normalized.includes('eth')) return 'ETH';
-  if (normalized.includes('solana') || normalized.includes(' sol')) return 'SOL';
+  if (normalized.includes('bitcoin') || normalized.includes('btc'))
+    return 'BTC';
+  if (normalized.includes('ethereum') || normalized.includes('eth'))
+    return 'ETH';
+  if (normalized.includes('solana') || normalized.includes(' sol'))
+    return 'SOL';
   if (normalized.includes('xrp')) return 'XRP';
-  if (normalized.includes('dogecoin') || normalized.includes('doge')) return 'DOGE';
+  if (normalized.includes('dogecoin') || normalized.includes('doge'))
+    return 'DOGE';
   if (normalized.includes('usdt')) return 'USDT';
   if (normalized.includes('usdc')) return 'USDC';
   return undefined;
@@ -175,7 +179,10 @@ export class PolymarketWhaleDetector {
       1,
       interpretation.notionalUsd / Math.max(market.liquidity, 1),
     );
-    const confidence = Math.min(75, 35 + tradeScale * 25 + liquidityImpact * 15);
+    const confidence = Math.min(
+      75,
+      35 + tradeScale * 25 + liquidityImpact * 15,
+    );
     const asset = inferPolymarketAsset(
       `${market.question} ${market.category ?? ''}`,
     );

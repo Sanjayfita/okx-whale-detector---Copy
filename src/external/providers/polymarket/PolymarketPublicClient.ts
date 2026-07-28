@@ -100,7 +100,9 @@ export class PolymarketPublicClient {
     limit = 1_000,
   ): Promise<PolymarketTrade[]> {
     if (!Number.isInteger(limit) || limit <= 0 || limit > 10_000) {
-      throw new Error('Polymarket trade limit must be an integer from 1 to 10000');
+      throw new Error(
+        'Polymarket trade limit must be an integer from 1 to 10000',
+      );
     }
 
     const uniqueConditionIds = [...new Set(conditionIds.filter(Boolean))];
