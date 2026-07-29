@@ -17,6 +17,17 @@ interface SideWallIndex {
 
 export class WallDetector {
   private readonly walls = new Map<string, Wall>();
+  private readonly matchedWalls = new Set<Wall>();
+  private readonly sideIndexes: Record<WallSide, SideWallIndex> = {
+    [WallSide.BUY]: {
+      walls: [],
+      byCurrentPrice: new Map(),
+    },
+    [WallSide.SELL]: {
+      walls: [],
+      byCurrentPrice: new Map(),
+    },
+  };
 
   private readonly config: WallDetectorConfig;
 
@@ -33,76 +44,54 @@ export class WallDetector {
   }
 
   public detect(orderBook: OrderBook): Wall[] {
-    const matchedWallKeys = new Set<string>();
-    const indexes = this.buildSideIndexes();
+    this.matchedWalls.clear();
     const now = Date.now();
 
     this.processSide(
       WallSide.BUY,
       orderBook.bids,
-      indexes.get(WallSide.BUY),
-      matchedWallKeys,
+      this.sideIndexes[WallSide.BUY],
       now,
     );
 
     this.processSide(
       WallSide.SELL,
       orderBook.asks,
-      indexes.get(WallSide.SELL),
-      matchedWallKeys,
+      this.sideIndexes[WallSide.SELL],
       now,
     );
 
-    this.removeMissingWalls(matchedWallKeys, now);
+    this.removeMissingWalls(now);
 
     return [...this.walls.values()];
-  }
-
-  private buildSideIndexes(): Map<WallSide, SideWallIndex> {
-    const indexes = new Map<WallSide, SideWallIndex>([
-      [WallSide.BUY, { walls: [], byCurrentPrice: new Map() }],
-      [WallSide.SELL, { walls: [], byCurrentPrice: new Map() }],
-    ]);
-
-    for (const wall of this.walls.values()) {
-      const index = indexes.get(wall.side);
-
-      if (!index) {
-        continue;
-      }
-
-      index.walls.push(wall);
-      index.byCurrentPrice.set(wall.currentPrice, wall);
-    }
-
-    return indexes;
   }
 
   private processSide(
     side: WallSide,
     levels: Map<number, OrderLevel>,
-    index: SideWallIndex | undefined,
-    matchedWallKeys: Set<string>,
+    index: SideWallIndex,
     now: number,
   ): void {
-    const sideIndex: SideWallIndex = index ?? {
-      walls: [],
-      byCurrentPrice: new Map(),
-    };
+    let currentPriceIndexChanged = false;
 
     for (const level of levels.values()) {
       if (level.notionalQuote < this.config.minNotionalQuote) {
         continue;
       }
 
-      const exactWall = sideIndex.byCurrentPrice.get(level.price);
+      const exactWall = index.byCurrentPrice.get(level.price);
       const existingWall =
-        exactWall && !matchedWallKeys.has(exactWall.wallId)
+        exactWall && !this.matchedWalls.has(exactWall)
           ? exactWall
-          : this.findNearbyWall(level.price, sideIndex.walls, matchedWallKeys);
+          : this.findNearbyWall(level.price, index.walls);
 
       if (existingWall) {
-        matchedWallKeys.add(existingWall.wallId);
+        this.matchedWalls.add(existingWall);
+
+        if (existingWall.currentPrice !== level.price) {
+          currentPriceIndexChanged = true;
+        }
+
         this.updateWall(existingWall, level, now);
         continue;
       }
@@ -126,22 +115,25 @@ export class WallDetector {
       };
 
       this.walls.set(wallId, wall);
-      sideIndex.walls.push(wall);
-      sideIndex.byCurrentPrice.set(level.price, wall);
-      matchedWallKeys.add(wallId);
+      index.walls.push(wall);
+      index.byCurrentPrice.set(level.price, wall);
+      this.matchedWalls.add(wall);
+    }
+
+    if (currentPriceIndexChanged) {
+      this.rebuildCurrentPriceIndex(index);
     }
   }
 
   private findNearbyWall(
     price: number,
     candidates: readonly Wall[],
-    matchedWallKeys: Set<string>,
   ): Wall | undefined {
     let closestWall: Wall | undefined;
     let closestDistance = Number.POSITIVE_INFINITY;
 
     for (const wall of candidates) {
-      if (matchedWallKeys.has(wall.wallId)) {
+      if (this.matchedWalls.has(wall)) {
         continue;
       }
 
@@ -184,15 +176,68 @@ export class WallDetector {
     }
   }
 
-  private removeMissingWalls(matchedWallKeys: Set<string>, now: number): void {
+  private rebuildCurrentPriceIndex(index: SideWallIndex): void {
+    index.byCurrentPrice.clear();
+
+    for (const wall of index.walls) {
+      index.byCurrentPrice.set(wall.currentPrice, wall);
+    }
+  }
+
+  private removeMissingWalls(now: number): void {
+    let buyIndexChanged = false;
+    let sellIndexChanged = false;
+
     for (const [key, wall] of this.walls) {
-      if (matchedWallKeys.has(key)) {
+      if (this.matchedWalls.has(wall)) {
         continue;
       }
 
       if (now - wall.lastSeen >= this.config.removalGracePeriodMs) {
         this.walls.delete(key);
+
+        if (wall.side === WallSide.BUY) {
+          buyIndexChanged = true;
+        } else {
+          sellIndexChanged = true;
+        }
       }
+    }
+
+    if (buyIndexChanged) {
+      this.compactSideIndex(this.sideIndexes[WallSide.BUY]);
+    }
+
+    if (sellIndexChanged) {
+      this.compactSideIndex(this.sideIndexes[WallSide.SELL]);
+    }
+  }
+
+  private compactSideIndex(index: SideWallIndex): void {
+    let retainedCount = 0;
+
+    for (const wall of index.walls) {
+      if (this.walls.get(wall.wallId) !== wall) {
+        continue;
+      }
+
+      index.walls[retainedCount] = wall;
+      retainedCount += 1;
+    }
+
+    index.walls.length = retainedCount;
+    this.rebuildCurrentPriceIndex(index);
+  }
+
+  public reset(): void {
+    this.walls.clear();
+    this.matchedWalls.clear();
+
+    for (const side of [WallSide.BUY, WallSide.SELL]) {
+      const index = this.sideIndexes[side];
+
+      index.walls.length = 0;
+      index.byCurrentPrice.clear();
     }
   }
 
