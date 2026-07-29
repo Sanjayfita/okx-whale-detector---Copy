@@ -79,6 +79,21 @@ describe('BehaviorTransitionTracker', () => {
     expect(secondResult).toEqual([]);
   });
 
+  it('reuses one immutable empty result for empty and unchanged behavior sets', () => {
+    const tracker = new BehaviorTransitionTracker();
+    const whale = createWhale();
+    const emptyResult = tracker.getEnteredBehaviors(whale, []);
+
+    tracker.getEnteredBehaviors(whale, [createBehavior(whale, 'PERSISTENT')]);
+
+    const unchangedResult = tracker.getEnteredBehaviors(whale, [
+      createBehavior(whale, 'PERSISTENT', 95),
+    ]);
+
+    expect(emptyResult).toBe(unchangedResult);
+    expect(Object.isFrozen(emptyResult)).toBe(true);
+  });
+
   it('returns only the newly added behavior', () => {
     const tracker = new BehaviorTransitionTracker();
 
@@ -94,6 +109,60 @@ describe('BehaviorTransitionTracker', () => {
 
     expect(entered.map((behavior) => behavior.type)).toEqual(['DISTRIBUTION']);
   });
+
+  it('returns newly entered behavior objects in their input order', () => {
+    const tracker = new BehaviorTransitionTracker();
+    const whale = createWhale();
+    const distribution = createBehavior(whale, 'DISTRIBUTION');
+    const absorption = createBehavior(whale, 'ABSORPTION');
+
+    const entered = tracker.getEnteredBehaviors(whale, [
+      distribution,
+      absorption,
+    ]);
+
+    expect(entered).toEqual([distribution, absorption]);
+    expect(entered[0]).toBe(distribution);
+    expect(entered[1]).toBe(absorption);
+  });
+
+  it('preserves duplicate behavior semantics for new and existing types', () => {
+    const tracker = new BehaviorTransitionTracker();
+    const whale = createWhale();
+    const first = createBehavior(whale, 'PERSISTENT', 80);
+    const duplicate = createBehavior(whale, 'PERSISTENT', 95);
+
+    const initiallyEntered = tracker.getEnteredBehaviors(whale, [
+      first,
+      duplicate,
+    ]);
+    const alreadyActive = tracker.getEnteredBehaviors(whale, [
+      duplicate,
+      first,
+    ]);
+
+    expect(initiallyEntered).toEqual([first, duplicate]);
+    expect(alreadyActive).toEqual([]);
+  });
+
+  it('removes missing types while retaining other active types', () => {
+    const tracker = new BehaviorTransitionTracker();
+    const whale = createWhale();
+
+    tracker.getEnteredBehaviors(whale, [
+      createBehavior(whale, 'PERSISTENT'),
+      createBehavior(whale, 'DISTRIBUTION'),
+    ]);
+    tracker.getEnteredBehaviors(whale, [createBehavior(whale, 'PERSISTENT')]);
+
+    const returned = tracker.getEnteredBehaviors(whale, [
+      createBehavior(whale, 'PERSISTENT'),
+      createBehavior(whale, 'DISTRIBUTION'),
+    ]);
+
+    expect(returned.map((behavior) => behavior.type)).toEqual(['DISTRIBUTION']);
+  });
+
   it('does not re-emit behavior when the same wall moves', () => {
     const tracker = new BehaviorTransitionTracker();
 

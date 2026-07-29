@@ -18,6 +18,7 @@
     "performance:report": "tsx src/tools/performanceReport.ts",
     "whale-tracker:performance": "tsx src/tools/whaleTrackerPerformanceReport.ts",
     "wall-detector:performance": "tsx src/tools/wallDetectorPerformanceReport.ts",
+    "behavior-transition:performance": "tsx src/tools/behaviorTransitionPerformanceReport.ts",
     "replay": "tsx src/tools/replayRecording.ts",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "alerts:inspect": "npm run build --silent && node dist/tools/inspectCorrelatedAlerts.js",
