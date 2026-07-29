@@ -6,3 +6,7 @@ export * from './candleAlignment';
 export * from './candleNormalization';
 export * from './confirmedCandleIndex';
 export * from './legacyAlignmentManifest';
+export * from './orderBookAlignment';
+export * from './orderBookNormalization';
+export * from './orderBookObservationIndex';
+export * from './orderBookReconstructor';
