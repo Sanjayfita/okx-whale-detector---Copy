@@ -12,6 +12,12 @@ export type CorrelatedAlertEventType =
 
 export interface CorrelatedAlert {
   id: string;
+  /**
+   * Present on alerts emitted by the version 2 alert pipeline. Legacy
+   * schemaVersion 1 records do not contain durable session identity.
+   */
+  sourceSessionId?: string;
+  alertSequence?: number;
   symbol: string;
   severity: CorrelatedAlertSeverity;
   eventType: CorrelatedAlertEventType;
@@ -26,5 +32,11 @@ export interface CorrelatedAlert {
   externalSignalsUsed: number;
   ignoredExternalSignals: number;
   reason: string;
+  /** UTC epoch milliseconds when the qualifying alert was emitted. */
   createdAt: number;
+}
+
+export interface VersionedCorrelatedAlert extends CorrelatedAlert {
+  sourceSessionId: string;
+  alertSequence: number;
 }

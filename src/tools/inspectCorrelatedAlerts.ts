@@ -6,6 +6,7 @@ import {
   type CorrelatedAlertLogReadOptions,
   type CorrelatedAlertLogReadResult,
 } from '../recording/CorrelatedAlertLogReader';
+import { CORRELATED_ALERT_SCHEMA_VERSION } from '../recording/CorrelatedAlertRecorder';
 import {
   aggregateCorrelatedAlerts,
   parseCorrelatedAlertInspectOptions,
@@ -126,6 +127,30 @@ export const inspectCorrelatedAlerts = async (
         `${alert.severity} | ${alert.eventType} | ` +
         `Direction ${alert.combinedConfidence.toFixed(1)}% | ` +
         `Importance ${alert.alertImportance.toFixed(1)}%`,
+    );
+
+    if (record.schemaVersion !== CORRELATED_ALERT_SCHEMA_VERSION) {
+      log(
+        `Schema v${record.schemaVersion} | Alert ID: ${alert.id} | ` +
+          'Evaluation context: unavailable',
+      );
+      continue;
+    }
+
+    const context = record.evaluationContext;
+    log(
+      `Schema v${record.schemaVersion} | Alert ID: ${alert.id} | ` +
+        `Session: ${record.sourceSessionId} | Sequence: ${record.alertSequence}`,
+    );
+    log(
+      `Instrument: ${context.instId} (${context.instType}) | ` +
+        `OKX Bias: ${context.okxBias} | External Bias: ${context.externalBias} | ` +
+        `Provenance: ${record.provenance}`,
+    );
+    log(
+      `Reference: midpoint ${context.referenceMidpoint} | ` +
+        `bid ${context.referenceBestBid} | ask ${context.referenceBestAsk} | ` +
+        `Evaluation context: available`,
     );
   }
 };

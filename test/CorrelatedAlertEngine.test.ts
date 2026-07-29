@@ -295,6 +295,50 @@ describe('CorrelatedAlertEngine', () => {
     expect(engine.evaluate(swap)).toBeUndefined();
   });
 
+  it('uses injected session identity and increments alert sequences', () => {
+    const { engine, advance } = createHarness({
+      sourceSessionId: 'deterministic-session',
+      initialAlertSequence: 40,
+      cooldownMs: 0,
+    });
+
+    const first = engine.evaluate(createEvaluation());
+    advance(1);
+    const second = engine.evaluate(createEvaluation());
+
+    expect(first).toMatchObject({
+      id: 'correlated-alert:deterministic-session:41',
+      sourceSessionId: 'deterministic-session',
+      alertSequence: 41,
+    });
+    expect(second).toMatchObject({
+      id: 'correlated-alert:deterministic-session:42',
+      sourceSessionId: 'deterministic-session',
+      alertSequence: 42,
+    });
+  });
+
+  it('uses distinct authoritative IDs for distinct sessions', () => {
+    const first = createHarness({ sourceSessionId: 'session-one' });
+    const second = createHarness({ sourceSessionId: 'session-two' });
+
+    expect(first.engine.evaluate(createEvaluation())?.id).toBe(
+      'correlated-alert:session-one:1',
+    );
+    expect(second.engine.evaluate(createEvaluation())?.id).toBe(
+      'correlated-alert:session-two:1',
+    );
+  });
+
+  it('generates different IDs for independent default sessions', () => {
+    const first = createHarness();
+    const second = createHarness();
+
+    expect(first.engine.evaluate(createEvaluation())?.id).not.toBe(
+      second.engine.evaluate(createEvaluation())?.id,
+    );
+  });
+
   it('uses the existing correlated result without recalculating it', () => {
     const { engine } = createHarness();
     const evaluation = createEvaluation({
@@ -349,5 +393,30 @@ describe('CorrelatedAlertEngine', () => {
         }),
       ),
     ).toBeUndefined();
+  });
+
+  it('emits an external-only alert when explicitly enabled', () => {
+    const { engine } = createHarness({
+      externalOnlyAlertsEnabled: true,
+      minimumExternalOnlyAlertImportance: 55,
+      sourceSessionId: 'external-only-session',
+    });
+
+    expect(
+      engine.evaluate(
+        createEvaluation({
+          agreement: 'EXTERNAL_ONLY',
+          bias: 'BEARISH',
+          okxBias: 'NEUTRAL',
+          okxConfidence: 0,
+          externalBias: 'BEARISH',
+          alertImportance: 60,
+        }),
+      ),
+    ).toMatchObject({
+      id: 'correlated-alert:external-only-session:1',
+      relationship: 'EXTERNAL_ONLY',
+      bias: 'BEARISH',
+    });
   });
 });

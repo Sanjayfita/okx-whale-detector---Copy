@@ -21,6 +21,7 @@ const DEFAULT_INSTRUMENT: MarketInstrumentConfig = {
 };
 
 export class MarketState {
+  public readonly instrument: MarketInstrumentConfig;
   public readonly orderBookManager: OrderBookManager;
   public readonly whaleTracker: WhaleTracker;
   public readonly whaleScoreEngine: WhaleScoreEngine;
@@ -38,6 +39,7 @@ export class MarketState {
   ) {
     validateAppConfig(config);
 
+    this.instrument = instrument;
     this.orderBookManager = new OrderBookManager(
       instrument,
       config.history.orderBookLevelLimit,

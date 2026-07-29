@@ -17,6 +17,8 @@ import {
 import { CorrelatedAlertReporter } from '../reporting/CorrelatedAlertReporter';
 import type { ExternalSignalCorrelationService } from '../external/core/ExternalSignalCorrelationService';
 import type { CorrelatedAlertRecorder } from '../recording/CorrelatedAlertRecorder';
+import { createCorrelatedAlertEvaluationContext } from '../recording/correlatedAlertEvaluationContext';
+import type { CorrelatedAlertProvenance } from '../types/correlatedAlertEvaluation';
 import type { MarketEvaluation } from '../types/marketEvaluation';
 import type { Wall } from '../types/wall';
 
@@ -91,6 +93,7 @@ export class MarketEngine {
     private readonly correlatedAlertReporter: CorrelatedAlertReporter = new CorrelatedAlertReporter(),
     private readonly correlatedAlertRecorder?: CorrelatedAlertRecorder,
     private readonly clock: () => number = Date.now,
+    private readonly alertProvenance: CorrelatedAlertProvenance = 'LIVE',
   ) {}
 
   public processOrderBookUpdate(
@@ -262,13 +265,33 @@ export class MarketEngine {
 
         if (evaluation) {
           const alert = trace.measure('alert.evaluation', () =>
-            this.correlatedAlertEngine?.evaluate(evaluation),
+            this.correlatedAlertEngine?.evaluate(evaluation, correlationNow),
           );
 
-          if (alert) {
+          if (alert && evaluation.correlatedSignal) {
+            const evaluationContext = createCorrelatedAlertEvaluationContext({
+              instrument: state.instrument,
+              correlatedSignal: evaluation.correlatedSignal,
+              sourceMarketTimestamp: update.timestamp,
+              referenceTimestamp: update.timestamp,
+              referenceMidpoint: currentPrice,
+              referenceBestBid: bestBid?.price,
+              referenceBestAsk: bestAsk?.price,
+            });
+
             trace.updateDiagnostics({ alertEmitted: true });
             this.correlatedAlertReporter.report(alert, trace);
-            this.correlatedAlertRecorder?.record(alert, trace);
+
+            if (evaluationContext) {
+              this.correlatedAlertRecorder?.record(
+                alert,
+                {
+                  provenance: this.alertProvenance,
+                  evaluationContext,
+                },
+                trace,
+              );
+            }
           }
         }
       });

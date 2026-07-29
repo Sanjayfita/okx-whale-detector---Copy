@@ -26,6 +26,7 @@ import type { CorrelatedAlert } from '../types/correlatedAlert';
 import type { MarketInstrumentConfig } from '../types/instrument';
 
 const SIMULATION_TIME = Date.UTC(2026, 6, 28, 12, 0, 0);
+const SIMULATION_SESSION_ID = 'deterministic-alert-simulation';
 const SIMULATION_FILE_NAME = 'correlated-alerts.jsonl';
 const TEMPORARY_DIRECTORY_PREFIX = 'okx-correlated-alert-simulation-';
 
@@ -190,6 +191,17 @@ const validateResult = (
       );
     }
 
+    if (
+      record.provenance !== 'SIMULATION' ||
+      record.sourceSessionId !== SIMULATION_SESSION_ID ||
+      record.evaluationContext.instType !== 'SPOT' ||
+      record.evaluationContext.referenceMidpoint !== 100.5 ||
+      record.evaluationContext.referenceBestBid !== 100 ||
+      record.evaluationContext.referenceBestAsk !== 101
+    ) {
+      throw new Error(`Invalid evaluation context for ${record.alert.symbol}`);
+    }
+
     const expectedRelationship =
       EXPECTED_SCENARIOS[
         record.alert.symbol as keyof typeof EXPECTED_SCENARIOS
@@ -258,12 +270,19 @@ const printResult = (
 
   for (const record of result.records) {
     const { alert } = record;
+    const contextOutput =
+      record.schemaVersion === CORRELATED_ALERT_SCHEMA_VERSION
+        ? `Provenance: ${record.provenance} | ` +
+          `Midpoint: ${record.evaluationContext.referenceMidpoint}`
+        : 'Evaluation context: unavailable';
+
     log(
       `schemaVersion=${record.schemaVersion} | ${alert.symbol} | ` +
         `${alert.relationship} | ${alert.severity} | Bias: ${alert.bias} | ` +
         `Directional confidence: ${alert.combinedConfidence.toFixed(1)}% | ` +
         `Alert importance: ${alert.alertImportance.toFixed(1)}% | ` +
-        `External signals: ${alert.externalSignalsUsed}`,
+        `External signals: ${alert.externalSignalsUsed} | ` +
+        contextOutput,
     );
   }
 };
@@ -314,6 +333,7 @@ export const simulateCorrelatedAlerts = async (
       severityThresholds: appConfig.correlatedAlerts.severityThresholds,
       cooldownMs: 0,
       clock: () => SIMULATION_TIME,
+      sourceSessionId: SIMULATION_SESSION_ID,
     });
     const alertReporter = new CorrelatedAlertReporter();
     const recorder = new CorrelatedAlertRecorder({
@@ -334,9 +354,9 @@ export const simulateCorrelatedAlerts = async (
       reportedAlerts.push(alert);
       reportAlert(alert);
     };
-    recorder.record = (alert, trace) => {
+    recorder.record = (alert, context, trace) => {
       recordedAlerts.push(alert);
-      return recordAlert(alert, trace);
+      return recordAlert(alert, context, trace);
     };
 
     const states = new Map(
@@ -360,6 +380,7 @@ export const simulateCorrelatedAlerts = async (
       alertReporter,
       recorder,
       () => SIMULATION_TIME,
+      'SIMULATION',
     );
 
     try {

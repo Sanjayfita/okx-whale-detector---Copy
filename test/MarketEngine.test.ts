@@ -15,6 +15,7 @@ import { CorrelatedAlertReporter } from '../src/reporting/CorrelatedAlertReporte
 import { MarketReporter } from '../src/reporting/MarketReporter';
 import { CorrelatedAlertRecorder } from '../src/recording/CorrelatedAlertRecorder';
 import type { PerformanceTrace } from '../src/core/PerformanceTrace';
+import { appConfig } from '../src/config/appConfig';
 
 import type { OKXOrderBookUpdate } from '../src/clients/okx/OKXWebSocketClient';
 import type { MarketEvaluation } from '../src/types/marketEvaluation';
@@ -262,7 +263,12 @@ describe('MarketEngine', () => {
 
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    state = new MarketState();
+    state = new MarketState(appConfig, {
+      instId: 'BTC-USDT',
+      instType: 'SPOT',
+      quoteCurrency: 'USDT',
+      baseUnitsPerSize: 1,
+    });
 
     marketStates = new Map([['BTC-USDT', state]]);
 
@@ -537,7 +543,7 @@ describe('MarketEngine', () => {
 
     expect(correlateSpy).toHaveBeenCalledTimes(1);
     expect(evaluateSpy).toHaveBeenCalledTimes(1);
-    expect(evaluateSpy).toHaveBeenCalledWith(evaluation);
+    expect(evaluateSpy).toHaveBeenCalledWith(evaluation, Date.now());
     expect(summarySpy).toHaveBeenCalledWith(
       expect.objectContaining({ evaluation }),
       expect.anything(),
@@ -547,6 +553,7 @@ describe('MarketEngine', () => {
       expect.objectContaining({
         symbol: 'BTC-USDT',
         relationship: 'AGREEMENT',
+        createdAt: Date.now(),
       }),
       expect.anything(),
     );
@@ -554,6 +561,24 @@ describe('MarketEngine', () => {
     expect(alertRecordSpy.mock.calls[0]?.[0]).toBe(
       alertReportSpy.mock.calls[0]?.[0],
     );
+    expect(alertRecordSpy.mock.calls[0]?.[1]).toEqual({
+      provenance: 'LIVE',
+      evaluationContext: {
+        instId: 'BTC-USDT',
+        instType: 'SPOT',
+        okxBias: 'BULLISH',
+        externalBias: 'BULLISH',
+        sourceSignalTimestamp: Date.now(),
+        sourceMarketTimestamp: 1_000,
+        referenceTimestamp: 1_000,
+        referenceMidpoint: 100.5,
+        referenceBestBid: 100,
+        referenceBestAsk: 101,
+        referenceSpread: 1,
+        referenceSpreadPercent: (1 / 100.5) * 100,
+        sourceSignalIds: [],
+      },
+    });
     const trace = summarySpy.mock.calls[0]?.[1] as PerformanceTrace;
     expect(trace.getSnapshot()).toMatchObject({
       summaryProcessed: true,
@@ -561,6 +586,42 @@ describe('MarketEngine', () => {
       alertPersisted: true,
       recorderFsync: true,
     });
+  });
+
+  it('does not persist a version 2 record for an invalid crossed book', () => {
+    const evaluation = createCorrelatedEvaluation();
+    const correlationService = new ExternalSignalCorrelationService();
+    vi.spyOn(correlationService, 'correlateMarketSignal').mockReturnValue(
+      evaluation,
+    );
+    const alertRecorder = new CorrelatedAlertRecorder({
+      outputPath: 'data/alerts/test-invalid-context.jsonl',
+      writerFactory: () => ({
+        append: vi.fn(),
+        close: vi.fn(),
+      }),
+    });
+    const alertRecordSpy = vi.spyOn(alertRecorder, 'record');
+    const integratedEngine = new MarketEngine(
+      marketStates,
+      new SummaryThrottle(5_000),
+      undefined,
+      undefined,
+      undefined,
+      correlationService,
+      new CorrelatedAlertEngine(),
+      undefined,
+      alertRecorder,
+    );
+
+    integratedEngine.processOrderBookUpdate(
+      createSnapshot({
+        bids: [['102', '2', '0', '1']],
+        asks: [['101', '3', '0', '1']],
+      }),
+    );
+
+    expect(alertRecordSpy).not.toHaveBeenCalled();
   });
 
   it('does not record when the alert engine emits no alert', () => {

@@ -1,8 +1,10 @@
+import { randomUUID } from 'node:crypto';
+
 import type { CorrelatedMarketSignal } from '../external/core/ExternalSignalCorrelationEngine';
 import type {
-  CorrelatedAlert,
   CorrelatedAlertEventType,
   CorrelatedAlertSeverity,
+  VersionedCorrelatedAlert,
 } from '../types/correlatedAlert';
 import type { MarketEvaluation } from '../types/marketEvaluation';
 
@@ -16,6 +18,8 @@ export interface CorrelatedAlertEngineOptions {
   cooldownMs?: number;
   confidenceChangeThreshold?: number;
   clock?: () => number;
+  sourceSessionId?: string;
+  initialAlertSequence?: number;
 }
 
 export interface CorrelatedAlertSeverityThresholds {
@@ -66,8 +70,9 @@ export class CorrelatedAlertEngine {
   private readonly cooldownMs: number;
   private readonly confidenceChangeThreshold: number;
   private readonly clock: () => number;
+  private readonly sourceSessionId: string;
   private readonly states = new Map<string, CorrelatedAlertState>();
-  private nextAlertId = 1;
+  private nextAlertSequence: number;
 
   public constructor(options: CorrelatedAlertEngineOptions = {}) {
     this.enabled = options.enabled ?? DEFAULT_OPTIONS.enabled;
@@ -92,11 +97,16 @@ export class CorrelatedAlertEngine {
       options.confidenceChangeThreshold ??
       DEFAULT_OPTIONS.confidenceChangeThreshold;
     this.clock = options.clock ?? Date.now;
+    this.sourceSessionId = options.sourceSessionId ?? randomUUID();
+    this.nextAlertSequence = (options.initialAlertSequence ?? 0) + 1;
 
     this.validateOptions();
   }
 
-  public evaluate(evaluation: MarketEvaluation): CorrelatedAlert | undefined {
+  public evaluate(
+    evaluation: MarketEvaluation,
+    createdAtOverride?: number,
+  ): VersionedCorrelatedAlert | undefined {
     const correlatedSignal = evaluation.correlatedSignal;
 
     if (
@@ -110,7 +120,7 @@ export class CorrelatedAlertEngine {
 
     const severity = this.getSeverity(correlatedSignal.alertImportance);
     const previous = this.states.get(correlatedSignal.symbol);
-    const createdAt = this.clock();
+    const createdAt = createdAtOverride ?? this.clock();
 
     if (
       previous &&
@@ -121,8 +131,11 @@ export class CorrelatedAlertEngine {
     }
 
     const eventType = this.getEventType(correlatedSignal, previous);
-    const alert: CorrelatedAlert = {
-      id: `correlated-alert:${correlatedSignal.symbol}:${createdAt}:${this.nextAlertId}`,
+    const alertSequence = this.nextAlertSequence;
+    const alert: VersionedCorrelatedAlert = {
+      id: `correlated-alert:${this.sourceSessionId}:${alertSequence}`,
+      sourceSessionId: this.sourceSessionId,
+      alertSequence,
       symbol: correlatedSignal.symbol,
       severity,
       eventType,
@@ -138,7 +151,7 @@ export class CorrelatedAlertEngine {
       createdAt,
     };
 
-    this.nextAlertId += 1;
+    this.nextAlertSequence += 1;
     this.states.set(correlatedSignal.symbol, {
       bias: correlatedSignal.bias,
       relationship: correlatedSignal.agreement,
@@ -307,6 +320,24 @@ export class CorrelatedAlertEngine {
     ) {
       throw new Error(
         'confidenceChangeThreshold must be greater than 0 and at most 100',
+      );
+    }
+
+    if (
+      this.sourceSessionId.length === 0 ||
+      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(this.sourceSessionId)
+    ) {
+      throw new Error(
+        'sourceSessionId must contain 1-128 URL-safe identifier characters',
+      );
+    }
+
+    if (
+      !Number.isSafeInteger(this.nextAlertSequence) ||
+      this.nextAlertSequence <= 0
+    ) {
+      throw new Error(
+        'initialAlertSequence must be a non-negative safe integer',
       );
     }
   }

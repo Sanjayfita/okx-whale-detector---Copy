@@ -13,25 +13,55 @@ import { PerformanceTrace } from '../src/core/PerformanceTrace';
 import { PipelineProfiler } from '../src/core/PipelineProfiler';
 
 import type { CorrelatedAlert } from '../src/types/correlatedAlert';
+import type { CorrelatedAlertRecordContext } from '../src/types/correlatedAlertEvaluation';
 
 const createAlert = (
   overrides: Partial<CorrelatedAlert> = {},
-): CorrelatedAlert => ({
-  id: 'alert-1',
-  symbol: 'BTC-USDT',
-  severity: 'STRONG',
-  eventType: 'AGREEMENT',
-  bias: 'BULLISH',
-  relationship: 'AGREEMENT',
-  combinedConfidence: 74,
-  alertImportance: 74,
-  okxConfidence: 81,
-  externalEffectiveConfidence: 53,
-  externalSignalsUsed: 2,
-  ignoredExternalSignals: 0,
-  reason: 'OKX and external intelligence agree.',
-  createdAt: 1_785_200_000_000,
-  ...overrides,
+): CorrelatedAlert => {
+  const sourceSessionId = overrides.sourceSessionId ?? 'test-session';
+  const alertSequence = overrides.alertSequence ?? 1;
+
+  return {
+    id: `correlated-alert:${sourceSessionId}:${alertSequence}`,
+    sourceSessionId,
+    alertSequence,
+    symbol: 'BTC-USDT',
+    severity: 'STRONG',
+    eventType: 'AGREEMENT',
+    bias: 'BULLISH',
+    relationship: 'AGREEMENT',
+    combinedConfidence: 74,
+    alertImportance: 74,
+    okxConfidence: 81,
+    externalEffectiveConfidence: 53,
+    externalSignalsUsed: 2,
+    ignoredExternalSignals: 0,
+    reason: 'OKX and external intelligence agree.',
+    createdAt: 1_785_200_000_000,
+    ...overrides,
+  };
+};
+
+const createContext = (
+  overrides: Partial<CorrelatedAlertRecordContext['evaluationContext']> = {},
+): CorrelatedAlertRecordContext => ({
+  provenance: 'LIVE',
+  evaluationContext: {
+    instId: 'BTC-USDT',
+    instType: 'SPOT',
+    okxBias: 'BULLISH',
+    externalBias: 'BULLISH',
+    sourceSignalTimestamp: 1_785_200_000_000,
+    sourceMarketTimestamp: 1_785_200_000_000,
+    referenceTimestamp: 1_785_200_000_000,
+    referenceMidpoint: 100.5,
+    referenceBestBid: 100,
+    referenceBestAsk: 101,
+    referenceSpread: 1,
+    referenceSpreadPercent: (1 / 100.5) * 100,
+    sourceSignalIds: ['signal-1'],
+    ...overrides,
+  },
 });
 
 describe('CorrelatedAlertRecorder', () => {
@@ -55,7 +85,7 @@ describe('CorrelatedAlertRecorder', () => {
       clock: () => 1_785_200_000_100,
     });
 
-    recorder.record(createAlert());
+    recorder.record(createAlert(), createContext());
     recorder.close();
 
     const lines = readFileSync(outputPath, 'utf8').trim().split('\n');
@@ -63,9 +93,14 @@ describe('CorrelatedAlertRecorder', () => {
 
     expect(lines).toHaveLength(1);
     expect(record).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       recordedAt: 1_785_200_000_100,
+      sourceSessionId: 'test-session',
+      alertSequence: 1,
+      semanticFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      provenance: 'LIVE',
       alert: createAlert(),
+      evaluationContext: createContext().evaluationContext,
     });
   });
 
@@ -74,7 +109,7 @@ describe('CorrelatedAlertRecorder', () => {
 
     expect(existsSync(path.dirname(outputPath))).toBe(false);
 
-    recorder.record(createAlert());
+    recorder.record(createAlert(), createContext());
     recorder.close();
 
     expect(existsSync(outputPath)).toBe(true);
@@ -82,11 +117,11 @@ describe('CorrelatedAlertRecorder', () => {
 
   it('preserves existing records after restart', () => {
     const first = new CorrelatedAlertRecorder({ outputPath });
-    first.record(createAlert({ id: 'first' }));
+    first.record(createAlert(), createContext());
     first.close();
 
     const second = new CorrelatedAlertRecorder({ outputPath });
-    second.record(createAlert({ id: 'second' }));
+    second.record(createAlert({ alertSequence: 2 }), createContext());
     second.close();
 
     const records = readFileSync(outputPath, 'utf8')
@@ -95,17 +130,17 @@ describe('CorrelatedAlertRecorder', () => {
       .map((line) => JSON.parse(line) as CorrelatedAlertRecord);
 
     expect(records.map((record) => record.alert.id)).toEqual([
-      'first',
-      'second',
+      'correlated-alert:test-session:1',
+      'correlated-alert:test-session:2',
     ]);
   });
 
   it('records multiple alerts in order', () => {
     const recorder = new CorrelatedAlertRecorder({ outputPath });
 
-    recorder.record(createAlert({ id: 'one' }));
-    recorder.record(createAlert({ id: 'two' }));
-    recorder.record(createAlert({ id: 'three' }));
+    recorder.record(createAlert({ alertSequence: 1 }), createContext());
+    recorder.record(createAlert({ alertSequence: 2 }), createContext());
+    recorder.record(createAlert({ alertSequence: 3 }), createContext());
     recorder.close();
 
     const ids = readFileSync(outputPath, 'utf8')
@@ -113,7 +148,38 @@ describe('CorrelatedAlertRecorder', () => {
       .split('\n')
       .map((line) => (JSON.parse(line) as CorrelatedAlertRecord).alert.id);
 
-    expect(ids).toEqual(['one', 'two', 'three']);
+    expect(ids).toEqual([
+      'correlated-alert:test-session:1',
+      'correlated-alert:test-session:2',
+      'correlated-alert:test-session:3',
+    ]);
+  });
+
+  it('serializes an immutable snapshot of the supplied context', () => {
+    const recorder = new CorrelatedAlertRecorder({ outputPath });
+    const context = createContext();
+
+    recorder.record(createAlert(), context);
+    context.evaluationContext.referenceBestBid = 50;
+    (context.evaluationContext.sourceSignalIds as string[]).push(
+      'later-signal',
+    );
+    recorder.close();
+
+    const record = JSON.parse(
+      readFileSync(outputPath, 'utf8').trim(),
+    ) as CorrelatedAlertRecord;
+
+    expect(
+      record.schemaVersion === 2
+        ? record.evaluationContext.referenceBestBid
+        : undefined,
+    ).toBe(100);
+    expect(
+      record.schemaVersion === 2
+        ? record.evaluationContext.sourceSignalIds
+        : undefined,
+    ).toEqual(['signal-1']);
   });
 
   it('creates no file when disabled', () => {
@@ -122,7 +188,7 @@ describe('CorrelatedAlertRecorder', () => {
       outputPath,
     });
 
-    recorder.record(createAlert());
+    recorder.record(createAlert(), createContext());
     recorder.close();
 
     expect(existsSync(outputPath)).toBe(false);
@@ -141,7 +207,7 @@ describe('CorrelatedAlertRecorder', () => {
       }),
     });
 
-    expect(() => recorder.record(createAlert())).not.toThrow();
+    expect(() => recorder.record(createAlert(), createContext())).not.toThrow();
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining(`${outputPath}: disk unavailable`),
     );
@@ -160,9 +226,9 @@ describe('CorrelatedAlertRecorder', () => {
       }),
     });
 
-    recorder.record(createAlert({ id: 'one' }));
-    recorder.record(createAlert({ id: 'two' }));
-    recorder.record(createAlert({ id: 'three' }));
+    recorder.record(createAlert({ alertSequence: 1 }), createContext());
+    recorder.record(createAlert({ alertSequence: 2 }), createContext());
+    recorder.record(createAlert({ alertSequence: 3 }), createContext());
 
     expect(warn).toHaveBeenCalledTimes(1);
   });
@@ -185,13 +251,13 @@ describe('CorrelatedAlertRecorder', () => {
       warn: vi.fn(),
     });
 
-    recorder.record(createAlert({ id: 'first' }));
+    recorder.record(createAlert(), createContext());
     shouldFail = false;
-    recorder.record(createAlert({ id: 'second' }));
+    recorder.record(createAlert({ alertSequence: 2 }), createContext());
 
     expect(written.map((record) => record.alert.id)).toEqual([
-      'first',
-      'second',
+      'correlated-alert:test-session:1',
+      'correlated-alert:test-session:2',
     ]);
   });
 
@@ -228,7 +294,7 @@ describe('CorrelatedAlertRecorder', () => {
       writerFactory: () => writer,
     });
 
-    recorder.record(createAlert());
+    recorder.record(createAlert(), createContext());
 
     expect(persisted).toHaveLength(0);
 
@@ -248,7 +314,7 @@ describe('CorrelatedAlertRecorder', () => {
       }),
     });
 
-    expect(recorder.record(createAlert(), trace)).toEqual({
+    expect(recorder.record(createAlert(), createContext(), trace)).toEqual({
       persisted: true,
       fsynced: true,
     });

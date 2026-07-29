@@ -49,8 +49,16 @@ describe('correlated alert simulation', () => {
     expect(result.records).toHaveLength(2);
     expect(result.malformedRecordCount).toBe(0);
     expect(result.records.map((record) => record.schemaVersion)).toEqual([
-      1, 1,
+      2, 2,
     ]);
+    expect(
+      result.records.every(
+        (record) =>
+          record.schemaVersion === 2 &&
+          record.provenance === 'SIMULATION' &&
+          record.evaluationContext.referenceMidpoint === 100.5,
+      ),
+    ).toBe(true);
     expect(
       result.records.map(({ alert }) => ({
         symbol: alert.symbol,

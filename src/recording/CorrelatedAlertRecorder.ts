@@ -7,19 +7,49 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 
+import {
+  createCorrelatedAlertSemanticFingerprint,
+  hasVersionedAlertIdentity,
+  isValidCorrelatedAlertEvaluationContext,
+} from './correlatedAlertEvaluationContext';
 import { isSafeCorrelatedAlertOutputPath } from './correlatedAlertPath';
 import type { PerformanceTrace } from '../core/PerformanceTrace';
-import type { CorrelatedAlert } from '../types/correlatedAlert';
+import type {
+  CorrelatedAlert,
+  VersionedCorrelatedAlert,
+} from '../types/correlatedAlert';
+import type {
+  CorrelatedAlertEvaluationContext,
+  CorrelatedAlertProvenance,
+  CorrelatedAlertRecordContext,
+} from '../types/correlatedAlertEvaluation';
 
-export const CORRELATED_ALERT_SCHEMA_VERSION = 1 as const;
+export const LEGACY_CORRELATED_ALERT_SCHEMA_VERSION = 1 as const;
+export const CORRELATED_ALERT_SCHEMA_VERSION = 2 as const;
 export const DEFAULT_CORRELATED_ALERT_OUTPUT_PATH =
   'data/alerts/correlated-alerts.jsonl';
 
-export interface CorrelatedAlertRecord {
-  schemaVersion: typeof CORRELATED_ALERT_SCHEMA_VERSION;
+export interface CorrelatedAlertRecordV1 {
+  schemaVersion: typeof LEGACY_CORRELATED_ALERT_SCHEMA_VERSION;
+  /** UTC epoch milliseconds when this JSONL record was appended. */
   recordedAt: number;
   alert: CorrelatedAlert;
 }
+
+export interface CorrelatedAlertRecordV2 {
+  schemaVersion: typeof CORRELATED_ALERT_SCHEMA_VERSION;
+  /** UTC epoch milliseconds when this JSONL record was appended. */
+  recordedAt: number;
+  sourceSessionId: string;
+  alertSequence: number;
+  semanticFingerprint: string;
+  provenance: CorrelatedAlertProvenance;
+  alert: VersionedCorrelatedAlert;
+  evaluationContext: CorrelatedAlertEvaluationContext;
+}
+
+export type CorrelatedAlertRecord =
+  CorrelatedAlertRecordV1 | CorrelatedAlertRecordV2;
 
 export interface CorrelatedAlertRecordWriter {
   append(line: string, flush: boolean): CorrelatedAlertWriterTimings | void;
@@ -134,6 +164,7 @@ export class CorrelatedAlertRecorder {
 
   public record(
     alert: CorrelatedAlert,
+    context: CorrelatedAlertRecordContext,
     trace?: PerformanceTrace,
   ): CorrelatedAlertRecordResult {
     const result = { persisted: false, fsynced: false };
@@ -142,10 +173,50 @@ export class CorrelatedAlertRecorder {
       return result;
     }
 
-    const record: CorrelatedAlertRecord = {
+    if (
+      !hasVersionedAlertIdentity(alert) ||
+      !Number.isSafeInteger(alert.createdAt) ||
+      alert.createdAt < 0 ||
+      !isValidCorrelatedAlertEvaluationContext(context.evaluationContext) ||
+      context.evaluationContext.instId !== alert.symbol ||
+      (context.provenance !== 'LIVE' &&
+        context.provenance !== 'REPLAY' &&
+        context.provenance !== 'SIMULATION')
+    ) {
+      this.reportFailure(
+        new Error('invalid version 2 correlated alert evaluation context'),
+      );
+      return result;
+    }
+
+    const recordedAt = this.clock();
+
+    if (!Number.isSafeInteger(recordedAt) || recordedAt < 0) {
+      this.reportFailure(
+        new Error('invalid version 2 correlated alert recording timestamp'),
+      );
+      return result;
+    }
+
+    const evaluationContext: CorrelatedAlertEvaluationContext = {
+      ...context.evaluationContext,
+      sourceSignalIds:
+        context.evaluationContext.sourceSignalIds === undefined
+          ? undefined
+          : [...context.evaluationContext.sourceSignalIds],
+    };
+    const record: CorrelatedAlertRecordV2 = {
       schemaVersion: CORRELATED_ALERT_SCHEMA_VERSION,
-      recordedAt: this.clock(),
+      recordedAt,
+      sourceSessionId: alert.sourceSessionId,
+      alertSequence: alert.alertSequence,
+      semanticFingerprint: createCorrelatedAlertSemanticFingerprint(
+        alert,
+        evaluationContext,
+      ),
+      provenance: context.provenance,
       alert,
+      evaluationContext,
     };
 
     const serialize = (): string => `${JSON.stringify(record)}\n`;

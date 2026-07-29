@@ -5,6 +5,13 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { CorrelatedAlertLogReader } from '../src/recording/CorrelatedAlertLogReader';
+import {
+  CORRELATED_ALERT_SCHEMA_VERSION,
+  CorrelatedAlertRecorder,
+} from '../src/recording/CorrelatedAlertRecorder';
+import { createCorrelatedAlertSemanticFingerprint } from '../src/recording/correlatedAlertEvaluationContext';
+import type { VersionedCorrelatedAlert } from '../src/types/correlatedAlert';
+import type { CorrelatedAlertEvaluationContext } from '../src/types/correlatedAlertEvaluation';
 
 const createRecord = (id: string) => ({
   schemaVersion: 1,
@@ -25,6 +32,52 @@ const createRecord = (id: string) => ({
     createdAt: 1_000,
   },
 });
+
+const createVersionedAlert = (): VersionedCorrelatedAlert => ({
+  ...createRecord('unused').alert,
+  id: 'correlated-alert:test-session:1',
+  sourceSessionId: 'test-session',
+  alertSequence: 1,
+  alertImportance: 74,
+});
+
+const createEvaluationContext = (
+  overrides: Partial<CorrelatedAlertEvaluationContext> = {},
+): CorrelatedAlertEvaluationContext => ({
+  instId: 'BTC-USDT',
+  instType: 'SPOT',
+  okxBias: 'BULLISH',
+  externalBias: 'BULLISH',
+  sourceSignalTimestamp: 1_000,
+  sourceMarketTimestamp: 1_000,
+  referenceTimestamp: 1_000,
+  referenceMidpoint: 100.5,
+  referenceBestBid: 100,
+  referenceBestAsk: 101,
+  referenceSpread: 1,
+  referenceSpreadPercent: (1 / 100.5) * 100,
+  sourceSignalIds: ['signal-1'],
+  ...overrides,
+});
+
+const createVersionedRecord = () => {
+  const alert = createVersionedAlert();
+  const evaluationContext = createEvaluationContext();
+
+  return {
+    schemaVersion: CORRELATED_ALERT_SCHEMA_VERSION,
+    recordedAt: 1_001,
+    sourceSessionId: alert.sourceSessionId,
+    alertSequence: alert.alertSequence,
+    semanticFingerprint: createCorrelatedAlertSemanticFingerprint(
+      alert,
+      evaluationContext,
+    ),
+    provenance: 'LIVE',
+    alert,
+    evaluationContext,
+  };
+};
 
 describe('CorrelatedAlertLogReader', () => {
   let directory: string;
@@ -59,6 +112,64 @@ describe('CorrelatedAlertLogReader', () => {
 
     expect(result.records[0]?.alert.alertImportance).toBe(82);
     expect(result.malformedLines).toEqual([]);
+  });
+
+  it('parses a valid version 2 record', async () => {
+    writeFileSync(
+      filePath,
+      `${JSON.stringify(createVersionedRecord())}\n`,
+      'utf8',
+    );
+
+    const result = await new CorrelatedAlertLogReader().read(filePath);
+    const record = result.records[0];
+
+    expect(result.malformedLines).toEqual([]);
+    expect(record?.schemaVersion).toBe(2);
+    expect(
+      record?.schemaVersion === 2 ? record.evaluationContext.instType : null,
+    ).toBe('SPOT');
+  });
+
+  it('round trips a version 2 recorder record', async () => {
+    const recorder = new CorrelatedAlertRecorder({
+      outputPath: filePath,
+      clock: () => 1_001,
+    });
+
+    recorder.record(createVersionedAlert(), {
+      provenance: 'LIVE',
+      evaluationContext: createEvaluationContext(),
+    });
+    recorder.close();
+
+    const result = await new CorrelatedAlertLogReader().read(filePath);
+
+    expect(result.records).toHaveLength(1);
+    expect(result.malformedLines).toEqual([]);
+    expect(result.records[0]?.schemaVersion).toBe(2);
+  });
+
+  it('rejects malformed version 2 evaluation context', async () => {
+    const record = createVersionedRecord();
+    record.evaluationContext.referenceBestAsk = 99;
+    writeFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
+
+    const result = await new CorrelatedAlertLogReader().read(filePath);
+
+    expect(result.records).toEqual([]);
+    expect(result.malformedLines[0]?.message).toContain('evaluation context');
+  });
+
+  it('rejects a mismatched version 2 semantic fingerprint', async () => {
+    const record = createVersionedRecord();
+    record.semanticFingerprint = '0'.repeat(64);
+    writeFileSync(filePath, `${JSON.stringify(record)}\n`, 'utf8');
+
+    const result = await new CorrelatedAlertLogReader().read(filePath);
+
+    expect(result.records).toEqual([]);
+    expect(result.malformedLines[0]?.message).toContain('semantic fingerprint');
   });
 
   it('rejects invalid alert importance values', async () => {
