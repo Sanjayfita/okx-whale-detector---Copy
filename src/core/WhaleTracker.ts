@@ -87,12 +87,23 @@ interface TrackedWall {
   updateCount: number;
   lastPrice: number;
   seenScan: number;
+  insertionOrder: number;
+}
+
+interface DisappearedWall {
+  trackedWall: TrackedWall;
 }
 
 export class WhaleTracker {
-  private readonly trackedWalls = new Map<string, TrackedWall>();
+  private readonly trackedWalls: Readonly<
+    Record<WhaleSide, Map<number, TrackedWall>>
+  > = {
+    BID: new Map(),
+    ASK: new Map(),
+  };
   private readonly config: WhaleTrackerConfig;
   private nextWallId = 1;
+  private nextInsertionOrder = 1;
   private scanNumber = 0;
 
   public constructor(config: WhaleTrackerConfig = DEFAULT_CONFIG) {
@@ -106,169 +117,78 @@ export class WhaleTracker {
     const newWhales: Whale[] = [];
     const removedWhales: Whale[] = [];
     const movedWhales: WhaleChange[] = [];
-    let totalBidNotionalQuote = 0;
-    let totalAskNotionalQuote = 0;
+    const totalBidNotionalQuote = this.processSide(
+      'BID',
+      orderBook.bids,
+      now,
+      currentScan,
+      currentWhales,
+      newWhales,
+    );
+    const totalAskNotionalQuote = this.processSide(
+      'ASK',
+      orderBook.asks,
+      now,
+      currentScan,
+      currentWhales,
+      newWhales,
+    );
 
-    const processSide = (
-      side: WhaleSide,
-      levels: Map<number, OrderLevel>,
-    ): void => {
-      for (const level of levels.values()) {
-        if (level.notionalQuote < this.config.minimumNotionalQuote) {
+    const disappearedWalls = this.removeDisappearedWalls(currentScan);
+    let movedRemovedWhales: Set<Whale> | undefined;
+    let movedNewWhales: Set<Whale> | undefined;
+
+    if (disappearedWalls && newWhales.length > 0) {
+      movedRemovedWhales = new Set<Whale>();
+      movedNewWhales = new Set<Whale>();
+
+      for (const disappeared of disappearedWalls) {
+        const removed = disappeared.trackedWall.whale;
+        const moved = newWhales.find((candidate) => {
+          if (
+            movedNewWhales?.has(candidate) ||
+            candidate.side !== removed.side
+          ) {
+            return false;
+          }
+
+          const priceDifference = Math.abs(candidate.price - removed.price);
+          const sizeRatio = candidate.size / removed.size;
+
+          return (
+            priceDifference <= this.getMovementPriceTolerance(removed.price) &&
+            sizeRatio >= this.config.minimumMovementSizeRatio &&
+            sizeRatio <= this.config.maximumMovementSizeRatio
+          );
+        });
+
+        if (!moved) {
           continue;
         }
 
-        const key = this.createWallKey(side, level.price);
-        const existing = this.trackedWalls.get(key);
-
-        if (!existing) {
-          const whale = this.createWhale(side, level, now);
-          this.trackedWalls.set(key, {
-            whale,
-            firstSeenAt: now,
-            lastSeenAt: now,
-            initialNotionalQuote: level.notionalQuote,
-            maxNotionalQuote: level.notionalQuote,
-            updateCount: 1,
-            lastPrice: level.price,
-            seenScan: currentScan,
-          });
-          currentWhales.push(whale);
-          newWhales.push(whale);
-        } else {
-          existing.lastSeenAt = now;
-          existing.updateCount += 1;
-          existing.maxNotionalQuote = Math.max(
-            existing.maxNotionalQuote,
-            level.notionalQuote,
-          );
-          existing.lastPrice = level.price;
-          existing.seenScan = currentScan;
-
-          const ageSeconds = Math.floor((now - existing.firstSeenAt) / 1_000);
-          const whale: Whale = {
-            wallId: existing.whale.wallId,
-            side,
-            price: level.price,
-            size: level.size,
-            notionalQuote: level.notionalQuote,
-            quoteCurrency: level.quoteCurrency,
-            detectedAt: level.updatedAt,
-            firstSeenAt: existing.firstSeenAt,
-            lastSeenAt: existing.lastSeenAt,
-            ageSeconds,
-            updateCount: existing.updateCount,
-            maxNotionalQuote: existing.maxNotionalQuote,
-            strength: this.calculateStrength(level.notionalQuote, ageSeconds),
-          };
-
-          existing.whale = whale;
-          currentWhales.push(whale);
-        }
-
-        if (side === 'BID') {
-          totalBidNotionalQuote += level.notionalQuote;
-        } else {
-          totalAskNotionalQuote += level.notionalQuote;
-        }
-      }
-    };
-
-    processSide('BID', orderBook.bids);
-    processSide('ASK', orderBook.asks);
-
-    const disappearedWalls: Array<{
-      key: string;
-      trackedWall: TrackedWall;
-    }> = [];
-
-    for (const [key, trackedWall] of this.trackedWalls) {
-      if (trackedWall.seenScan === currentScan) {
-        continue;
-      }
-
-      disappearedWalls.push({ key, trackedWall });
-      this.trackedWalls.delete(key);
-    }
-
-    const movedRemovedWhales = new Set<Whale>();
-    const movedNewWhales = new Set<Whale>();
-
-    for (const disappeared of disappearedWalls) {
-      const removed = disappeared.trackedWall.whale;
-      const moved = newWhales.find((candidate) => {
-        if (movedNewWhales.has(candidate) || candidate.side !== removed.side) {
-          return false;
-        }
-
-        const priceDifference = Math.abs(candidate.price - removed.price);
-        const sizeRatio = candidate.size / removed.size;
-
-        return (
-          priceDifference <= this.getMovementPriceTolerance(removed.price) &&
-          sizeRatio >= this.config.minimumMovementSizeRatio &&
-          sizeRatio <= this.config.maximumMovementSizeRatio
+        this.restoreMovedWhale(
+          disappeared,
+          removed,
+          moved,
+          now,
+          currentScan,
+          movedWhales,
         );
-      });
-
-      if (!moved) {
-        continue;
+        movedRemovedWhales.add(removed);
+        movedNewWhales.add(moved);
       }
-
-      const oldTrackedWall = disappeared.trackedWall;
-      const movedKey = this.createWallKey(moved.side, moved.price);
-      const ageSeconds = Math.floor((now - oldTrackedWall.firstSeenAt) / 1_000);
-      const updateCount = oldTrackedWall.updateCount + 1;
-      const maxNotionalQuote = Math.max(
-        oldTrackedWall.maxNotionalQuote,
-        moved.notionalQuote,
-      );
-
-      Object.assign(moved, {
-        wallId: removed.wallId,
-        firstSeenAt: oldTrackedWall.firstSeenAt,
-        lastSeenAt: now,
-        ageSeconds,
-        updateCount,
-        maxNotionalQuote,
-        strength: this.calculateStrength(moved.notionalQuote, ageSeconds),
-      });
-
-      this.trackedWalls.set(movedKey, {
-        whale: moved,
-        firstSeenAt: oldTrackedWall.firstSeenAt,
-        lastSeenAt: now,
-        initialNotionalQuote: oldTrackedWall.initialNotionalQuote,
-        maxNotionalQuote,
-        updateCount,
-        lastPrice: moved.price,
-        seenScan: currentScan,
-      });
-      movedRemovedWhales.add(removed);
-      movedNewWhales.add(moved);
-      movedWhales.push({
-        wallId: removed.wallId,
-        type: 'MOVED',
-        side: removed.side,
-        price: moved.price,
-        previousPrice: removed.price,
-        previousSize: removed.size,
-        currentSize: moved.size,
-        sizeDifference: moved.size - removed.size,
-        previousNotionalQuote: removed.notionalQuote,
-        currentNotionalQuote: moved.notionalQuote,
-        timestamp: now,
-      });
     }
 
-    const finalNewWhales = newWhales.filter(
-      (whale) => !movedNewWhales.has(whale),
-    );
+    const finalNewWhales = movedNewWhales
+      ? newWhales.filter((whale) => !movedNewWhales.has(whale))
+      : newWhales;
 
-    for (const disappeared of disappearedWalls) {
-      const removed = disappeared.trackedWall.whale;
-      if (!movedRemovedWhales.has(removed)) {
-        removedWhales.push(removed);
+    if (disappearedWalls) {
+      for (const disappeared of disappearedWalls) {
+        const removed = disappeared.trackedWall.whale;
+        if (!movedRemovedWhales?.has(removed)) {
+          removedWhales.push(removed);
+        }
       }
     }
 
@@ -304,7 +224,7 @@ export class WhaleTracker {
 
     return {
       active: currentWhales,
-      trackedWalls: this.trackedWalls.size,
+      trackedWalls: this.trackedWalls.BID.size + this.trackedWalls.ASK.size,
       newWalls: finalNewWhales.length,
       persistentWalls,
       strongWalls,
@@ -319,15 +239,171 @@ export class WhaleTracker {
   }
 
   public getTrackedWalls(): Whale[] {
-    return [...this.trackedWalls.values()].map(
-      (trackedWall) => trackedWall.whale,
-    );
+    return [
+      ...this.trackedWalls.BID.values(),
+      ...this.trackedWalls.ASK.values(),
+    ]
+      .sort((left, right) => left.insertionOrder - right.insertionOrder)
+      .map((trackedWall) => trackedWall.whale);
   }
 
   public reset(): void {
-    this.trackedWalls.clear();
+    this.trackedWalls.BID.clear();
+    this.trackedWalls.ASK.clear();
     this.nextWallId = 1;
+    this.nextInsertionOrder = 1;
     this.scanNumber = 0;
+  }
+
+  private processSide(
+    side: WhaleSide,
+    levels: Map<number, OrderLevel>,
+    now: number,
+    currentScan: number,
+    currentWhales: Whale[],
+    newWhales: Whale[],
+  ): number {
+    const trackedWalls = this.trackedWalls[side];
+    let totalNotionalQuote = 0;
+
+    for (const level of levels.values()) {
+      if (level.notionalQuote < this.config.minimumNotionalQuote) {
+        continue;
+      }
+
+      const existing = trackedWalls.get(level.price);
+
+      if (!existing) {
+        const whale = this.createWhale(side, level, now);
+        trackedWalls.set(level.price, {
+          whale,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          initialNotionalQuote: level.notionalQuote,
+          maxNotionalQuote: level.notionalQuote,
+          updateCount: 1,
+          lastPrice: level.price,
+          seenScan: currentScan,
+          insertionOrder: this.nextInsertionOrder,
+        });
+        this.nextInsertionOrder += 1;
+        currentWhales.push(whale);
+        newWhales.push(whale);
+      } else {
+        existing.lastSeenAt = now;
+        existing.updateCount += 1;
+        existing.maxNotionalQuote = Math.max(
+          existing.maxNotionalQuote,
+          level.notionalQuote,
+        );
+        existing.lastPrice = level.price;
+        existing.seenScan = currentScan;
+
+        const ageSeconds = Math.floor((now - existing.firstSeenAt) / 1_000);
+        const whale: Whale = {
+          wallId: existing.whale.wallId,
+          side,
+          price: level.price,
+          size: level.size,
+          notionalQuote: level.notionalQuote,
+          quoteCurrency: level.quoteCurrency,
+          detectedAt: level.updatedAt,
+          firstSeenAt: existing.firstSeenAt,
+          lastSeenAt: existing.lastSeenAt,
+          ageSeconds,
+          updateCount: existing.updateCount,
+          maxNotionalQuote: existing.maxNotionalQuote,
+          strength: this.calculateStrength(level.notionalQuote, ageSeconds),
+        };
+
+        existing.whale = whale;
+        currentWhales.push(whale);
+      }
+
+      totalNotionalQuote += level.notionalQuote;
+    }
+
+    return totalNotionalQuote;
+  }
+
+  private removeDisappearedWalls(
+    currentScan: number,
+  ): DisappearedWall[] | undefined {
+    let disappearedWalls: DisappearedWall[] | undefined;
+
+    for (const side of ['BID', 'ASK'] as const) {
+      const trackedWalls = this.trackedWalls[side];
+
+      for (const [price, trackedWall] of trackedWalls) {
+        if (trackedWall.seenScan === currentScan) {
+          continue;
+        }
+
+        (disappearedWalls ??= []).push({ trackedWall });
+        trackedWalls.delete(price);
+      }
+    }
+
+    disappearedWalls?.sort(
+      (left, right) =>
+        left.trackedWall.insertionOrder - right.trackedWall.insertionOrder,
+    );
+
+    return disappearedWalls;
+  }
+
+  private restoreMovedWhale(
+    disappeared: DisappearedWall,
+    removed: Whale,
+    moved: Whale,
+    now: number,
+    currentScan: number,
+    movedWhales: WhaleChange[],
+  ): void {
+    const oldTrackedWall = disappeared.trackedWall;
+    const movedTrackedWall = this.trackedWalls[moved.side].get(moved.price);
+    const ageSeconds = Math.floor((now - oldTrackedWall.firstSeenAt) / 1_000);
+    const updateCount = oldTrackedWall.updateCount + 1;
+    const maxNotionalQuote = Math.max(
+      oldTrackedWall.maxNotionalQuote,
+      moved.notionalQuote,
+    );
+
+    Object.assign(moved, {
+      wallId: removed.wallId,
+      firstSeenAt: oldTrackedWall.firstSeenAt,
+      lastSeenAt: now,
+      ageSeconds,
+      updateCount,
+      maxNotionalQuote,
+      strength: this.calculateStrength(moved.notionalQuote, ageSeconds),
+    });
+
+    this.trackedWalls[moved.side].set(moved.price, {
+      whale: moved,
+      firstSeenAt: oldTrackedWall.firstSeenAt,
+      lastSeenAt: now,
+      initialNotionalQuote: oldTrackedWall.initialNotionalQuote,
+      maxNotionalQuote,
+      updateCount,
+      lastPrice: moved.price,
+      seenScan: currentScan,
+      insertionOrder:
+        movedTrackedWall?.insertionOrder ?? oldTrackedWall.insertionOrder,
+    });
+    movedWhales.push({
+      wallId: removed.wallId,
+      type: 'MOVED',
+      side: removed.side,
+      price: moved.price,
+      previousPrice: removed.price,
+      previousSize: removed.size,
+      currentSize: moved.size,
+      sizeDifference: moved.size - removed.size,
+      previousNotionalQuote: removed.notionalQuote,
+      currentNotionalQuote: moved.notionalQuote,
+      timestamp: now,
+    });
   }
 
   private createWhale(side: WhaleSide, level: OrderLevel, now: number): Whale {
@@ -352,10 +428,6 @@ export class WhaleTracker {
     const wallId = `wall-${this.nextWallId}`;
     this.nextWallId += 1;
     return wallId;
-  }
-
-  private createWallKey(side: WhaleSide, price: number): string {
-    return `${side}:${price}`;
   }
 
   private calculateStrength(notionalQuote: number, ageSeconds: number): number {
