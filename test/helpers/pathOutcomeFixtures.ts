@@ -24,6 +24,9 @@ interface PathMarketOptions {
   includeGap?: boolean;
   conflictingCandle?: boolean;
   omitCandleStart?: number;
+  candleHigh?: number;
+  candleLow?: number;
+  candleClose?: number;
   bookSamples?: readonly {
     offsetMs: number;
     bid: number;
@@ -159,9 +162,9 @@ export const createPathMarketLines = (
         instId: 'BTC-USDT',
         timestamp: intervalStart,
         open: 100.5,
-        high: minute === 0 ? 104 : 103,
-        low: minute === 0 ? 98 : 99,
-        close: 102,
+        high: options.candleHigh ?? (minute === 0 ? 104 : 103),
+        low: options.candleLow ?? (minute === 0 ? 98 : 99),
+        close: options.candleClose ?? 102,
         volume: 10,
         volumeCurrency: 1_000,
         volumeCurrencyQuote: 1_000,

@@ -14,8 +14,9 @@ import { AlertPathOutcomeReader } from '../recording/AlertPathOutcomeReader';
 import { AlertPathOutcomeRecorder } from '../recording/AlertPathOutcomeRecorder';
 import { runPathOutcomeInspectorCli } from './inspectAlertPathOutcomes';
 
-const REFERENCE = Date.UTC(2026, 6, 29, 12);
-const NOW = REFERENCE + 7_200_000;
+export const PATH_OUTCOME_SIMULATION_REFERENCE = Date.UTC(2026, 6, 29, 12);
+export const PATH_OUTCOME_SIMULATION_NOW =
+  PATH_OUTCOME_SIMULATION_REFERENCE + 7_200_000;
 const SESSION = 'path-outcome-simulation';
 const RECORDING = 'market-recording:path-outcome-simulation:1';
 
@@ -24,7 +25,7 @@ export interface PathOutcomeSimulationDependencies {
   error?: (...values: unknown[]) => void;
 }
 
-const createAlert = (
+export const createPathOutcomeSimulationAlert = (
   sequence: number,
   okxBias: 'BULLISH' | 'BEARISH',
   externalBias: 'BULLISH' | 'BEARISH',
@@ -32,7 +33,7 @@ const createAlert = (
   const relationship = okxBias === externalBias ? 'AGREEMENT' : 'CONTRADICTION';
   return {
     schemaVersion: 2,
-    recordedAt: REFERENCE + sequence,
+    recordedAt: PATH_OUTCOME_SIMULATION_REFERENCE + sequence,
     sourceSessionId: SESSION,
     alertSequence: sequence,
     semanticFingerprint: sequence.toString(16).padStart(64, '0'),
@@ -53,16 +54,16 @@ const createAlert = (
       externalSignalsUsed: 1,
       ignoredExternalSignals: 0,
       reason: 'deterministic path-outcome simulation',
-      createdAt: REFERENCE,
+      createdAt: PATH_OUTCOME_SIMULATION_REFERENCE,
     },
     evaluationContext: {
       instId: 'BTC-USDT',
       instType: 'SPOT',
       okxBias,
       externalBias,
-      sourceSignalTimestamp: REFERENCE,
-      sourceMarketTimestamp: REFERENCE,
-      referenceTimestamp: REFERENCE,
+      sourceSignalTimestamp: PATH_OUTCOME_SIMULATION_REFERENCE,
+      sourceMarketTimestamp: PATH_OUTCOME_SIMULATION_REFERENCE,
+      referenceTimestamp: PATH_OUTCOME_SIMULATION_REFERENCE,
       referenceMidpoint: 100.5,
       referenceBestBid: 100,
       referenceBestAsk: 101,
@@ -73,20 +74,20 @@ const createAlert = (
   };
 };
 
-const marketLines = (): string[] => {
+export const createPathOutcomeSimulationMarketLines = (): string[] => {
   const data: unknown[] = [];
   let seqId = 10;
   let bid = 100;
   let ask = 101;
   data.push({
     type: 'orderBook',
-    recordedAt: REFERENCE,
+    recordedAt: PATH_OUTCOME_SIMULATION_REFERENCE,
     update: {
       instId: 'BTC-USDT',
       action: 'snapshot',
       bids: [['100', '2', '0', '1']],
       asks: [['101', '3', '0', '1']],
-      timestamp: REFERENCE,
+      timestamp: PATH_OUTCOME_SIMULATION_REFERENCE,
       seqId,
       prevSeqId: -1,
     },
@@ -105,7 +106,7 @@ const marketLines = (): string[] => {
     seqId += 1;
     data.push({
       type: 'orderBook',
-      recordedAt: REFERENCE + offset,
+      recordedAt: PATH_OUTCOME_SIMULATION_REFERENCE + offset,
       update: {
         instId: 'BTC-USDT',
         action: 'update',
@@ -117,7 +118,7 @@ const marketLines = (): string[] => {
           [String(ask), '0', '0', '1'],
           [String(nextAsk), '3', '0', '1'],
         ],
-        timestamp: REFERENCE + offset,
+        timestamp: PATH_OUTCOME_SIMULATION_REFERENCE + offset,
         seqId,
         prevSeqId: previous,
       },
@@ -126,7 +127,7 @@ const marketLines = (): string[] => {
     ask = nextAsk;
   }
   for (let minute = 0; minute < 60; minute += 1) {
-    const start = REFERENCE + minute * 60_000;
+    const start = PATH_OUTCOME_SIMULATION_REFERENCE + minute * 60_000;
     data.push({
       type: 'candle',
       recordedAt: start + 60_000,
@@ -153,10 +154,10 @@ const marketLines = (): string[] => {
   const header = {
     recordType: 'header',
     schemaVersion: 1,
-    recordedAt: REFERENCE - 1_000,
+    recordedAt: PATH_OUTCOME_SIMULATION_REFERENCE - 1_000,
     sourceSessionId: SESSION,
     recordingId: RECORDING,
-    startedAt: REFERENCE - 1_000,
+    startedAt: PATH_OUTCOME_SIMULATION_REFERENCE - 1_000,
     producer: { name: 'path-simulation', version: '1' },
     clockBasis: {
       eventTime: 'UTC_EPOCH_MS',
@@ -180,10 +181,10 @@ const marketLines = (): string[] => {
   const footer = {
     recordType: 'sessionEnd',
     schemaVersion: 1,
-    recordedAt: REFERENCE + 3_600_000,
+    recordedAt: PATH_OUTCOME_SIMULATION_REFERENCE + 3_600_000,
     sourceSessionId: SESSION,
     recordingId: RECORDING,
-    endedAt: REFERENCE + 3_600_000,
+    endedAt: PATH_OUTCOME_SIMULATION_REFERENCE + 3_600_000,
     status: 'CLEAN',
     counts: {
       instrumentRecords: 0,
@@ -209,31 +210,31 @@ export const simulateAlertPathOutcomes = async (
   try {
     const configuration = createAlertAlignmentEvaluationConfiguration();
     const marketRecording = prepareAlertAlignmentMarketRecording(
-      marketLines(),
-      { configuration, now: NOW },
+      createPathOutcomeSimulationMarketLines(),
+      { configuration, now: PATH_OUTCOME_SIMULATION_NOW },
     );
     const evaluations = generateAlertAlignmentEvaluations({
       alerts: [
-        createAlert(1, 'BULLISH', 'BULLISH'),
-        createAlert(2, 'BEARISH', 'BEARISH'),
-        createAlert(3, 'BULLISH', 'BEARISH'),
+        createPathOutcomeSimulationAlert(1, 'BULLISH', 'BULLISH'),
+        createPathOutcomeSimulationAlert(2, 'BEARISH', 'BEARISH'),
+        createPathOutcomeSimulationAlert(3, 'BULLISH', 'BEARISH'),
       ],
       marketRecording,
       configuration,
       evaluationRunId: 'evaluation-run:path-simulation',
-      now: NOW,
+      now: PATH_OUTCOME_SIMULATION_NOW,
     });
     const terminalReturns = generateTerminalReturnRecords({
       evaluations,
       outcomeRunId: 'terminal-return-run:path-simulation',
-      now: NOW,
+      now: PATH_OUTCOME_SIMULATION_NOW,
     });
     const records = generatePathOutcomeRecords({
       evaluations,
       terminalReturns,
       marketRecording,
       pathOutcomeRunId: 'path-outcome-run:deterministic-simulation',
-      now: NOW,
+      now: PATH_OUTCOME_SIMULATION_NOW,
     });
     const recorder = new AlertPathOutcomeRecorder(outputPath);
     try {
