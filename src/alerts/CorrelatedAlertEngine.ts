@@ -1,6 +1,5 @@
-import { randomUUID } from 'node:crypto';
-
 import type { CorrelatedMarketSignal } from '../external/core/ExternalSignalCorrelationEngine';
+import { isValidRuntimeSessionId } from '../runtime/runtimeSession';
 import type {
   CorrelatedAlertEventType,
   CorrelatedAlertSeverity,
@@ -9,6 +8,7 @@ import type {
 import type { MarketEvaluation } from '../types/marketEvaluation';
 
 export interface CorrelatedAlertEngineOptions {
+  sourceSessionId: string;
   enabled?: boolean;
   minimumAgreementAlertImportance?: number;
   minimumContradictionAlertImportance?: number;
@@ -18,7 +18,6 @@ export interface CorrelatedAlertEngineOptions {
   cooldownMs?: number;
   confidenceChangeThreshold?: number;
   clock?: () => number;
-  sourceSessionId?: string;
   initialAlertSequence?: number;
 }
 
@@ -70,11 +69,11 @@ export class CorrelatedAlertEngine {
   private readonly cooldownMs: number;
   private readonly confidenceChangeThreshold: number;
   private readonly clock: () => number;
-  private readonly sourceSessionId: string;
+  public readonly sourceSessionId: string;
   private readonly states = new Map<string, CorrelatedAlertState>();
   private nextAlertSequence: number;
 
-  public constructor(options: CorrelatedAlertEngineOptions = {}) {
+  public constructor(options: CorrelatedAlertEngineOptions) {
     this.enabled = options.enabled ?? DEFAULT_OPTIONS.enabled;
     this.minimumAgreementAlertImportance =
       options.minimumAgreementAlertImportance ??
@@ -97,7 +96,7 @@ export class CorrelatedAlertEngine {
       options.confidenceChangeThreshold ??
       DEFAULT_OPTIONS.confidenceChangeThreshold;
     this.clock = options.clock ?? Date.now;
-    this.sourceSessionId = options.sourceSessionId ?? randomUUID();
+    this.sourceSessionId = options.sourceSessionId;
     this.nextAlertSequence = (options.initialAlertSequence ?? 0) + 1;
 
     this.validateOptions();
@@ -323,10 +322,7 @@ export class CorrelatedAlertEngine {
       );
     }
 
-    if (
-      this.sourceSessionId.length === 0 ||
-      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(this.sourceSessionId)
-    ) {
+    if (!isValidRuntimeSessionId(this.sourceSessionId)) {
       throw new Error(
         'sourceSessionId must contain 1-128 URL-safe identifier characters',
       );

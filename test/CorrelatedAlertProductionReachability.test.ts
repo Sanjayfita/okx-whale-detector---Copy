@@ -57,7 +57,10 @@ describe('production correlated alert reachability', () => {
       confidence: 100,
     });
     expect(
-      new CorrelatedAlertEngine({ clock: () => 2_000 }).evaluate({
+      new CorrelatedAlertEngine({
+        clock: () => 2_000,
+        sourceSessionId: 'production-reachability-test',
+      }).evaluate({
         marketSignal,
         correlatedSignal,
       }),
@@ -82,7 +85,10 @@ describe('production correlated alert reachability', () => {
       alertImportance: 100,
     });
     expect(
-      new CorrelatedAlertEngine({ clock: () => 2_000 }).evaluate({
+      new CorrelatedAlertEngine({
+        clock: () => 2_000,
+        sourceSessionId: 'production-reachability-test',
+      }).evaluate({
         marketSignal,
         correlatedSignal,
       }),
@@ -96,7 +102,10 @@ describe('production correlated alert reachability', () => {
 
   it('does not emit weak agreement or weak contradiction', () => {
     const correlationEngine = new ExternalSignalCorrelationEngine();
-    const alertEngine = new CorrelatedAlertEngine({ clock: () => 2_000 });
+    const alertEngine = new CorrelatedAlertEngine({
+      clock: () => 2_000,
+      sourceSessionId: 'production-reachability-test',
+    });
     const weakAgreementMarket = createMarketSignal('BULLISH', 20);
     const weakAgreement = correlationEngine.correlate(
       'BTC-USDT',
@@ -136,7 +145,10 @@ describe('production correlated alert reachability', () => {
 
   it('keeps OKX-only, filtered-external, and external-only results suppressed', () => {
     const correlationEngine = new ExternalSignalCorrelationEngine();
-    const alertEngine = new CorrelatedAlertEngine({ clock: () => 2_000 });
+    const alertEngine = new CorrelatedAlertEngine({
+      clock: () => 2_000,
+      sourceSessionId: 'production-reachability-test',
+    });
     const strongMarket = createMarketSignal('BULLISH', 100);
     const neutralMarket = createMarketSignal('NEUTRAL', 0);
     const cases = [
@@ -190,7 +202,10 @@ describe('production correlated alert reachability', () => {
       );
 
       expect(
-        new CorrelatedAlertEngine({ clock: () => 2_000 }).evaluate({
+        new CorrelatedAlertEngine({
+          clock: () => 2_000,
+          sourceSessionId: 'production-reachability-test',
+        }).evaluate({
           marketSignal,
           correlatedSignal,
         }),

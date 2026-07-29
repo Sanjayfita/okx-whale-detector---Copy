@@ -39,13 +39,31 @@ import { PolymarketLiveSignalRuntime } from './external/providers/polymarket/Pol
 import { MarketDataRecorder } from './recording/MarketDataRecorder';
 import { CorrelatedAlertRecorder } from './recording/CorrelatedAlertRecorder';
 import { CorrelatedAlertReporter } from './reporting/CorrelatedAlertReporter';
+import {
+  AppShutdownCoordinator,
+  type AppShutdownReason,
+} from './runtime/AppShutdownCoordinator';
+import { createRuntimeSessionId } from './runtime/runtimeSession';
+import type { MarketInstrumentConfig } from './types/instrument';
+
+const ORDER_BOOK_CHANNEL = 'books';
+const CANDLE_INTERVAL = '1m';
+
+export type { AppShutdownReason } from './runtime/AppShutdownCoordinator';
 
 export interface AppRuntimeDependencies {
+  sourceSessionId?: string;
+  runtimeSessionIdFactory?: () => string;
   externalSignalCorrelationService?: ExternalSignalCorrelationService;
   correlatedAlertEngine?: CorrelatedAlertEngine;
   correlatedAlertReporter?: CorrelatedAlertReporter;
   correlatedAlertRecorder?: CorrelatedAlertRecorder;
   polymarketRuntime?: PolymarketLiveSignalRuntime;
+  marketDataRecorderFactory?: (
+    directory: string,
+    instruments: readonly MarketInstrumentConfig[],
+    options: ConstructorParameters<typeof MarketDataRecorder>[2],
+  ) => MarketDataRecorder;
 }
 
 export const createAppRuntime = async (
@@ -54,10 +72,40 @@ export const createAppRuntime = async (
   externalSignalCorrelationService: ExternalSignalCorrelationService;
   correlatedAlertEngine: CorrelatedAlertEngine;
   correlatedAlertRecorder: CorrelatedAlertRecorder;
+  sourceSessionId: string;
+  marketDataRecorder?: MarketDataRecorder;
   marketEngine: MarketEngine;
   polymarketRuntime: PolymarketLiveSignalRuntime;
-  shutdown: (signal: NodeJS.Signals) => void;
+  shutdown: (signal: AppShutdownReason) => Promise<void>;
 }> => {
+  const runtimeStartedAt = Date.now();
+  let sourceSessionId: string;
+
+  if (dependencies.sourceSessionId !== undefined) {
+    sourceSessionId = createRuntimeSessionId(
+      () => dependencies.sourceSessionId as string,
+    );
+  } else if (dependencies.runtimeSessionIdFactory !== undefined) {
+    sourceSessionId = createRuntimeSessionId(
+      dependencies.runtimeSessionIdFactory,
+    );
+  } else if (dependencies.correlatedAlertEngine !== undefined) {
+    sourceSessionId = createRuntimeSessionId(
+      () => dependencies.correlatedAlertEngine?.sourceSessionId as string,
+    );
+  } else {
+    sourceSessionId = createRuntimeSessionId();
+  }
+
+  if (
+    dependencies.correlatedAlertEngine !== undefined &&
+    dependencies.correlatedAlertEngine.sourceSessionId !== sourceSessionId
+  ) {
+    throw new Error(
+      'Injected correlated alert engine sourceSessionId does not match the application runtime',
+    );
+  }
+
   validateAppConfig(appConfig);
   validateHealthConfig(healthConfig);
   validateMarketDiscoveryConfig(marketDiscoveryConfig);
@@ -119,8 +167,26 @@ export const createAppRuntime = async (
   const activeInstruments = activeProfiles.map((profile) =>
     requireInstrument(profile.symbol),
   );
+  const marketDataRecorderOptions: ConstructorParameters<
+    typeof MarketDataRecorder
+  >[2] = {
+    sourceSessionId,
+    startedAt: runtimeStartedAt,
+    orderBookChannel: ORDER_BOOK_CHANNEL,
+    orderBookDepth: appConfig.history.orderBookLevelLimit,
+    candleIntervals: [CANDLE_INTERVAL],
+  };
   const recorder = recordingConfig.enabled
-    ? new MarketDataRecorder(recordingConfig.directory, activeInstruments)
+    ? (dependencies.marketDataRecorderFactory?.(
+        recordingConfig.directory,
+        activeInstruments,
+        marketDataRecorderOptions,
+      ) ??
+      new MarketDataRecorder(
+        recordingConfig.directory,
+        activeInstruments,
+        marketDataRecorderOptions,
+      ))
     : undefined;
   const externalSignalCorrelationService =
     dependencies.externalSignalCorrelationService ??
@@ -143,7 +209,9 @@ export const createAppRuntime = async (
       cooldownMs: appConfig.correlatedAlerts.cooldownSeconds * 1_000,
       confidenceChangeThreshold:
         appConfig.correlatedAlerts.confidenceChangeThreshold,
+      sourceSessionId,
     });
+
   const correlatedAlertRecorder =
     dependencies.correlatedAlertRecorder ??
     new CorrelatedAlertRecorder({
@@ -197,11 +265,16 @@ export const createAppRuntime = async (
     Date.now(),
     pipelineProfiler,
   );
+  let isShuttingDown = false;
 
   const subscriptionManager = new SubscriptionManager({
     maximumSymbolsPerConnection: subscriptionConfig.maximumSymbolsPerConnection,
     profiler: pipelineProfiler,
     onOrderBook: (update, messagePerformance) => {
+      if (isShuttingDown) {
+        return;
+      }
+
       if (recorder) {
         const startedAt = performance.now();
         recorder.recordOrderBook(update);
@@ -217,9 +290,13 @@ export const createAppRuntime = async (
       marketEngine.processOrderBookUpdate(update, messagePerformance);
     },
     onCandle: (candle) => {
+      if (isShuttingDown) {
+        return;
+      }
+
       if (recorder) {
         const startedAt = performance.now();
-        recorder.recordCandle(candle);
+        recorder.recordCandle(candle, CANDLE_INTERVAL);
         pipelineProfiler.record(
           'recording.raw.candle',
           performance.now() - startedAt,
@@ -274,32 +351,39 @@ export const createAppRuntime = async (
     console.log(`Recording order-book and candle data to ${recorder.filePath}`);
   }
 
-  let isShuttingDown = false;
+  const shutdownCoordinator = new AppShutdownCoordinator({
+    beforeClose: (signal) => {
+      isShuttingDown = true;
+      console.log(`Received ${signal}; closing OKX connections.`);
+    },
+    stopPolymarket: () => polymarketRuntime.stop(),
+    stopHealthMonitor: () => healthMonitor.stop(),
+    stopThroughputMonitor: () => throughputMonitor.stop(),
+    closeSubscriptions: () => subscriptionManager.close(),
+    closeAlertRecorder: () => correlatedAlertRecorder.close(),
+    closeMarketRecorder:
+      recorder === undefined ? undefined : (signal) => recorder.close(signal),
+  });
 
-  const shutdown = (signal: NodeJS.Signals): void => {
-    if (isShuttingDown) {
-      return;
-    }
+  const shutdown = (signal: AppShutdownReason): Promise<void> =>
+    shutdownCoordinator.shutdown(signal);
 
-    isShuttingDown = true;
-
-    console.log(`Received ${signal}; closing OKX connections.`);
-
-    polymarketRuntime.stop();
-    healthMonitor.stop();
-    throughputMonitor.stop();
-    recorder?.close();
-    subscriptionManager.close();
-    correlatedAlertRecorder.close();
+  const handleSignal = (signal: NodeJS.Signals): void => {
+    void shutdown(signal).catch((error: unknown) => {
+      console.error('Graceful shutdown failed:', error);
+      process.exitCode = 1;
+    });
   };
 
-  process.once('SIGINT', () => shutdown('SIGINT'));
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => handleSignal('SIGINT'));
+  process.once('SIGTERM', () => handleSignal('SIGTERM'));
 
   return {
     externalSignalCorrelationService,
     correlatedAlertEngine,
     correlatedAlertRecorder,
+    sourceSessionId,
+    marketDataRecorder: recorder,
     marketEngine,
     polymarketRuntime,
     shutdown,

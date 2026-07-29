@@ -13,8 +13,9 @@ export type CorrelatedAlertEventType =
 export interface CorrelatedAlert {
   id: string;
   /**
-   * Present on alerts emitted by the version 2 alert pipeline. Legacy
-   * schemaVersion 1 records do not contain durable session identity.
+   * Identity of the application runtime that produced related alert and market
+   * recordings. Present on alerts emitted by the version 2 alert pipeline.
+   * Legacy schemaVersion 1 records do not contain durable session identity.
    */
   sourceSessionId?: string;
   alertSequence?: number;

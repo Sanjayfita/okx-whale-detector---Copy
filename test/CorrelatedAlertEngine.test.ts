@@ -48,7 +48,7 @@ const createEvaluation = (
 };
 
 const createHarness = (
-  options: CorrelatedAlertEngineOptions = {},
+  options: Partial<CorrelatedAlertEngineOptions> = {},
 ): {
   engine: CorrelatedAlertEngine;
   advance: (milliseconds: number) => void;
@@ -58,6 +58,7 @@ const createHarness = (
   return {
     engine: new CorrelatedAlertEngine({
       clock: () => now,
+      sourceSessionId: 'test-alert-session',
       ...options,
     }),
     advance: (milliseconds) => {
@@ -330,13 +331,16 @@ describe('CorrelatedAlertEngine', () => {
     );
   });
 
-  it('generates different IDs for independent default sessions', () => {
-    const first = createHarness();
-    const second = createHarness();
+  it('does not generate a second identity when a runtime session is injected', () => {
+    const { engine } = createHarness({
+      sourceSessionId: 'shared-application-runtime',
+    });
 
-    expect(first.engine.evaluate(createEvaluation())?.id).not.toBe(
-      second.engine.evaluate(createEvaluation())?.id,
-    );
+    expect(engine.sourceSessionId).toBe('shared-application-runtime');
+    expect(engine.evaluate(createEvaluation())).toMatchObject({
+      id: 'correlated-alert:shared-application-runtime:1',
+      sourceSessionId: 'shared-application-runtime',
+    });
   });
 
   it('uses the existing correlated result without recalculating it', () => {

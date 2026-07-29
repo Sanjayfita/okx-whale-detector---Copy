@@ -513,6 +513,7 @@ describe('MarketEngine', () => {
       .mockReturnValue(evaluation);
     const alertEngine = new CorrelatedAlertEngine({
       clock: () => Date.now(),
+      sourceSessionId: 'market-engine-test',
     });
     const evaluateSpy = vi.spyOn(alertEngine, 'evaluate');
     const alertReporter = new CorrelatedAlertReporter();
@@ -609,7 +610,7 @@ describe('MarketEngine', () => {
       undefined,
       undefined,
       correlationService,
-      new CorrelatedAlertEngine(),
+      new CorrelatedAlertEngine({ sourceSessionId: 'market-engine-test' }),
       undefined,
       alertRecorder,
     );
@@ -645,7 +646,10 @@ describe('MarketEngine', () => {
       undefined,
       undefined,
       correlationService,
-      new CorrelatedAlertEngine({ enabled: false }),
+      new CorrelatedAlertEngine({
+        enabled: false,
+        sourceSessionId: 'market-engine-test',
+      }),
       undefined,
       alertRecorder,
     );
@@ -679,7 +683,7 @@ describe('MarketEngine', () => {
       undefined,
       undefined,
       correlationService,
-      new CorrelatedAlertEngine(),
+      new CorrelatedAlertEngine({ sourceSessionId: 'market-engine-test' }),
       undefined,
       alertRecorder,
     );

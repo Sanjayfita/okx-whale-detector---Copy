@@ -18,7 +18,7 @@ import {
   writeReplayReport,
   type ReplaySymbolStats,
 } from '../recording/replayReport';
-import { parseRecordingRecord } from '../recording/recordingValidation';
+import { MarketRecordingParser } from '../recording/recordingValidation';
 import type { MarketInstrumentConfig } from '../types/instrument';
 
 const wait = async (milliseconds: number): Promise<void> => {
@@ -29,8 +29,10 @@ const wait = async (milliseconds: number): Promise<void> => {
   await new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 };
 
-const replay = async (): Promise<void> => {
-  const options = parseReplayOptions(process.argv.slice(2));
+export const replayRecording = async (
+  args: readonly string[],
+): Promise<void> => {
+  const options = parseReplayOptions(args);
   const instruments = new Map<string, MarketInstrumentConfig>();
   const marketStates = new Map<string, MarketState>();
   const symbolStats = new Map<string, ReplaySymbolStats>();
@@ -56,32 +58,47 @@ const replay = async (): Promise<void> => {
     input: createReadStream(options.filePath, { encoding: 'utf8' }),
     crlfDelay: Number.POSITIVE_INFINITY,
   });
+  const recordingParser = new MarketRecordingParser();
+  const initializeInstrument = (instrument: MarketInstrumentConfig): void => {
+    if (options.symbol && instrument.instId !== options.symbol) {
+      return;
+    }
+
+    instruments.set(instrument.instId, instrument);
+    marketStates.set(
+      instrument.instId,
+      new MarketState(resolveSymbolConfig(instrument.instId), instrument),
+    );
+    symbolStats.set(instrument.instId, {
+      orderBookUpdates: 0,
+      candleUpdates: 0,
+      finalActiveWhales: 0,
+    });
+  };
 
   for await (const line of input) {
     if (line.trim().length === 0) {
       continue;
     }
 
-    const record = parseRecordingRecord(line);
+    const record = recordingParser.parseLine(line);
+
+    if ('recordType' in record) {
+      if (record.recordType === 'header') {
+        for (const instrument of record.instruments) {
+          initializeInstrument(instrument);
+        }
+      }
+
+      continue;
+    }
 
     if (record.type === 'instrument') {
-      if (options.symbol && record.instrument.instId !== options.symbol) {
+      if (instruments.has(record.instrument.instId)) {
         continue;
       }
 
-      instruments.set(record.instrument.instId, record.instrument);
-      marketStates.set(
-        record.instrument.instId,
-        new MarketState(
-          resolveSymbolConfig(record.instrument.instId),
-          record.instrument,
-        ),
-      );
-      symbolStats.set(record.instrument.instId, {
-        orderBookUpdates: 0,
-        candleUpdates: 0,
-        finalActiveWhales: 0,
-      });
+      initializeInstrument(record.instrument);
       continue;
     }
 
@@ -122,6 +139,8 @@ const replay = async (): Promise<void> => {
       stats.candleUpdates += 1;
     }
   }
+
+  recordingParser.finish();
 
   if (options.symbol && !instruments.has(options.symbol)) {
     throw new Error(`Recording does not contain instrument ${options.symbol}`);
@@ -172,7 +191,9 @@ const replay = async (): Promise<void> => {
   }
 };
 
-void replay().catch((error: unknown) => {
-  console.error('Replay failed:', error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  void replayRecording(process.argv.slice(2)).catch((error: unknown) => {
+    console.error('Replay failed:', error);
+    process.exitCode = 1;
+  });
+}
