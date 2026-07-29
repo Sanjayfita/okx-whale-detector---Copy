@@ -181,11 +181,7 @@ export class MarketReporter {
     const lines = performanceRecorder
       ? performanceRecorder.measure('summary.formatting', format)
       : format();
-    const emit = (): void => {
-      for (const line of lines) {
-        this.logger(line);
-      }
-    };
+    const emit = (): void => this.logger(lines.join('\n'));
 
     if (performanceRecorder) {
       performanceRecorder.measure('summary.consoleEmission', emit);
@@ -194,7 +190,7 @@ export class MarketReporter {
     }
   }
 
-  private formatSummary(input: MarketSummaryInput): string[] {
+  protected formatSummary(input: MarketSummaryInput): string[] {
     const lines: string[] = [];
     const { aggregates } = input;
 

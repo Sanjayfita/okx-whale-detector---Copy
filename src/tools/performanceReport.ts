@@ -1,3 +1,6 @@
+import { Console } from 'node:console';
+import { Writable } from 'node:stream';
+
 import type { OKXOrderBookUpdate } from '../clients/okx/OKXWebSocketClient';
 import { appConfig } from '../config/appConfig';
 import { performanceConfig } from '../config/performanceConfig';
@@ -35,6 +38,25 @@ export interface FormattingBenchmarkResult {
   readonly p95Ms: number;
 }
 
+export interface SummaryEmissionBenchmarkMetric {
+  readonly samples: number;
+  readonly p50Ms: number;
+  readonly p95Ms: number;
+  readonly p99Ms: number;
+  readonly maximumMs: number;
+}
+
+export interface SummaryEmissionBenchmarkResult {
+  readonly scoredWhales: number;
+  readonly logger: 'buffered' | 'captured-console';
+  readonly legacyCalls: number;
+  readonly blockCalls: number;
+  readonly legacyBytes: number;
+  readonly blockBytes: number;
+  readonly legacy: SummaryEmissionBenchmarkMetric;
+  readonly block: SummaryEmissionBenchmarkMetric;
+}
+
 const SYMBOLS = ['PERF-A-USDT', 'PERF-B-USDT', 'PERF-C-USDT'] as const;
 const DEPTH = 100;
 const FORMATTING_BENCHMARK_COUNTS = [0, 10, 100, 200] as const;
@@ -50,6 +72,25 @@ class SilentMarketReporter extends MarketReporter {
   public override reportMovedWhale(): void {}
   public override reportWhaleScore(): void {}
   public override reportSummary(): void {}
+}
+
+class BenchmarkMarketReporter extends MarketReporter {
+  public getSummaryLines(input: MarketSummaryInput): readonly string[] {
+    return this.formatSummary(input);
+  }
+}
+
+class CapturedConsoleStream extends Writable {
+  public emittedBytes = 0;
+
+  public override _write(
+    chunk: Buffer | string,
+    _encoding: BufferEncoding,
+    callback: (error?: Error | null) => void,
+  ): void {
+    this.emittedBytes += Buffer.byteLength(chunk);
+    callback();
+  }
 }
 
 const level = (price: number, size: number): OrderBookLevel => [
@@ -183,6 +224,137 @@ export const runFormattingBenchmark =
         p95Ms: formatting.p95Ms,
       };
     });
+  };
+
+const percentile = (sorted: readonly number[], quantile: number): number => {
+  const index = Math.max(0, Math.ceil(sorted.length * quantile) - 1);
+
+  return sorted[index] ?? 0;
+};
+
+const summarizeEmission = (
+  samples: readonly number[],
+): SummaryEmissionBenchmarkMetric => {
+  const sorted = [...samples].sort((left, right) => left - right);
+
+  return {
+    samples: samples.length,
+    p50Ms: percentile(sorted, 0.5),
+    p95Ms: percentile(sorted, 0.95),
+    p99Ms: percentile(sorted, 0.99),
+    maximumMs: sorted[sorted.length - 1] ?? 0,
+  };
+};
+
+const createEmissionLogger = (
+  logger: SummaryEmissionBenchmarkResult['logger'],
+): {
+  emit: (message: string) => void;
+  getCalls: () => number;
+  getEmittedBytes: () => number;
+} => {
+  let calls = 0;
+
+  if (logger === 'buffered') {
+    let emittedBytes = 0;
+
+    return {
+      emit: (message) => {
+        calls += 1;
+        emittedBytes += Buffer.byteLength(message) + 1;
+      },
+      getCalls: () => calls,
+      getEmittedBytes: () => emittedBytes,
+    };
+  }
+
+  const stream = new CapturedConsoleStream();
+  const capturedConsole = new Console({
+    stdout: stream,
+    stderr: stream,
+    colorMode: false,
+  });
+
+  return {
+    emit: (message) => {
+      calls += 1;
+      capturedConsole.log(message);
+    },
+    getCalls: () => calls,
+    getEmittedBytes: () => stream.emittedBytes,
+  };
+};
+
+const benchmarkEmission = (
+  operation: (emit: (message: string) => void) => void,
+  logger: SummaryEmissionBenchmarkResult['logger'],
+): {
+  callsPerSummary: number;
+  bytesPerSummary: number;
+  metric: SummaryEmissionBenchmarkMetric;
+} => {
+  const sink = createEmissionLogger(logger);
+
+  for (let sample = 0; sample < FORMATTING_BENCHMARK_WARMUPS; sample += 1) {
+    operation(sink.emit);
+  }
+
+  const callsAfterWarmup = sink.getCalls();
+  const bytesAfterWarmup = sink.getEmittedBytes();
+  const samples: number[] = [];
+
+  for (let sample = 0; sample < FORMATTING_BENCHMARK_SAMPLES; sample += 1) {
+    const startedAt = performance.now();
+
+    operation(sink.emit);
+    samples.push(performance.now() - startedAt);
+  }
+
+  return {
+    callsPerSummary:
+      (sink.getCalls() - callsAfterWarmup) / FORMATTING_BENCHMARK_SAMPLES,
+    bytesPerSummary:
+      (sink.getEmittedBytes() - bytesAfterWarmup) /
+      FORMATTING_BENCHMARK_SAMPLES,
+    metric: summarizeEmission(samples),
+  };
+};
+
+export const runSummaryEmissionBenchmark =
+  (): readonly SummaryEmissionBenchmarkResult[] => {
+    const reporter = new BenchmarkMarketReporter(() => undefined);
+    const results: SummaryEmissionBenchmarkResult[] = [];
+
+    for (const scoredWhales of FORMATTING_BENCHMARK_COUNTS) {
+      const lines = reporter.getSummaryLines(
+        formattingBenchmarkInput(scoredWhales),
+      );
+
+      for (const logger of ['buffered', 'captured-console'] as const) {
+        const legacy = benchmarkEmission((emit) => {
+          for (const line of lines) {
+            emit(line);
+          }
+        }, logger);
+        const block = benchmarkEmission(
+          (emit) => emit(lines.join('\n')),
+          logger,
+        );
+
+        results.push({
+          scoredWhales,
+          logger,
+          legacyCalls: legacy.callsPerSummary,
+          blockCalls: block.callsPerSummary,
+          legacyBytes: legacy.bytesPerSummary,
+          blockBytes: block.bytesPerSummary,
+          legacy: legacy.metric,
+          block: block.metric,
+        });
+      }
+    }
+
+    return results;
   };
 
 const snapshot = (symbol: string, basePrice: number): OKXOrderBookUpdate => ({
@@ -417,6 +589,7 @@ export const runPerformanceReport = async (
       Math.max(baseline.throughput, 0.001)) *
     100;
   const formattingBenchmark = runFormattingBenchmark();
+  const emissionBenchmark = runSummaryEmissionBenchmark();
 
   console.log('\nLIVE PERFORMANCE ATTRIBUTION REPORT');
   console.log(
@@ -438,6 +611,21 @@ export const runPerformanceReport = async (
       `  scoredWhales=${result.scoredWhales.toString().padStart(3)} ` +
         `n=${result.samples} median=${result.medianMs.toFixed(4)}ms ` +
         `p95=${result.p95Ms.toFixed(4)}ms`,
+    );
+  }
+  console.log('\nSUMMARY EMISSION BENCHMARK');
+  for (const result of emissionBenchmark) {
+    console.log(
+      `  scoredWhales=${result.scoredWhales.toString().padStart(3)} ` +
+        `logger=${result.logger.padEnd(16)} ` +
+        `calls=${result.legacyCalls}->${result.blockCalls} ` +
+        `bytes=${result.legacyBytes}=${result.blockBytes} ` +
+        `legacy:p50=${result.legacy.p50Ms.toFixed(4)}ms/` +
+        `p95=${result.legacy.p95Ms.toFixed(4)}ms/` +
+        `p99=${result.legacy.p99Ms.toFixed(4)}ms ` +
+        `block:p50=${result.block.p50Ms.toFixed(4)}ms/` +
+        `p95=${result.block.p95Ms.toFixed(4)}ms/` +
+        `p99=${result.block.p99Ms.toFixed(4)}ms`,
     );
   }
   console.log(

@@ -315,6 +315,46 @@ describe('MarketReporter', () => {
     );
   });
 
+  it.each([0, 10, 100, 200])(
+    'emits one summary block for %i scored whales',
+    (scoredWhaleCount) => {
+      const logger = vi.fn();
+      const reporter = new MarketReporter(logger);
+      const scoredWhales = Array.from(
+        { length: scoredWhaleCount },
+        (_, index) => ({
+          whale: createWhale({
+            wallId: `wall-${index}`,
+            price: 100 + index / 100,
+          }),
+          totalScore: 75,
+          strength: 'STRONG' as const,
+          components: {
+            sizeScore: 25,
+            distanceScore: 20,
+            persistenceScore: 15,
+            stabilityScore: 15,
+          },
+          explanation: [],
+        }),
+      );
+
+      reporter.reportSummary({
+        ...createNeutralSummary('BTC-USDT', 100.5, 100, 101),
+        scoredWhales,
+      });
+
+      expect(logger).toHaveBeenCalledTimes(1);
+
+      const output = String(logger.mock.calls[0]?.[0]);
+      const scoreLines = output
+        .split('\n')
+        .filter((line) => line.includes('WHALE SCORE:'));
+
+      expect(scoreLines).toHaveLength(scoredWhaleCount);
+    },
+  );
+
   it('records prepared-summary formatting under the existing stage name', () => {
     const reporter = new MarketReporter(() => undefined);
     const profiler = new PipelineProfiler();
@@ -348,9 +388,7 @@ describe('MarketReporter', () => {
       },
     });
 
-    const output = logSpy.mock.calls.map((call) => String(call[0]));
-
-    expect(output).toEqual([
+    const legacyLines = [
       '\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
       '📡 BTC-USDT',
       '💵 Best Bid: 100 | Best Ask: 101',
@@ -370,7 +408,15 @@ describe('MarketReporter', () => {
       '🟢 BID PRESSURE: 0.0%',
       '🔴 ASK PRESSURE: 0.0%',
       '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n',
-    ]);
+    ];
+    const output = String(logSpy.mock.calls[0]?.[0]);
+    const legacyVisibleOutput = legacyLines.map((line) => `${line}\n`).join('');
+
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    expect(output).toBe(legacyLines.join('\n'));
+    expect(`${output}\n`).toBe(legacyVisibleOutput);
+    expect(output.endsWith('\n')).toBe(true);
+    expect(`${output}\n`.endsWith('\n\n')).toBe(true);
   });
 
   it('reports unavailable bid and ask prices as N/A', () => {
@@ -399,6 +445,8 @@ describe('MarketReporter', () => {
     expect(output).toContain('⚪ NEUTRAL');
 
     expect(output).toContain('No active whale walls');
+    expect(output).not.toContain('CORRELATED INTELLIGENCE');
+    expect(logSpy).toHaveBeenCalledTimes(1);
   });
 
   it('prints agreement directional confidence and alert importance', () => {
@@ -447,6 +495,7 @@ describe('MarketReporter', () => {
     expect(output).toContain('Alert Importance: 51.0%');
     expect(output).toContain('External signals used: 1');
     expect(output).toContain('Ignored external signals: 2');
+    expect(logSpy).toHaveBeenCalledTimes(1);
   });
 
   it('prints a contradiction section with reduced confidence', () => {
@@ -495,6 +544,26 @@ describe('MarketReporter', () => {
     expect(output).toContain(
       'Contradiction warning: alert importance measures source disagreement, not directional certainty.',
     );
+    expect(logSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('propagates logger errors while retaining attribution stage names', () => {
+    const loggerError = new Error('logger failed');
+    const profiler = new PipelineProfiler();
+    const reporter = new MarketReporter(() => {
+      throw loggerError;
+    });
+
+    expect(() =>
+      reporter.reportSummary(
+        createNeutralSummary('BTC-USDT', 100.5, 100, 101),
+        profiler,
+      ),
+    ).toThrow(loggerError);
+
+    expect(profiler.getRecentStage('summary.formatting')?.count).toBe(1);
+    expect(profiler.getRecentStage('summary.consoleEmission')?.count).toBe(1);
+    expect(profiler.getStageCount()).toBe(2);
   });
 
   it('prints external-only context when no OKX bias is present', () => {
