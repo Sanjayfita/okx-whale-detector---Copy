@@ -531,7 +531,7 @@ export const validateObservationEligibility = (
   }
 
   const maximumArrivalTimestamp =
-    targetResult.value +
+    request.observation.eventTimestamp +
     request.configuration.localArrivalAllowanceMs +
     request.configuration.allowedClockSkewMs;
   if (
