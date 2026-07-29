@@ -14,3 +14,6 @@ export * from './orderBookAlignment';
 export * from './orderBookNormalization';
 export * from './orderBookObservationIndex';
 export * from './orderBookReconstructor';
+export * from './terminalReturn';
+export * from './terminalReturnGenerator';
+export * from './terminalReturnValidation';
