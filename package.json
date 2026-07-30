@@ -46,6 +46,7 @@
     "alerts:simulate:quality": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedReport.js",
     "alerts:simulate:quality-comparison": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedComparison.js",
     "alerts:simulate:quality-trend": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedTrend.js",
+    "alerts:simulate:quality-trend-persistence": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedTrendPersistence.js",
     "external:demo": "tsx src/tools/demoExternalSignals.ts",
     "polymarket:scan": "tsx src/tools/scanPolymarketWhales.ts",
     "polymarket:live": "tsx src/tools/watchPolymarketWhales.ts",
