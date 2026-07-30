@@ -10,6 +10,7 @@ export * from './alertQualityReport';
 export * from './alertQualityStatistics';
 export * from './alertQualityTargetStopAggregator';
 export * from './alertQualityTerminalReturnAggregator';
+export * from './alertQualityUnifiedReport';
 export * from './canonicalJson';
 export * from './candleAlignment';
 export * from './candleNormalization';
