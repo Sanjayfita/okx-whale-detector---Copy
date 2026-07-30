@@ -41,6 +41,11 @@ const assertNonNegativeSafeInteger = (name: string, value: unknown): void => {
   }
 };
 
+const normalizedDimensions = (value: unknown): string => {
+  if (!Array.isArray(value)) return canonicalJsonStringify(value);
+  return canonicalJsonStringify([...value].sort());
+};
+
 const assertSection = (
   name: string,
   section: unknown,
@@ -53,13 +58,27 @@ const assertSection = (
   if (section.generatedAt !== report.generatedAt) {
     throw new Error(`${name}.generatedAt must match the unified report`);
   }
-  if (canonicalJsonStringify(section.groupingDimensions) !== canonicalJsonStringify(report.groupingDimensions)) {
+  if (
+    normalizedDimensions(section.groupingDimensions) !==
+    normalizedDimensions(report.groupingDimensions)
+  ) {
     throw new Error(`${name}.groupingDimensions must match the unified report`);
   }
-  assertNonNegativeSafeInteger(`${name}.inputRecordCount`, section.inputRecordCount);
-  assertNonNegativeSafeInteger(`${name}.uniqueCellCount`, section.uniqueCellCount);
-  assertNonNegativeSafeInteger(`${name}.exactDuplicateCellCount`, section.exactDuplicateCellCount);
-  if (!Array.isArray(section.groups)) throw new Error(`${name}.groups must be an array`);
+  assertNonNegativeSafeInteger(
+    `${name}.inputRecordCount`,
+    section.inputRecordCount,
+  );
+  assertNonNegativeSafeInteger(
+    `${name}.uniqueCellCount`,
+    section.uniqueCellCount,
+  );
+  assertNonNegativeSafeInteger(
+    `${name}.exactDuplicateCellCount`,
+    section.exactDuplicateCellCount,
+  );
+  if (!Array.isArray(section.groups)) {
+    throw new Error(`${name}.groups must be an array`);
+  }
 };
 
 export const validateAlertQualityUnifiedReport = (
@@ -69,10 +88,15 @@ export const validateAlertQualityUnifiedReport = (
   if (value.schemaVersion !== ALERT_QUALITY_UNIFIED_REPORT_SCHEMA_VERSION) {
     throw new Error('Unsupported unified report schema version');
   }
-  if (value.generatorVersion !== ALERT_QUALITY_UNIFIED_REPORT_GENERATOR_VERSION) {
+  if (
+    value.generatorVersion !== ALERT_QUALITY_UNIFIED_REPORT_GENERATOR_VERSION
+  ) {
     throw new Error('Unsupported unified report generator version');
   }
-  if (typeof value.reportRunId !== 'string' || !IDENTIFIER_PATTERN.test(value.reportRunId)) {
+  if (
+    typeof value.reportRunId !== 'string' ||
+    !IDENTIFIER_PATTERN.test(value.reportRunId)
+  ) {
     throw new Error('reportRunId must be a valid durable identifier');
   }
   assertNonNegativeSafeInteger('generatedAt', value.generatedAt);
@@ -83,15 +107,29 @@ export const validateAlertQualityUnifiedReport = (
   if (new Set(dimensions).size !== dimensions.length) {
     throw new Error('groupingDimensions must be unique');
   }
-  if (dimensions.some((dimension) => typeof dimension !== 'string' || !GROUP_DIMENSIONS.has(dimension))) {
+  if (
+    dimensions.some(
+      (dimension) =>
+        typeof dimension !== 'string' || !GROUP_DIMENSIONS.has(dimension),
+    )
+  ) {
     throw new Error('groupingDimensions contains an unsupported dimension');
   }
   if (!isRecord(value.inputRecordCounts)) {
     throw new Error('inputRecordCounts must be an object');
   }
-  assertNonNegativeSafeInteger('inputRecordCounts.terminalReturn', value.inputRecordCounts.terminalReturn);
-  assertNonNegativeSafeInteger('inputRecordCounts.pathOutcome', value.inputRecordCounts.pathOutcome);
-  assertNonNegativeSafeInteger('inputRecordCounts.targetStop', value.inputRecordCounts.targetStop);
+  assertNonNegativeSafeInteger(
+    'inputRecordCounts.terminalReturn',
+    value.inputRecordCounts.terminalReturn,
+  );
+  assertNonNegativeSafeInteger(
+    'inputRecordCounts.pathOutcome',
+    value.inputRecordCounts.pathOutcome,
+  );
+  assertNonNegativeSafeInteger(
+    'inputRecordCounts.targetStop',
+    value.inputRecordCounts.targetStop,
+  );
 
   assertSection('terminalReturn', value.terminalReturn, value);
   assertSection('pathOutcome', value.pathOutcome, value);
@@ -100,7 +138,9 @@ export const validateAlertQualityUnifiedReport = (
   const terminalReturn = value.terminalReturn as Record<string, unknown>;
   const pathOutcome = value.pathOutcome as Record<string, unknown>;
   const targetStop = value.targetStop as Record<string, unknown>;
-  if (terminalReturn.inputRecordCount !== value.inputRecordCounts.terminalReturn) {
+  if (
+    terminalReturn.inputRecordCount !== value.inputRecordCounts.terminalReturn
+  ) {
     throw new Error('terminalReturn input count mismatch');
   }
   if (pathOutcome.inputRecordCount !== value.inputRecordCounts.pathOutcome) {
@@ -113,7 +153,10 @@ export const validateAlertQualityUnifiedReport = (
 };
 
 const reportIdentity = (report: AlertQualityUnifiedReport): string =>
-  canonicalJsonStringify({ reportRunId: report.reportRunId, generatedAt: report.generatedAt });
+  canonicalJsonStringify({
+    reportRunId: report.reportRunId,
+    generatedAt: report.generatedAt,
+  });
 
 export const serializeAlertQualityUnifiedReport = (
   report: AlertQualityUnifiedReport,
@@ -136,23 +179,31 @@ export const serializeAlertQualityUnifiedReports = (
     }
     unique.set(identity, material);
   }
-  return [...unique.entries()]
+  const serialized = [...unique.entries()]
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([, material]) => material)
-    .join('\n') + (unique.size > 0 ? '\n' : '');
+    .join('\n');
+  return serialized.length > 0 ? `${serialized}\n` : '';
 };
 
 export const writeAlertQualityUnifiedReports = async (
   filePath: string,
   reports: readonly AlertQualityUnifiedReport[],
 ): Promise<void> => {
-  await writeFile(filePath, serializeAlertQualityUnifiedReports(reports), 'utf8');
+  await writeFile(
+    filePath,
+    serializeAlertQualityUnifiedReports(reports),
+    'utf8',
+  );
 };
 
 export const readAlertQualityUnifiedReportsFromText = (
   text: string,
 ): AlertQualityUnifiedReportReadResult => {
-  const reports = new Map<string, { material: string; report: AlertQualityUnifiedReport }>();
+  const reports = new Map<
+    string,
+    { material: string; report: AlertQualityUnifiedReport }
+  >();
   const issues: AlertQualityUnifiedReportReadIssue[] = [];
   let exactDuplicateCount = 0;
   const lines = text.split(/\r?\n/);
@@ -170,7 +221,10 @@ export const readAlertQualityUnifiedReportsFromText = (
       });
       return;
     }
-    if (isRecord(parsed) && parsed.schemaVersion !== ALERT_QUALITY_UNIFIED_REPORT_SCHEMA_VERSION) {
+    if (
+      isRecord(parsed) &&
+      parsed.schemaVersion !== ALERT_QUALITY_UNIFIED_REPORT_SCHEMA_VERSION
+    ) {
       issues.push({
         lineNumber: index + 1,
         reason: 'UNSUPPORTED_SCHEMA_VERSION',
@@ -204,7 +258,9 @@ export const readAlertQualityUnifiedReportsFromText = (
   return {
     reports: Object.freeze(
       [...reports.values()]
-        .sort((left, right) => reportIdentity(left.report).localeCompare(reportIdentity(right.report)))
+        .sort((left, right) =>
+          reportIdentity(left.report).localeCompare(reportIdentity(right.report)),
+        )
         .map(({ report }) => report),
     ),
     exactDuplicateCount,
