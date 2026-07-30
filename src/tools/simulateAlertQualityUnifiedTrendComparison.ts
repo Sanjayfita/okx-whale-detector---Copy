@@ -98,18 +98,25 @@ export const simulateAlertQualityUnifiedTrendComparison = async (
     const baselineReports = createWindow('trend-comparison-baseline', 0);
     const candidateReports = createWindow('trend-comparison-candidate', 10);
     const findObserved = (reports: AlertQualityUnifiedReport[]) => {
-      const first = reports[0]!.terminalReturn.groups.find((group) => group.coverage.eligibleRate !== null)!;
-      return reports.map((report) =>
-        report.terminalReturn.groups.find((group) => group.groupKey === first.groupKey)!,
+      const first = reports[0]!.terminalReturn.groups.find(
+        (group) => group.coverage.eligibleRate !== null,
+      )!;
+      return reports.map(
+        (report) =>
+          report.terminalReturn.groups.find((group) => group.groupKey === first.groupKey)!,
       );
     };
     const baselineGroups = findObserved(baselineReports);
     const candidateGroups = findObserved(candidateReports);
-    const baselineStart = baselineGroups[0]!.coverage.eligibleRate!;
-    baselineGroups[1]!.coverage.eligibleRate = Math.max(0, baselineStart - 0.01);
-    baselineGroups[2]!.coverage.eligibleRate = Math.max(0, baselineStart - 0.02);
-    candidateGroups[1]!.coverage.eligibleRate = Math.max(0, baselineStart - 0.01);
-    candidateGroups[2]!.coverage.eligibleRate = Math.min(1, baselineStart + 0.01);
+
+    // Use values below 1 so clamping cannot turn the candidate window into an
+    // unchanged trend when the fixture's original eligible rate is already 1.
+    baselineGroups[0]!.coverage.eligibleRate = 0.8;
+    baselineGroups[1]!.coverage.eligibleRate = 0.7;
+    baselineGroups[2]!.coverage.eligibleRate = 0.6;
+    candidateGroups[0]!.coverage.eligibleRate = 0.6;
+    candidateGroups[1]!.coverage.eligibleRate = 0.7;
+    candidateGroups[2]!.coverage.eligibleRate = 0.8;
 
     const baselineTrend = buildAlertQualityUnifiedTrend(baselineReports);
     const candidateTrend = buildAlertQualityUnifiedTrend(candidateReports);
@@ -139,7 +146,10 @@ export const simulateAlertQualityUnifiedTrendComparison = async (
     const expectedErrors: string[] = [];
     const incompatibleCode = await runAlertQualityTrendComparisonCli(
       ['--baseline', baselinePath, '--candidate', incompatiblePath],
-      { log: () => undefined, error: (...values) => expectedErrors.push(values.map(String).join(' ')) },
+      {
+        log: () => undefined,
+        error: (...values) => expectedErrors.push(values.map(String).join(' ')),
+      },
     );
     const incompatibilityRejected =
       incompatibleCode === 1 &&
