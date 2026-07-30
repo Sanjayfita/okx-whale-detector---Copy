@@ -58,7 +58,8 @@ $simulationScripts = @(
     "alerts:simulate:alignment",
     "alerts:simulate:returns",
     "alerts:simulate:paths",
-    "alerts:simulate:targets"
+    "alerts:simulate:targets",
+    "alerts:simulate:quality"
 )
 
 foreach ($simulationScript in $simulationScripts) {
