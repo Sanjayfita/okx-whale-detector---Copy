@@ -5,6 +5,7 @@ export * from './alignmentValidation';
 export * from './alertAlignmentEvaluation';
 export * from './alertAlignmentEvaluationGenerator';
 export * from './alertAlignmentEvaluationValidation';
+export * from './alertQualityPathOutcomeAggregator';
 export * from './alertQualityReport';
 export * from './alertQualityStatistics';
 export * from './alertQualityTerminalReturnAggregator';
