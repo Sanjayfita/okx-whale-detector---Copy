@@ -7,6 +7,9 @@ import {
   type AlertQualityUnifiedReport,
 } from '../src/evaluation';
 
+const supplied = <T>(object: object, key: PropertyKey, fallback: T, value: T | undefined): T =>
+  Object.prototype.hasOwnProperty.call(object, key) ? (value as T) : fallback;
+
 const group = (overrides: {
   groupKey?: string;
   sampleCount?: number;
@@ -29,9 +32,9 @@ const group = (overrides: {
       missingCellCount: 0,
       partialCellCount: 0,
       invalidCellCount: 0,
-      eligibleRate: overrides.eligibleRate ?? 0.9,
+      eligibleRate: supplied(overrides, 'eligibleRate', 0.9, overrides.eligibleRate),
       ineligibleRate: 0.05,
-      ambiguityRate: overrides.ambiguityRate ?? 0.05,
+      ambiguityRate: supplied(overrides, 'ambiguityRate', 0.05, overrides.ambiguityRate),
       missingRate: 0,
       partialRate: 0,
       invalidRate: 0,
@@ -42,8 +45,8 @@ const group = (overrides: {
       externalDirectionalReturnPercent: statistics(),
       okxExecutableDirectionalReturnPercent: statistics({
         observationCount: overrides.sampleCount ?? 50,
-        positiveRate: overrides.winRate ?? 0.6,
-        mean: overrides.expectancy ?? 0.2,
+        positiveRate: supplied(overrides, 'winRate', 0.6, overrides.winRate),
+        mean: supplied(overrides, 'expectancy', 0.2, overrides.expectancy),
       }),
       externalExecutableDirectionalReturnPercent: statistics(),
     },
@@ -54,13 +57,13 @@ const statistics = (
 ) => ({
   observationCount: overrides.observationCount ?? 50,
   sum: 10,
-  mean: overrides.mean ?? 0.2,
+  mean: supplied(overrides, 'mean', 0.2, overrides.mean),
   minimum: -1,
   maximum: 1,
   positiveCount: 30,
   negativeCount: 20,
   zeroCount: 0,
-  positiveRate: overrides.positiveRate ?? 0.6,
+  positiveRate: supplied(overrides, 'positiveRate', 0.6, overrides.positiveRate),
 });
 
 const report = (groups: AlertQualityTerminalReturnGroup[]): AlertQualityUnifiedReport =>
