@@ -7,6 +7,7 @@ export * from './alertAlignmentEvaluationGenerator';
 export * from './alertAlignmentEvaluationValidation';
 export * from './alertQualityReport';
 export * from './alertQualityStatistics';
+export * from './alertQualityTerminalReturnAggregator';
 export * from './canonicalJson';
 export * from './candleAlignment';
 export * from './candleNormalization';
