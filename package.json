@@ -41,6 +41,7 @@
     "alerts:summary:quality": "npm run build --silent && node dist/tools/summarizeAlertQualityUnifiedReports.js",
     "alerts:compare:quality": "npm run build --silent && node dist/tools/compareAlertQualityUnifiedReports.js",
     "alerts:trend:quality": "npm run build --silent && node dist/tools/summarizeAlertQualityUnifiedTrend.js",
+    "alerts:inspect:quality-trend": "npm run build --silent && node dist/tools/inspectAlertQualityUnifiedTrends.js",
     "alerts:simulate:quality": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedReport.js",
     "alerts:simulate:quality-comparison": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedComparison.js",
     "alerts:simulate:quality-trend": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedTrend.js",
