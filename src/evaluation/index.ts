@@ -10,6 +10,7 @@ export * from './alertQualityReport';
 export * from './alertQualityStatistics';
 export * from './alertQualityTargetStopAggregator';
 export * from './alertQualityTerminalReturnAggregator';
+export * from './alertQualityThresholdPolicy';
 export * from './alertQualityUnifiedComparison';
 export * from './alertQualityUnifiedReport';
 export * from './alertQualityUnifiedReporter';
