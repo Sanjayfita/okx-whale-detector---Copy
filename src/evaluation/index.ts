@@ -14,6 +14,7 @@ export * from './alertQualityUnifiedComparison';
 export * from './alertQualityUnifiedReport';
 export * from './alertQualityUnifiedReporter';
 export * from './alertQualityUnifiedReportPersistence';
+export * from './alertQualityUnifiedTrend';
 export * from './canonicalJson';
 export * from './candleAlignment';
 export * from './candleNormalization';
