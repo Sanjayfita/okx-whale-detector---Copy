@@ -61,13 +61,15 @@ describe('alert-quality unified comparison', () => {
     const { baseline, candidate } = createReports();
     const terminal = candidate.terminalReturn.groups[0]!;
     const path = candidate.pathOutcome.groups[0]!;
-    const target = candidate.targetStop.groups[0]!;
+    const target = candidate.targetStop.groups.find(
+      (group) => group.statistics.stopFirstRateAmongResolved !== null,
+    )!;
 
     terminal.coverage.eligibleRate = (terminal.coverage.eligibleRate ?? 0) + 0.1;
     path.metrics.executableOkx.adverseExcursionPercent.mean =
       (path.metrics.executableOkx.adverseExcursionPercent.mean ?? 1) - 0.1;
     target.statistics.stopFirstRateAmongResolved =
-      (target.statistics.stopFirstRateAmongResolved ?? 0) + 0.1;
+      target.statistics.stopFirstRateAmongResolved! + 0.1;
 
     const comparison = compareAlertQualityUnifiedReports(baseline, candidate);
     expect(
