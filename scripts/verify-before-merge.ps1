@@ -61,7 +61,8 @@ $simulationScripts = @(
     "alerts:simulate:targets",
     "alerts:simulate:quality",
     "alerts:simulate:quality-comparison",
-    "alerts:simulate:quality-trend"
+    "alerts:simulate:quality-trend",
+    "alerts:simulate:quality-trend-persistence"
 )
 
 foreach ($simulationScript in $simulationScripts) {
