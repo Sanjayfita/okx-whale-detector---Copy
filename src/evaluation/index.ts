@@ -11,6 +11,7 @@ export * from './alertQualityStatistics';
 export * from './alertQualityTargetStopAggregator';
 export * from './alertQualityTerminalReturnAggregator';
 export * from './alertQualityUnifiedReport';
+export * from './alertQualityUnifiedReporter';
 export * from './alertQualityUnifiedReportPersistence';
 export * from './canonicalJson';
 export * from './candleAlignment';
