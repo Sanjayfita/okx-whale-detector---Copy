@@ -36,6 +36,8 @@
     "alerts:evaluate:targets": "npm run build --silent && node dist/tools/generateAlertTargetStopOutcomes.js",
     "alerts:inspect:targets": "npm run build --silent && node dist/tools/inspectAlertTargetStopOutcomes.js",
     "alerts:simulate:targets": "npm run build --silent && node dist/tools/simulateAlertTargetStopOutcomes.js",
+    "alerts:report:quality": "npm run build --silent && node dist/tools/generateAlertQualityUnifiedReport.js",
+    "alerts:inspect:quality": "npm run build --silent && node dist/tools/inspectAlertQualityUnifiedReports.js",
     "external:demo": "tsx src/tools/demoExternalSignals.ts",
     "polymarket:scan": "tsx src/tools/scanPolymarketWhales.ts",
     "polymarket:live": "tsx src/tools/watchPolymarketWhales.ts",
