@@ -39,6 +39,7 @@
     "alerts:report:quality": "npm run build --silent && node dist/tools/generateAlertQualityUnifiedReport.js",
     "alerts:inspect:quality": "npm run build --silent && node dist/tools/inspectAlertQualityUnifiedReports.js",
     "alerts:summary:quality": "npm run build --silent && node dist/tools/summarizeAlertQualityUnifiedReports.js",
+    "alerts:compare:quality": "npm run build --silent && node dist/tools/compareAlertQualityUnifiedReports.js",
     "alerts:simulate:quality": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedReport.js",
     "external:demo": "tsx src/tools/demoExternalSignals.ts",
     "polymarket:scan": "tsx src/tools/scanPolymarketWhales.ts",
