@@ -24,6 +24,7 @@
     "recording:integrity": "npm run build --silent && node dist/tools/inspectRecordingIntegrity.js",
     "recording:simulate:integrity": "npm run build --silent && node dist/tools/simulateRecordingIntegrity.js",
     "runtime:health:inspect": "npm run build --silent && node dist/tools/inspectRuntimeHealth.js",
+    "runtime:health:simulate": "npm run build --silent && node dist/tools/simulateRuntimeHealth.js",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "research:run": "npm run build --silent && node dist/tools/runOfflineResearchPipeline.js",
     "research:simulate": "npm run build --silent && node dist/tools/simulateOfflineResearchPipeline.js",
