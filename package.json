@@ -22,6 +22,7 @@
     "replay": "tsx src/tools/replayRecording.ts",
     "recording:inspect": "npm run build --silent && node dist/tools/inspectMarketRecording.js",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
+    "research:run": "npm run build --silent && node dist/tools/runOfflineResearchPipeline.js",
     "alerts:inspect": "npm run build --silent && node dist/tools/inspectCorrelatedAlerts.js",
     "alerts:simulate": "npm run build --silent && node dist/tools/simulateCorrelatedAlerts.js",
     "alerts:evaluate:alignment": "npm run build --silent && node dist/tools/generateAlertAlignmentEvaluations.js",
