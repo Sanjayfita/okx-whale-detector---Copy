@@ -31,6 +31,7 @@
     "paper:inspect": "npm run build --silent && node dist/tools/inspectPaperTrading.js",
     "paper:compare": "npm run build --silent && node dist/tools/comparePaperTrading.js",
     "safety:inspect-readiness": "npm run build --silent && node dist/tools/inspectLiveTradingReadiness.js",
+    "safety:simulate-readiness": "npm run build --silent && node dist/tools/simulateLiveTradingReadiness.js",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "research:run": "npm run build --silent && node dist/tools/runOfflineResearchPipeline.js",
     "research:simulate": "npm run build --silent && node dist/tools/simulateOfflineResearchPipeline.js",
