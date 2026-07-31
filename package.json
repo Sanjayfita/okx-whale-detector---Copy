@@ -29,6 +29,7 @@
     "dashboard:simulate": "npm run build --silent && node dist/tools/simulateResearchDashboard.js",
     "paper:simulate": "npm run build --silent && node dist/tools/simulatePaperTrading.js",
     "paper:inspect": "npm run build --silent && node dist/tools/inspectPaperTrading.js",
+    "paper:compare": "npm run build --silent && node dist/tools/comparePaperTrading.js",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "research:run": "npm run build --silent && node dist/tools/runOfflineResearchPipeline.js",
     "research:simulate": "npm run build --silent && node dist/tools/simulateOfflineResearchPipeline.js",
