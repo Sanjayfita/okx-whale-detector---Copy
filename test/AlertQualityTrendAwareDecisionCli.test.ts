@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const readPolicy = vi.fn();
-const readTrends = vi.fn();
-const compareTrends = vi.fn();
-const evaluateDecision = vi.fn();
+const { readPolicy, readTrends, compareTrends, evaluateDecision } = vi.hoisted(() => ({
+  readPolicy: vi.fn(),
+  readTrends: vi.fn(),
+  compareTrends: vi.fn(),
+  evaluateDecision: vi.fn(),
+}));
 
 vi.mock('../src/evaluation', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/evaluation')>();
