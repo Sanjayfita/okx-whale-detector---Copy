@@ -21,6 +21,7 @@
     "behavior-transition:performance": "tsx src/tools/behaviorTransitionPerformanceReport.ts",
     "replay": "tsx src/tools/replayRecording.ts",
     "recording:inspect": "npm run build --silent && node dist/tools/inspectMarketRecording.js",
+    "recording:integrity": "npm run build --silent && node dist/tools/inspectRecordingIntegrity.js",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "research:run": "npm run build --silent && node dist/tools/runOfflineResearchPipeline.js",
     "research:simulate": "npm run build --silent && node dist/tools/simulateOfflineResearchPipeline.js",
