@@ -67,7 +67,7 @@ const assertPlan = (plan: OfflineResearchPipelinePlan): void => {
     if (typeof step.command !== 'string' || step.command.trim() === '') {
       throw new Error(`steps[${index}].command must be non-empty`);
     }
-    if (!Array.isArray(step.args) || step.args.some((arg) => typeof arg !== 'string')) {
+    if (!Array.isArray(step.args) || step.args.some((arg: unknown) => typeof arg !== 'string')) {
       throw new Error(`steps[${index}].args must be an array of strings`);
     }
     if (!Array.isArray(step.artifacts)) {
