@@ -13,6 +13,7 @@ export * from './alertQualityTerminalReturnAggregator';
 export * from './alertQualityThresholdPolicy';
 export * from './alertQualityThresholdPolicyPersistence';
 export * from './alertQualityTrendAwareDecision';
+export * from './alertQualityTrendAwareDecisionPersistence';
 export * from './alertQualityUnifiedComparison';
 export * from './alertQualityUnifiedReport';
 export * from './alertQualityUnifiedReporter';
