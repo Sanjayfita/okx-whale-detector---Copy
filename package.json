@@ -48,6 +48,7 @@
     "alerts:generate:quality-policy": "npm run build --silent && node dist/tools/generateAlertQualityThresholdEvaluation.js",
     "alerts:inspect:quality-policy": "npm run build --silent && node dist/tools/inspectAlertQualityThresholdEvaluations.js",
     "alerts:evaluate:quality-decision": "npm run build --silent && node dist/tools/evaluateAlertQualityTrendAwareDecision.js",
+    "alerts:simulate:quality-decision": "npm run build --silent && node dist/tools/simulateAlertQualityTrendAwareDecision.js",
     "alerts:simulate:quality": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedReport.js",
     "alerts:simulate:quality-comparison": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedComparison.js",
     "alerts:simulate:quality-trend": "npm run build --silent && node dist/tools/simulateAlertQualityUnifiedTrend.js",
