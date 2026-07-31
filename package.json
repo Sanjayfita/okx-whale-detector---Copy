@@ -24,6 +24,7 @@
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "research:run": "npm run build --silent && node dist/tools/runOfflineResearchPipeline.js",
     "research:simulate": "npm run build --silent && node dist/tools/simulateOfflineResearchPipeline.js",
+    "research:simulate:strategy": "npm run build --silent && node dist/tools/simulateStrategyResearch.js",
     "alerts:inspect": "npm run build --silent && node dist/tools/inspectCorrelatedAlerts.js",
     "alerts:simulate": "npm run build --silent && node dist/tools/simulateCorrelatedAlerts.js",
     "alerts:evaluate:alignment": "npm run build --silent && node dist/tools/generateAlertAlignmentEvaluations.js",
