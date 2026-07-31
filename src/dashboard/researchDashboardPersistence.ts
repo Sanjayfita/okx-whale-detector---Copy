@@ -25,13 +25,19 @@ const assertNonNegativeSafeInteger = (name: string, value: unknown): void => {
   }
 };
 
-const assertStringArray = (name: string, value: unknown): readonly string[] => {
+const assertStringArray = (
+  name: string,
+  value: unknown,
+  requireSorted = true,
+): readonly string[] => {
   if (!Array.isArray(value) || value.some((item) => typeof item !== 'string')) {
     throw new Error(`${name} must be an array of strings`);
   }
-  const sorted = [...value].sort((left, right) => left.localeCompare(right));
-  if (value.some((item, index) => item !== sorted[index])) {
-    throw new Error(`${name} must be sorted`);
+  if (requireSorted) {
+    const sorted = [...value].sort((left, right) => left.localeCompare(right));
+    if (value.some((item, index) => item !== sorted[index])) {
+      throw new Error(`${name} must be sorted`);
+    }
   }
   if (new Set(value).size !== value.length) {
     throw new Error(`${name} must not contain duplicates`);
@@ -76,7 +82,7 @@ const validateSnapshot = (value: unknown): ResearchDashboardSnapshot => {
     'snapshot.unevaluatedStrategyCandidateIds',
     value.unevaluatedStrategyCandidateIds,
   );
-  const reasons = assertStringArray('snapshot.reasons', value.reasons);
+  const reasons = assertStringArray('snapshot.reasons', value.reasons, false);
 
   const recordings = value.counts.recordings as number;
   const validRecordings = value.counts.validRecordings as number;
