@@ -39,6 +39,7 @@
     "safety:inspect-testnet-intent": "npm run build --silent && node dist/tools/inspectTestnetOrderIntent.js",
     "safety:compare-testnet-intents": "npm run build --silent && node dist/tools/compareTestnetOrderIntents.js",
     "safety:inspect-testnet-intent-trend": "npm run build --silent && node dist/tools/inspectTestnetOrderIntentTrend.js",
+    "safety:compare-testnet-intent-trends": "npm run build --silent && node dist/tools/compareTestnetOrderIntentTrends.js",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "research:run": "npm run build --silent && node dist/tools/runOfflineResearchPipeline.js",
     "research:simulate": "npm run build --silent && node dist/tools/simulateOfflineResearchPipeline.js",
