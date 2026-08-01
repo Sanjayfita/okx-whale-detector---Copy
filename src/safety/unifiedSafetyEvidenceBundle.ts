@@ -43,7 +43,9 @@ const validateItem = (item: SafetyEvidenceItem): SafetyEvidenceItem => {
     throw new Error(`Unsupported safety evidence source: ${String(item.source)}`);
   }
   if (!Number.isSafeInteger(item.generatedAt) || item.generatedAt < 0) {
-    throw new Error(`${item.source}.generatedAt must be a non-negative safe integer`);
+    throw new Error(
+      `${item.source}.generatedAt must be a non-negative safe integer`,
+    );
   }
   if (!['PASS', 'REVIEW', 'FAIL'].includes(item.state)) {
     throw new Error(`${item.source}.state is invalid`);
@@ -78,9 +80,15 @@ export const createUnifiedSafetyEvidenceBundle = (input: {
     seen.add(item.source);
   }
 
-  const passedSources = evidence.filter((item) => item.state === 'PASS').map((item) => item.source);
-  const reviewSources = evidence.filter((item) => item.state === 'REVIEW').map((item) => item.source);
-  const failedSources = evidence.filter((item) => item.state === 'FAIL').map((item) => item.source);
+  const passedSources = evidence
+    .filter((item) => item.state === 'PASS')
+    .map((item) => item.source);
+  const reviewSources = evidence
+    .filter((item) => item.state === 'REVIEW')
+    .map((item) => item.source);
+  const failedSources = evidence
+    .filter((item) => item.state === 'FAIL')
+    .map((item) => item.source);
   const missingSources = REQUIRED_SOURCES.filter((source) => !seen.has(source));
   const reasons: string[] = [];
   let status: UnifiedSafetyEvidenceStatus;
@@ -101,7 +109,9 @@ export const createUnifiedSafetyEvidenceBundle = (input: {
   return Object.freeze({
     generatedAt: input.generatedAt,
     status,
-    evidence: Object.freeze([...evidence].sort((left, right) => left.source.localeCompare(right.source))),
+    evidence: Object.freeze(
+      [...evidence].sort((left, right) => left.source.localeCompare(right.source)),
+    ),
     passedSources: Object.freeze([...passedSources].sort()),
     reviewSources: Object.freeze([...reviewSources].sort()),
     failedSources: Object.freeze([...failedSources].sort()),
