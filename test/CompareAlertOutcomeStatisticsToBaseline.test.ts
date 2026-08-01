@@ -77,8 +77,11 @@ describe('compareAlertOutcomeStatisticsToBaseline', () => {
 
   it('rejects mismatched horizon sets', () => {
     const detector = aggregate('detector', 0.2, 55, 0.9, 0.5);
-    const baseline = aggregate('baseline', 0.2, 55, 0.9, 0.5);
-    baseline.horizonStatistics = baseline.horizonStatistics.slice(0, 4);
+    const completeBaseline = aggregate('baseline', 0.2, 55, 0.9, 0.5);
+    const baseline: AggregateAlertOutcomeStatistics = {
+      ...completeBaseline,
+      horizonStatistics: completeBaseline.horizonStatistics.slice(0, 4),
+    };
 
     expect(() =>
       compareAlertOutcomeStatisticsToBaseline({ detector, baseline }),
