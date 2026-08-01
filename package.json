@@ -35,6 +35,7 @@
     "safety:compare-readiness": "npm run build --silent && node dist/tools/compareLiveTradingReadiness.js",
     "safety:inspect-readiness-trend": "npm run build --silent && node dist/tools/inspectLiveTradingReadinessTrend.js",
     "safety:compare-readiness-trends": "npm run build --silent && node dist/tools/compareLiveTradingReadinessTrends.js",
+    "safety:inspect-evidence": "npm run build --silent && node dist/tools/inspectUnifiedSafetyEvidence.js",
     "replay:compare": "tsx src/tools/compareReplayReports.ts",
     "research:run": "npm run build --silent && node dist/tools/runOfflineResearchPipeline.js",
     "research:simulate": "npm run build --silent && node dist/tools/simulateOfflineResearchPipeline.js",
