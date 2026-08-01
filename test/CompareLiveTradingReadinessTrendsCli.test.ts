@@ -104,6 +104,7 @@ describe('runCompareLiveTradingReadinessTrendsCli', () => {
       {
         readDocument: vi.fn(async (path: string) =>
           path === 'before.json' ? baseline : candidate,
+        ),
         log: vi.fn(),
       },
     );
