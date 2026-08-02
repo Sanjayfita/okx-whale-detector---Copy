@@ -35,6 +35,10 @@ const emptyState = (): PersistentOutcomeSchedulerState => ({
   liveOrderExecutionAllowed: false,
 });
 
+const isSchedulerState = (
+  value: PersistentOutcomeSchedulerState | readonly PendingOutcomeJob[],
+): value is PersistentOutcomeSchedulerState => !Array.isArray(value);
+
 const jobKey = (job: Pick<PendingOutcomeJob, 'alertId' | 'horizonMinutes'>): string =>
   `${job.alertId}:${job.horizonMinutes}`;
 
@@ -58,7 +62,7 @@ export class PersistentOutcomeScheduler {
         await readFile(this.pendingPath, 'utf8'),
       ) as PersistentOutcomeSchedulerState | readonly PendingOutcomeJob[];
 
-      const pending = Array.isArray(parsed) ? parsed : parsed.pending;
+      const pending = isSchedulerState(parsed) ? parsed.pending : parsed;
       if (!Array.isArray(pending)) {
         throw new Error('pending-observations.json must contain a pending array');
       }
