@@ -3,7 +3,7 @@ import { join } from 'node:path';
 
 interface EvaluationManifestSummary {
   evaluationId: string;
-  collectionStartedAt: number;
+  createdAt: number;
   minimumCollectionDays: number;
   minimumQualifiedAlerts: number;
   liveOrderExecutionAllowed: false;
@@ -75,7 +75,7 @@ export const inspectEvidenceProgress = async (
 
   if (
     typeof parsedManifest.evaluationId !== 'string' ||
-    !Number.isSafeInteger(parsedManifest.collectionStartedAt) ||
+    !Number.isSafeInteger(parsedManifest.createdAt) ||
     !Number.isSafeInteger(parsedManifest.minimumCollectionDays) ||
     !Number.isSafeInteger(parsedManifest.minimumQualifiedAlerts) ||
     parsedManifest.liveOrderExecutionAllowed !== false
@@ -85,7 +85,7 @@ export const inspectEvidenceProgress = async (
 
   const manifest: EvaluationManifestSummary = {
     evaluationId: parsedManifest.evaluationId,
-    collectionStartedAt: parsedManifest.collectionStartedAt as number,
+    createdAt: parsedManifest.createdAt as number,
     minimumCollectionDays: parsedManifest.minimumCollectionDays as number,
     minimumQualifiedAlerts: parsedManifest.minimumQualifiedAlerts as number,
     liveOrderExecutionAllowed: false,
@@ -135,10 +135,7 @@ export const inspectEvidenceProgress = async (
   const completeBundleCount = [...completedByAlert.values()].filter(
     (horizons) => horizons.size === 5,
   ).length;
-  const collectionDays = Math.max(
-    0,
-    (now - manifest.collectionStartedAt) / 86_400_000,
-  );
+  const collectionDays = Math.max(0, (now - manifest.createdAt) / 86_400_000);
   const durationRequirementMet = collectionDays >= manifest.minimumCollectionDays;
   const alertRequirementMet = alerts.records.length >= manifest.minimumQualifiedAlerts;
 
