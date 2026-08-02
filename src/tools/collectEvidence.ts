@@ -11,12 +11,12 @@ interface AppRuntimeLike {
 }
 
 export interface EvidenceCollectCommandDependencies {
+  createAppRuntime: (dependencies: {
+    correlatedAlertRecorder: EvidenceAwareCorrelatedAlertRecorder;
+  }) => Promise<AppRuntimeLike>;
   loadBootstrap?: typeof loadEvidenceCollectBootstrap;
   createPriceReader?: () => OKXLivePriceReader;
   createRuntimeBundle?: typeof createEvidenceCollectRuntimeBundle;
-  createAppRuntime?: (dependencies: {
-    correlatedAlertRecorder: EvidenceAwareCorrelatedAlertRecorder;
-  }) => Promise<AppRuntimeLike>;
   registerSignal?: (
     signal: NodeJS.Signals,
     handler: () => void,
@@ -31,24 +31,15 @@ export interface EvidenceCollectCommandHandle {
   liveOrderExecutionAllowed: false;
 }
 
-const loadDefaultAppRuntime = async (dependencies: {
-  correlatedAlertRecorder: EvidenceAwareCorrelatedAlertRecorder;
-}): Promise<AppRuntimeLike> => {
-  process.env.OKX_SKIP_AUTO_START = '1';
-  const module = await import('../index');
-  return module.createAppRuntime(dependencies);
-};
-
 export const runEvidenceCollectCommand = async (
   evaluationId: string,
-  dependencies: EvidenceCollectCommandDependencies = {},
+  dependencies: EvidenceCollectCommandDependencies,
 ): Promise<EvidenceCollectCommandHandle> => {
   const loadBootstrap = dependencies.loadBootstrap ?? loadEvidenceCollectBootstrap;
   const createPriceReader =
     dependencies.createPriceReader ?? (() => new OKXLivePriceReader());
   const createRuntimeBundle =
     dependencies.createRuntimeBundle ?? createEvidenceCollectRuntimeBundle;
-  const createAppRuntime = dependencies.createAppRuntime ?? loadDefaultAppRuntime;
   const registerSignal =
     dependencies.registerSignal ??
     ((signal, handler) => {
@@ -78,7 +69,7 @@ export const runEvidenceCollectCommand = async (
 
   let appRuntime: AppRuntimeLike;
   try {
-    appRuntime = await createAppRuntime({ correlatedAlertRecorder });
+    appRuntime = await dependencies.createAppRuntime({ correlatedAlertRecorder });
   } catch (startupError) {
     await bundle.runtime.stop();
     correlatedAlertRecorder.close();
@@ -114,7 +105,7 @@ export const runEvidenceCollectCommand = async (
     });
   });
 
-  log('LIVE EVIDENCE COLLECTION STARTED');
+  log('LIVE EVIDENCE COLLECTION COORDINATOR STARTED');
   log(`Evaluation ID: ${bootstrap.manifest.evaluationId}`);
   log(`Directory: ${bootstrap.evaluationDirectory}`);
   log('Public market data only. Live order execution remains disabled.');
@@ -125,18 +116,3 @@ export const runEvidenceCollectCommand = async (
     liveOrderExecutionAllowed: false,
   });
 };
-
-const runFromCli = async (): Promise<void> => {
-  const evaluationId = process.argv[2]?.trim();
-  if (!evaluationId) {
-    throw new Error('Usage: collectEvidence <evaluationId>');
-  }
-  await runEvidenceCollectCommand(evaluationId);
-};
-
-if (require.main === module) {
-  void runFromCli().catch((error: unknown) => {
-    console.error('Evidence collection failed:', error);
-    process.exitCode = 1;
-  });
-}
