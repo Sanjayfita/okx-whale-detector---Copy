@@ -100,7 +100,9 @@ const main = (): void => {
     console.log(`Evaluation ID: ${evaluationId}`);
     console.log('Read-only research dashboard. Live order execution remains disabled.');
   });
-  const stop = (): void => server.close(() => process.exit(0));
+  const stop = (): void => {
+    server.close(() => process.exit(0));
+  };
   process.once('SIGINT', stop);
   process.once('SIGTERM', stop);
 };
