@@ -4,7 +4,7 @@ import type { CorrelatedAlert } from '../src/types/correlatedAlert';
 import type { CorrelatedAlertRecordContext } from '../src/types/correlatedAlertEvaluation';
 
 const alert: CorrelatedAlert = {
-  id: 'alert-1',
+  id: 'correlated-alert:session-1:1',
   sourceSessionId: 'session-1',
   alertSequence: 1,
   symbol: 'BTC-USDT',
@@ -36,7 +36,7 @@ const liveContext: CorrelatedAlertRecordContext = {
     referenceBestBid: 59_999,
     referenceBestAsk: 60_001,
     referenceSpread: 2,
-    referenceSpreadPercent: 0.003333,
+    referenceSpreadPercent: (2 / 60_000) * 100,
     sourceSignalIds: ['external-1'],
   },
 };
