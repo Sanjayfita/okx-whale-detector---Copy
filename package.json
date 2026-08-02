@@ -80,7 +80,8 @@
     "external:demo": "tsx src/tools/demoExternalSignals.ts",
     "polymarket:scan": "tsx src/tools/scanPolymarketWhales.ts",
     "polymarket:live": "tsx src/tools/watchPolymarketWhales.ts",
-    "check": "npm run typecheck && npm run lint && npm test"
+    "check": "npm run typecheck && npm run lint && npm test",
+    "evidence:smoke": "npm run build --silent && node dist/tools/smokeTestEvidencePipeline.js"
   },
   "keywords": [],
   "author": "",
