@@ -1,20 +1,29 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { renderEvidenceDashboardHtml } from '../src/tools/serveEvidenceDashboard';
 
 const directories: string[] = [];
+const originalCwd = process.cwd();
 
 afterEach(async () => {
-  vi.restoreAllMocks();
-  await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
+  process.chdir(originalCwd);
+  await Promise.all(
+    directories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  );
 });
 
 describe('evidence profitability dashboard', () => {
   it('renders a read-only safety banner and profitability sections', async () => {
-    const directory = await mkdtemp(join(tmpdir(), 'evidence-dashboard-'));
-    directories.push(directory);
+    const root = await mkdtemp(join(tmpdir(), 'evidence-dashboard-'));
+    directories.push(root);
+    const directory = join(root, 'data', 'evaluations', 'eval-dashboard');
+    await mkdir(directory, { recursive: true });
     await writeFile(
       join(directory, 'qualified-alerts.ndjson'),
       `${JSON.stringify({
@@ -60,12 +69,7 @@ describe('evidence profitability dashboard', () => {
       'utf8',
     );
 
-    vi.resetModules();
-    const generator = await import('../src/tools/generateEvidenceProfitability');
-    vi.spyOn(generator, 'generateEvidenceProfitabilityReport').mockImplementation((input) =>
-      generator.generateEvidenceProfitabilityReport({ ...input, evaluationDirectory: directory }),
-    );
-    const { renderEvidenceDashboardHtml } = await import('../src/tools/serveEvidenceDashboard');
+    process.chdir(root);
     const html = await renderEvidenceDashboardHtml('eval-dashboard');
 
     expect(html).toContain('Evidence Profitability Dashboard');
