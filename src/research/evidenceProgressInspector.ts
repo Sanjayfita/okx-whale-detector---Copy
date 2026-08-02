@@ -9,6 +9,15 @@ interface EvaluationManifestSummary {
   liveOrderExecutionAllowed: false;
 }
 
+interface ParsedEvaluationManifestSummary {
+  evaluationId?: unknown;
+  createdAt?: unknown;
+  collectionStartedAt?: unknown;
+  minimumCollectionDays?: unknown;
+  minimumQualifiedAlerts?: unknown;
+  liveOrderExecutionAllowed?: unknown;
+}
+
 interface PendingState {
   pending: readonly unknown[];
   liveOrderExecutionAllowed: false;
@@ -71,11 +80,13 @@ export const inspectEvidenceProgress = async (
 
   const parsedManifest = JSON.parse(
     await readFile(join(evaluationDirectory, 'manifest.json'), 'utf8'),
-  ) as Partial<EvaluationManifestSummary>;
+  ) as ParsedEvaluationManifestSummary;
+
+  const createdAt = parsedManifest.createdAt ?? parsedManifest.collectionStartedAt;
 
   if (
     typeof parsedManifest.evaluationId !== 'string' ||
-    !Number.isSafeInteger(parsedManifest.createdAt) ||
+    !Number.isSafeInteger(createdAt) ||
     !Number.isSafeInteger(parsedManifest.minimumCollectionDays) ||
     !Number.isSafeInteger(parsedManifest.minimumQualifiedAlerts) ||
     parsedManifest.liveOrderExecutionAllowed !== false
@@ -85,7 +96,7 @@ export const inspectEvidenceProgress = async (
 
   const manifest: EvaluationManifestSummary = {
     evaluationId: parsedManifest.evaluationId,
-    createdAt: parsedManifest.createdAt as number,
+    createdAt: createdAt as number,
     minimumCollectionDays: parsedManifest.minimumCollectionDays as number,
     minimumQualifiedAlerts: parsedManifest.minimumQualifiedAlerts as number,
     liveOrderExecutionAllowed: false,
