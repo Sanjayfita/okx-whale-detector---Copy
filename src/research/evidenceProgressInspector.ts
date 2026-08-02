@@ -55,6 +55,12 @@ const readOptionalText = async (path: string): Promise<string> => {
   }
 };
 
+const isPendingState = (value: unknown): value is PendingState =>
+  typeof value === 'object' &&
+  value !== null &&
+  'pending' in value &&
+  Array.isArray((value as { pending?: unknown }).pending);
+
 export const inspectEvidenceProgress = async (
   evaluationDirectory: string,
   now: number = Date.now(),
@@ -63,19 +69,27 @@ export const inspectEvidenceProgress = async (
     throw new Error('now must be a non-negative safe integer');
   }
 
-  const manifest = JSON.parse(
+  const parsedManifest = JSON.parse(
     await readFile(join(evaluationDirectory, 'manifest.json'), 'utf8'),
   ) as Partial<EvaluationManifestSummary>;
 
   if (
-    typeof manifest.evaluationId !== 'string' ||
-    !Number.isSafeInteger(manifest.collectionStartedAt) ||
-    !Number.isSafeInteger(manifest.minimumCollectionDays) ||
-    !Number.isSafeInteger(manifest.minimumQualifiedAlerts) ||
-    manifest.liveOrderExecutionAllowed !== false
+    typeof parsedManifest.evaluationId !== 'string' ||
+    !Number.isSafeInteger(parsedManifest.collectionStartedAt) ||
+    !Number.isSafeInteger(parsedManifest.minimumCollectionDays) ||
+    !Number.isSafeInteger(parsedManifest.minimumQualifiedAlerts) ||
+    parsedManifest.liveOrderExecutionAllowed !== false
   ) {
     throw new Error('Evaluation manifest is invalid');
   }
+
+  const manifest: EvaluationManifestSummary = {
+    evaluationId: parsedManifest.evaluationId,
+    collectionStartedAt: parsedManifest.collectionStartedAt as number,
+    minimumCollectionDays: parsedManifest.minimumCollectionDays as number,
+    minimumQualifiedAlerts: parsedManifest.minimumQualifiedAlerts as number,
+    liveOrderExecutionAllowed: false,
+  };
 
   const alerts = parseNdjson(
     await readOptionalText(join(evaluationDirectory, 'qualified-alerts.ndjson')),
@@ -92,8 +106,12 @@ export const inspectEvidenceProgress = async (
 
   if (pendingText.trim().length > 0) {
     try {
-      const parsed = JSON.parse(pendingText) as Partial<PendingState> | unknown[];
-      const pending = Array.isArray(parsed) ? parsed : parsed.pending;
+      const parsed = JSON.parse(pendingText) as unknown;
+      const pending = Array.isArray(parsed)
+        ? parsed
+        : isPendingState(parsed)
+          ? parsed.pending
+          : undefined;
       if (!Array.isArray(pending)) throw new Error('pending must be an array');
       pendingObservationCount = pending.length;
     } catch {
