@@ -43,6 +43,7 @@ import {
   AppShutdownCoordinator,
   type AppShutdownReason,
 } from './runtime/AppShutdownCoordinator';
+import { shouldAutoStartApp } from './runtime/appAutoStart';
 import { createRuntimeSessionId } from './runtime/runtimeSession';
 import type { MarketInstrumentConfig } from './types/instrument';
 
@@ -397,7 +398,9 @@ export const start = async (
   void appRuntime.polymarketRuntime.start();
 };
 
-void start().catch((error: unknown) => {
-  console.error('Failed to start OKX Whale Detector:', error);
-  process.exitCode = 1;
-});
+if (shouldAutoStartApp()) {
+  void start().catch((error: unknown) => {
+    console.error('Failed to start OKX Whale Detector:', error);
+    process.exitCode = 1;
+  });
+}
