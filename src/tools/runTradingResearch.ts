@@ -56,7 +56,7 @@ export const runTradingResearchWorkspace = async (
     | Awaited<ReturnType<typeof runEvidenceCollectCommand>>
     | undefined;
   try {
-    const { createAppRuntime } = await import('../index');
+    const { createAppRuntime } = await import('../index.js');
     collector = await runEvidenceCollectCommand(evaluationId, {
       createAppRuntime,
       registerSignal: () => undefined,
