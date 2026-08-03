@@ -240,9 +240,9 @@ export const createAppRuntime = async (
       flushAfterEachAlert:
         appConfig.correlatedAlertRecording.flushAfterEachAlert,
     });
-  let requestOrderBookResync:
-    | ((symbol: string) => boolean)
-    | undefined;
+  const orderBookResyncRequester: {
+    request?: (symbol: string) => boolean;
+  } = {};
   const marketEngine = new MarketEngine(
     marketStates,
     summaryThrottle,
@@ -256,7 +256,7 @@ export const createAppRuntime = async (
     Date.now,
     'LIVE',
     (symbol) => {
-      const accepted = requestOrderBookResync?.(symbol) ?? false;
+      const accepted = orderBookResyncRequester.request?.(symbol) ?? false;
       if (!accepted) {
         console.error(
           `Unable to schedule automatic order-book resync for ${symbol}.`,
@@ -415,7 +415,7 @@ export const createAppRuntime = async (
       },
     },
   });
-  requestOrderBookResync = (symbol) =>
+  orderBookResyncRequester.request = (symbol) =>
     subscriptionManager.requestOrderBookResync(symbol);
 
   subscriptionManager.start(activeInstruments);
