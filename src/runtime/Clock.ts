@@ -43,6 +43,7 @@ export class ManualClock implements Clock {
 export class ReplayClock implements Clock {
   private readonly manualClock: ManualClock;
   private initialized = false;
+  private restoreDateNow?: () => void;
 
   public constructor(initialTimeMs = 0) {
     this.manualClock = new ManualClock(initialTimeMs);
@@ -70,6 +71,24 @@ export class ReplayClock implements Clock {
 
     this.manualClock.set(recordedAt);
     return this.manualClock.now();
+  }
+
+  public installDateNow(): () => void {
+    if (this.restoreDateNow) {
+      return this.restoreDateNow;
+    }
+
+    const originalDateNow = Date.now;
+    const restore = (): void => {
+      if (Date.now !== originalDateNow) {
+        Date.now = originalDateNow;
+      }
+      this.restoreDateNow = undefined;
+    };
+
+    Date.now = () => this.now();
+    this.restoreDateNow = restore;
+    return restore;
   }
 }
 
