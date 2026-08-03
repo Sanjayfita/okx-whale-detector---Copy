@@ -32,6 +32,15 @@ export interface OKXCandleUpdate {
   };
 }
 
+export interface OKXTradeUpdate {
+  instId: string;
+  tradeId: string;
+  price: number;
+  size: number;
+  side: 'BUY' | 'SELL';
+  timestamp: number;
+}
+
 export class OKXWebSocketClient {
   private ws: WebSocket | null = null;
   private reconnectTimer?: NodeJS.Timeout;
@@ -49,12 +58,20 @@ export class OKXWebSocketClient {
     string,
     { instId: string; interval: string }
   >();
+  private readonly tradeSubscriptions = new Map<
+    string,
+    SupportedInstType
+  >();
   private onOrderBookUpdate?: (
     update: OKXOrderBookUpdate,
     performanceContext?: MessagePerformanceContext,
   ) => void;
   private onCandleUpdate?: (
     update: OKXCandleUpdate,
+    performanceContext?: MessagePerformanceContext,
+  ) => void;
+  private onTradeUpdate?: (
+    update: OKXTradeUpdate,
     performanceContext?: MessagePerformanceContext,
   ) => void;
 
@@ -174,6 +191,11 @@ export class OKXWebSocketClient {
       return;
     }
 
+    if (channel === 'trades') {
+      this.handleTradeMessage(message, instId, receivedAt, timings);
+      return;
+    }
+
     if (channel.startsWith('candle')) {
       this.handleCandleMessage(message, instId, channel, receivedAt, timings);
     }
@@ -257,6 +279,84 @@ export class OKXWebSocketClient {
         'okx.orderBook.handler',
         performance.now() - handlerStartedAt,
       );
+    }
+  }
+
+  private handleTradeMessage(
+    message: Record<string, unknown>,
+    instId: string,
+    receivedAt: number,
+    timings: ObservedStageTiming[],
+  ): void {
+    const validationStartedAt = performance.now();
+    const data = message.data;
+
+    if (!Array.isArray(data)) {
+      return;
+    }
+
+    const updates: OKXTradeUpdate[] = [];
+
+    for (const rawTrade of data) {
+      if (!isRecord(rawTrade)) {
+        console.error('Rejected malformed OKX trade object');
+        continue;
+      }
+
+      const price = Number(rawTrade.px);
+      const size = Number(rawTrade.sz);
+      const timestamp = Number(rawTrade.ts);
+      const tradeId = rawTrade.tradeId;
+      const rawSide = rawTrade.side;
+
+      if (
+        !Number.isFinite(price) ||
+        price <= 0 ||
+        !Number.isFinite(size) ||
+        size <= 0 ||
+        !Number.isFinite(timestamp) ||
+        typeof tradeId !== 'string' ||
+        tradeId.length === 0 ||
+        (rawSide !== 'buy' && rawSide !== 'sell')
+      ) {
+        console.error('Rejected invalid OKX trade payload');
+        continue;
+      }
+
+      updates.push({
+        instId,
+        tradeId,
+        price,
+        size,
+        side: rawSide === 'buy' ? 'BUY' : 'SELL',
+        timestamp,
+      });
+    }
+
+    this.recordTiming(
+      'okx.trade.validationTransform',
+      performance.now() - validationStartedAt,
+      timings,
+    );
+
+    for (const update of updates) {
+      const handlerStartedAt = performance.now();
+      const queueDelayMs = Math.max(0, handlerStartedAt - receivedAt);
+      this.profiler?.record('okx.trade.queueDelay', queueDelayMs);
+
+      try {
+        this.onTradeUpdate?.(update, {
+          queueDelayMs,
+          stages: [...timings],
+        });
+      } catch (error) {
+        console.error(`Trade callback failed for ${update.instId}:`, error);
+      } finally {
+        this.profiler?.record(
+          'okx.trade.handler',
+          performance.now() - handlerStartedAt,
+        );
+      }
     }
   }
 
@@ -381,6 +481,10 @@ export class OKXWebSocketClient {
     for (const subscription of this.candleSubscriptions.values()) {
       this.sendCandleSubscription(subscription.instId, subscription.interval);
     }
+
+    for (const [instId, instType] of this.tradeSubscriptions) {
+      this.sendTradeSubscription(instId, instType);
+    }
   }
 
   private sendOrderBookSubscription(
@@ -399,6 +503,40 @@ export class OKXWebSocketClient {
     );
 
     console.log(`📘 Subscribed to ${instId} order book`);
+  }
+
+  private sendOrderBookUnsubscription(
+    instId: string,
+    instType: SupportedInstType,
+  ): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      throw new Error('OKX WebSocket is not open');
+    }
+
+    this.ws.send(
+      JSON.stringify({
+        op: 'unsubscribe',
+        args: [{ channel: 'books', instId, instType }],
+      }),
+    );
+  }
+
+  private sendTradeSubscription(
+    instId: string,
+    instType: SupportedInstType,
+  ): void {
+    if (this.ws?.readyState !== WebSocket.OPEN) {
+      return;
+    }
+
+    this.ws.send(
+      JSON.stringify({
+        op: 'subscribe',
+        args: [{ channel: 'trades', instId, instType }],
+      }),
+    );
+
+    console.log(`💱 Subscribed to ${instId} public trades`);
   }
 
   private sendCandleSubscription(instId: string, interval: string): void {
@@ -429,6 +567,15 @@ export class OKXWebSocketClient {
     this.onOrderBookUpdate = callback;
   }
 
+  public onTrade(
+    callback: (
+      update: OKXTradeUpdate,
+      performanceContext?: MessagePerformanceContext,
+    ) => void,
+  ): void {
+    this.onTradeUpdate = callback;
+  }
+
   public onCandle(
     callback: (
       update: OKXCandleUpdate,
@@ -444,6 +591,25 @@ export class OKXWebSocketClient {
   ): void {
     this.orderBookSubscriptions.set(instId, instType);
     this.sendOrderBookSubscription(instId, instType);
+  }
+
+  public resubscribeOrderBook(instId: string): void {
+    const instType = this.orderBookSubscriptions.get(instId);
+    if (!instType) {
+      throw new Error(`No order-book subscription exists for ${instId}`);
+    }
+
+    this.sendOrderBookUnsubscription(instId, instType);
+    this.sendOrderBookSubscription(instId, instType);
+    console.warn(`🔄 Requested fresh ${instId} order-book snapshot`);
+  }
+
+  public subscribeToTrades(
+    instId: string,
+    instType: SupportedInstType = 'SPOT',
+  ): void {
+    this.tradeSubscriptions.set(instId, instType);
+    this.sendTradeSubscription(instId, instType);
   }
 
   public subscribeToCandle(instId: string, interval: string): void {
