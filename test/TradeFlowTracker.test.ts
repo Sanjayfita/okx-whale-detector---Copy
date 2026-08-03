@@ -18,7 +18,7 @@ const whale = (side: 'BID' | 'ASK', ageSeconds = 1): Whale => ({
 
 describe('TradeFlowTracker', () => {
   it('classifies a removed ask wall as likely executed after aggressive buying', () => {
-    let now = 5_000;
+    const now = 5_000;
     const tracker = new TradeFlowTracker(1, {
       clock: () => now,
       executionConfirmationRatio: 0.25,
