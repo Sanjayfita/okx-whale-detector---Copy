@@ -1,7 +1,15 @@
 import type { Whale } from '../types/whale';
+import type { WhaleRemovalAssessment } from './TradeFlowTracker';
 
 export type WhaleBehaviorType =
-  'SPOOF' | 'PERSISTENT' | 'REFILLING' | 'ACCUMULATION' | 'DISTRIBUTION';
+  | 'SPOOF'
+  | 'PERSISTENT'
+  | 'REFILLING'
+  | 'ACCUMULATION'
+  | 'DISTRIBUTION'
+  | 'LIKELY_EXECUTED'
+  | 'POSSIBLE_CANCELLATION'
+  | 'UNCONFIRMED_DISAPPEARANCE';
 
 export interface WhaleBehavior {
   type: WhaleBehaviorType;
@@ -140,8 +148,22 @@ export class WhaleBehaviorEngine {
     return behaviors;
   }
 
-  public analyzeRemoval(whale: Whale): WhaleBehavior | undefined {
+  public analyzeRemoval(
+    whale: Whale,
+    assessment?: WhaleRemovalAssessment,
+  ): WhaleBehavior | undefined {
     const now = Date.now();
+
+    if (assessment) {
+      return {
+        type: assessment.classification,
+        whale,
+        confidence: assessment.confidence,
+        reason: assessment.reason,
+        detectedAt: now,
+      };
+    }
+
     const ageSeconds = whale.ageSeconds ?? 0;
 
     if (ageSeconds <= this.config.spoofMaxAgeSeconds) {
