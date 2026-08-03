@@ -83,6 +83,16 @@ export class OrderBookManager {
     return true;
   }
 
+  public markResyncing(): void {
+    this.orderBook.bids.clear();
+    this.orderBook.asks.clear();
+    this.orderBook.lastSeqId = null;
+    this.orderBook.status = 'RESYNCING';
+    this.orderBook.initialized = false;
+    this.orderBook.updatedAt = 0;
+    this.lastUpdatePrunedDepth = false;
+  }
+
   public reset(): void {
     this.orderBook.bids.clear();
     this.orderBook.asks.clear();
@@ -90,6 +100,7 @@ export class OrderBookManager {
     this.orderBook.status = 'INITIALIZING';
     this.orderBook.initialized = false;
     this.orderBook.updatedAt = 0;
+    this.lastUpdatePrunedDepth = false;
   }
 
   private applyLevels(
