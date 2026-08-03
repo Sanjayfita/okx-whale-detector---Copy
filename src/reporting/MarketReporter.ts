@@ -77,6 +77,12 @@ export class MarketReporter {
     );
   }
 
+  public reportSequenceRecovery(symbol: string): void {
+    this.logger(
+      `✅ ${symbol} order book resynchronized from a fresh snapshot.`,
+    );
+  }
+
   public reportBehavior(behavior: WhaleBehavior): void {
     this.logger(
       `🧠 ${behavior.type} | ` +
