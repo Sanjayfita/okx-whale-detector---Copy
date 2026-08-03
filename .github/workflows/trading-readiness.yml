@@ -10,6 +10,7 @@ on:
       - 'src/**'
       - 'test/**'
       - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/trading-readiness.yml'
 
 permissions:
@@ -33,6 +34,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
 
       - name: R16-R20 focused validation
         run: npm run trading:validate
