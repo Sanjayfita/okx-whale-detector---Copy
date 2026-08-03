@@ -116,3 +116,21 @@ export const runEvidenceCollectCommand = async (
     liveOrderExecutionAllowed: false,
   });
 };
+
+const main = async (): Promise<void> => {
+  const evaluationId = process.argv[2] ?? 'eval-2026-08-02-v1';
+  process.env.OKX_SKIP_AUTO_START = '1';
+  const { createAppRuntime } = await import('../index');
+  await runEvidenceCollectCommand(evaluationId, { createAppRuntime });
+};
+
+if (require.main === module) {
+  void main().catch((error: unknown) => {
+    console.error(
+      `Evidence collection failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    process.exitCode = 1;
+  });
+}
