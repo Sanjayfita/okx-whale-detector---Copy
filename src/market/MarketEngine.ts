@@ -20,6 +20,7 @@ import type { CorrelatedAlertRecorder } from '../recording/CorrelatedAlertRecord
 import { createCorrelatedAlertEvaluationContext } from '../recording/correlatedAlertEvaluationContext';
 import type { CorrelatedAlertProvenance } from '../types/correlatedAlertEvaluation';
 import type { MarketEvaluation } from '../types/marketEvaluation';
+import type { OrderLevel } from '../types/orderbook';
 import type { Wall } from '../types/wall';
 
 export const prepareMarketSummaryAggregates = (
@@ -76,6 +77,14 @@ export const prepareMarketSummaryAggregates = (
   };
 };
 
+const sumNotional = (levels: Iterable<OrderLevel>): number => {
+  let total = 0;
+  for (const level of levels) {
+    total += level.notionalQuote;
+  }
+  return total;
+};
+
 export class MarketEngine {
   private readonly sequenceGapSymbols = new Set<string>();
   private readonly lastEvaluations = new Map<string, MarketEvaluation>();
@@ -94,6 +103,7 @@ export class MarketEngine {
     private readonly correlatedAlertRecorder?: CorrelatedAlertRecorder,
     private readonly clock: () => number = Date.now,
     private readonly alertProvenance: CorrelatedAlertProvenance = 'LIVE',
+    private readonly onSequenceGap?: (symbol: string) => void,
   ) {}
 
   public processOrderBookUpdate(
@@ -128,14 +138,27 @@ export class MarketEngine {
       if (!wasApplied) {
         if (!this.sequenceGapSymbols.has(update.instId)) {
           this.sequenceGapSymbols.add(update.instId);
+          state.orderBookManager.markResyncing();
           this.reporter.reportSequenceGap(update.instId);
+
+          try {
+            this.onSequenceGap?.(update.instId);
+          } catch (error: unknown) {
+            console.error(
+              `Failed to request order-book resync for ${update.instId}:`,
+              error,
+            );
+          }
         }
 
         return;
       }
 
       if (update.action === 'snapshot') {
-        this.sequenceGapSymbols.delete(update.instId);
+        const recovered = this.sequenceGapSymbols.delete(update.instId);
+        if (recovered) {
+          this.reporter.reportSequenceRecovery(update.instId);
+        }
       }
 
       const orderBook = state.orderBookManager.getOrderBook();
@@ -196,13 +219,29 @@ export class MarketEngine {
 
       trace.measure('whaleEvents.detectAndReport', () => {
         const whaleEvents = state.whaleEventDetector.detect(result.active);
+        const bidDepthNotional = sumNotional(orderBook.bids.values());
+        const askDepthNotional = sumNotional(orderBook.asks.values());
 
         for (const event of whaleEvents) {
           if (event.type === 'REMOVED') {
-            const spoof = state.whaleBehaviorEngine.analyzeRemoval(event.whale);
+            const assessment = state.tradeFlowTracker.assessRemoval(
+              event.whale,
+              event.whale.side === 'BID'
+                ? bidDepthNotional
+                : askDepthNotional,
+              this.clock(),
+            );
+            const behavior = state.whaleBehaviorEngine.analyzeRemoval(
+              event.whale,
+              assessment,
+            );
 
-            if (spoof) {
-              this.reporter.reportSpoof(update.instId, spoof);
+            if (behavior) {
+              if (behavior.type === 'SPOOF') {
+                this.reporter.reportSpoof(update.instId, behavior);
+              } else {
+                this.reporter.reportBehavior(behavior);
+              }
             }
           }
 
@@ -283,14 +322,21 @@ export class MarketEngine {
             this.correlatedAlertReporter.report(alert, trace);
 
             if (evaluationContext) {
-              this.correlatedAlertRecorder?.record(
-                alert,
-                {
-                  provenance: this.alertProvenance,
-                  evaluationContext,
-                },
-                trace,
-              );
+              try {
+                this.correlatedAlertRecorder?.record(
+                  alert,
+                  {
+                    provenance: this.alertProvenance,
+                    evaluationContext,
+                  },
+                  trace,
+                );
+              } catch (error: unknown) {
+                console.error(
+                  `Correlated alert recording failed for ${update.instId}:`,
+                  error,
+                );
+              }
             }
           }
         }
@@ -326,6 +372,7 @@ export class MarketEngine {
     for (const symbol of symbols) {
       this.sequenceGapSymbols.delete(symbol);
       this.summaryThrottle.reset(symbol);
+      this.marketStates.get(symbol)?.tradeFlowTracker.reset();
     }
 
     this.processingMonitor.resetSymbols(symbols);
