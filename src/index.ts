@@ -36,6 +36,7 @@ import { ProcessingMonitor } from './core/ProcessingMonitor';
 import { MarketEngine } from './market/MarketEngine';
 import { ExternalSignalCorrelationService } from './external/core/ExternalSignalCorrelationService';
 import { PolymarketLiveSignalRuntime } from './external/providers/polymarket/PolymarketLiveSignalRuntime';
+import { BoundedRecorderQueue } from './recording/BoundedRecorderQueue';
 import { MarketDataRecorder } from './recording/MarketDataRecorder';
 import { CorrelatedAlertRecorder } from './recording/CorrelatedAlertRecorder';
 import { CorrelatedAlertReporter } from './reporting/CorrelatedAlertReporter';
@@ -49,6 +50,7 @@ import type { MarketInstrumentConfig } from './types/instrument';
 
 const ORDER_BOOK_CHANNEL = 'books';
 const CANDLE_INTERVAL = '1m';
+const MAXIMUM_RECORDER_QUEUE_SIZE = 10_000;
 
 export type { AppShutdownReason } from './runtime/AppShutdownCoordinator';
 
@@ -189,6 +191,23 @@ export const createAppRuntime = async (
         marketDataRecorderOptions,
       ))
     : undefined;
+  const recorderQueue = recorder
+    ? new BoundedRecorderQueue({
+        maximumQueueSize: MAXIMUM_RECORDER_QUEUE_SIZE,
+        onFailure: (error) => {
+          console.error(
+            'Market-data recording task failed; detection continues:',
+            error,
+          );
+        },
+        onDrop: (queueDepth) => {
+          console.error(
+            `Market-data recording queue is full at ${queueDepth} tasks. ` +
+              'A raw record was dropped and the session must not be treated as complete research evidence.',
+          );
+        },
+      })
+    : undefined;
   const externalSignalCorrelationService =
     dependencies.externalSignalCorrelationService ??
     new ExternalSignalCorrelationService({
@@ -221,6 +240,9 @@ export const createAppRuntime = async (
       flushAfterEachAlert:
         appConfig.correlatedAlertRecording.flushAfterEachAlert,
     });
+  let requestOrderBookResync:
+    | ((symbol: string) => boolean)
+    | undefined;
   const marketEngine = new MarketEngine(
     marketStates,
     summaryThrottle,
@@ -231,6 +253,16 @@ export const createAppRuntime = async (
     correlatedAlertEngine,
     dependencies.correlatedAlertReporter,
     correlatedAlertRecorder,
+    Date.now,
+    'LIVE',
+    (symbol) => {
+      const accepted = requestOrderBookResync?.(symbol) ?? false;
+      if (!accepted) {
+        console.error(
+          `Unable to schedule automatic order-book resync for ${symbol}.`,
+        );
+      }
+    },
   );
   const polymarketRuntime =
     dependencies.polymarketRuntime ??
@@ -276,32 +308,59 @@ export const createAppRuntime = async (
         return;
       }
 
-      if (recorder) {
-        const startedAt = performance.now();
-        recorder.recordOrderBook(update);
-        const durationMs = performance.now() - startedAt;
-        pipelineProfiler.record('recording.raw.orderBook', durationMs);
-        messagePerformance?.stages.push({
-          stage: 'recording.raw.orderBook',
-          durationMs,
+      if (recorder && recorderQueue) {
+        const accepted = recorderQueue.enqueue(() => {
+          const startedAt = performance.now();
+          recorder.recordOrderBook(update);
+          pipelineProfiler.record(
+            'recording.raw.orderBook',
+            performance.now() - startedAt,
+          );
         });
+
+        if (!accepted) {
+          pipelineProfiler.record('recording.raw.orderBook.dropped', 1);
+        }
       }
       healthMonitor.recordOrderBook(update.instId);
       throughputMonitor.record(update.instId, 'orderBook');
       marketEngine.processOrderBookUpdate(update, messagePerformance);
+    },
+    onTrade: (trade) => {
+      if (isShuttingDown) {
+        return;
+      }
+
+      const state = marketStates.get(trade.instId);
+      if (!state) {
+        return;
+      }
+
+      const startedAt = performance.now();
+      state.tradeFlowTracker.record(trade);
+      pipelineProfiler.record(
+        'tradeFlow.record',
+        performance.now() - startedAt,
+      );
     },
     onCandle: (candle) => {
       if (isShuttingDown) {
         return;
       }
 
-      if (recorder) {
-        const startedAt = performance.now();
-        recorder.recordCandle(candle, CANDLE_INTERVAL);
-        pipelineProfiler.record(
-          'recording.raw.candle',
-          performance.now() - startedAt,
-        );
+      if (recorder && recorderQueue) {
+        const accepted = recorderQueue.enqueue(() => {
+          const startedAt = performance.now();
+          recorder.recordCandle(candle, CANDLE_INTERVAL);
+          pipelineProfiler.record(
+            'recording.raw.candle',
+            performance.now() - startedAt,
+          );
+        });
+
+        if (!accepted) {
+          pipelineProfiler.record('recording.raw.candle.dropped', 1);
+        }
       }
       healthMonitor.recordCandle(candle.instId);
       throughputMonitor.record(candle.instId, 'candle');
@@ -331,7 +390,33 @@ export const createAppRuntime = async (
         `✅ Reset ${symbols.length} markets. Waiting for fresh snapshots...`,
       );
     },
+    orderBookResync: {
+      maximumAttempts: 4,
+      baseBackoffMs: 250,
+      snapshotTimeoutMs: 5_000,
+      onAttempt: (symbol, attempt) => {
+        console.warn(
+          `🔄 Resynchronizing ${symbol} order book (attempt ${attempt}/4)...`,
+        );
+      },
+      onRecovered: (symbol, attempts) => {
+        console.log(
+          `✅ ${symbol} order-book resync completed after ${attempts} attempt${
+            attempts === 1 ? '' : 's'
+          }.`,
+        );
+      },
+      onFailed: (symbol, attempts, error) => {
+        console.error(
+          `❌ ${symbol} order-book resync failed after ${attempts} attempts. ` +
+            'Detector output for this symbol remains paused.',
+          error,
+        );
+      },
+    },
   });
+  requestOrderBookResync = (symbol) =>
+    subscriptionManager.requestOrderBookResync(symbol);
 
   subscriptionManager.start(activeInstruments);
   healthMonitor.start();
@@ -347,6 +432,7 @@ export const createAppRuntime = async (
     `Started market health monitoring for ${activeProfiles.length} markets.`,
   );
   console.log('Started throughput and event-loop monitoring.');
+  console.log('Started public trade-flow confirmation for active markets.');
 
   if (recorder) {
     console.log(`Recording order-book and candle data to ${recorder.filePath}`);
@@ -363,7 +449,12 @@ export const createAppRuntime = async (
     closeSubscriptions: () => subscriptionManager.close(),
     closeAlertRecorder: () => correlatedAlertRecorder.close(),
     closeMarketRecorder:
-      recorder === undefined ? undefined : (signal) => recorder.close(signal),
+      recorder === undefined
+        ? undefined
+        : async (signal) => {
+            await recorderQueue?.closeAndDrain();
+            await recorder.close(signal);
+          },
   });
 
   const shutdown = (signal: AppShutdownReason): Promise<void> =>
