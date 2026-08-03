@@ -120,7 +120,7 @@ export const runEvidenceCollectCommand = async (
 const main = async (): Promise<void> => {
   const evaluationId = process.argv[2] ?? 'eval-2026-08-02-v1';
   process.env.OKX_SKIP_AUTO_START = '1';
-  const { createAppRuntime } = await import('../index');
+  const { createAppRuntime } = await import('../index.js');
   await runEvidenceCollectCommand(evaluationId, { createAppRuntime });
 };
 
