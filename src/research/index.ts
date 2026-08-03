@@ -1,6 +1,7 @@
 export * from './alertEpisodeClustering';
 export * from './clusterBootstrapEvaluation';
 export * from './offlineResearchPipeline';
+export * from './qualifiedAlertEpisodeEvaluation';
 export * from './researchSessionInspection';
 export * from './researchSessionManifest';
 export * from './statisticalEdgeGate';
