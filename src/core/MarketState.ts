@@ -12,6 +12,7 @@ import { WhaleRefillDetector } from './WhaleRefillDetector';
 import { WhaleScoreEngine } from './WhaleScoreEngine';
 import { WhaleBehaviorEngine } from './WhaleBehaviorEngine';
 import { BehaviorTransitionTracker } from './BehaviorTransitionTracker';
+import { TradeFlowTracker } from './TradeFlowTracker';
 
 const DEFAULT_INSTRUMENT: MarketInstrumentConfig = {
   instId: 'UNKNOWN-USDT',
@@ -31,11 +32,13 @@ export class MarketState {
   public readonly candleHistory: CandleHistory;
   public readonly whaleRefillDetector: WhaleRefillDetector;
   public readonly whaleBehaviorEngine: WhaleBehaviorEngine;
+  public readonly tradeFlowTracker: TradeFlowTracker;
   public readonly behaviorTransitionTracker = new BehaviorTransitionTracker();
 
   public constructor(
     config: AppConfig = appConfig,
     instrument: MarketInstrumentConfig = DEFAULT_INSTRUMENT,
+    clock: () => number = Date.now,
   ) {
     validateAppConfig(config);
 
@@ -65,5 +68,8 @@ export class MarketState {
     this.candleHistory = new CandleHistory(config.history.candleLimit);
     this.whaleRefillDetector = new WhaleRefillDetector(config.refill);
     this.whaleBehaviorEngine = new WhaleBehaviorEngine(config.behavior);
+    this.tradeFlowTracker = new TradeFlowTracker(instrument.baseUnitsPerSize, {
+      clock,
+    });
   }
 }
