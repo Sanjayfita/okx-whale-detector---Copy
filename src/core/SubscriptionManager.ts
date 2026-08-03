@@ -153,7 +153,12 @@ export class SubscriptionManager {
         if (update.action === 'snapshot') {
           this.resyncCoordinator.complete(update.instId);
         }
-        this.options.onOrderBook(update, performanceContext);
+
+        if (performanceContext === undefined) {
+          this.options.onOrderBook(update);
+        } else {
+          this.options.onOrderBook(update, performanceContext);
+        }
       });
       candleClient.onCandle(this.options.onCandle);
       if (this.options.onTrade && orderBookClient.onTrade) {
