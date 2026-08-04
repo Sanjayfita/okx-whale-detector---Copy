@@ -5,10 +5,13 @@ import {
   type QualifiedAlertEvidenceRecord,
 } from './qualifiedAlertEvidence';
 
+export type EvidenceAlertAdmissionPolicy = 'CORRELATED' | 'OKX_ONLY';
+
 export interface CorrelatedAlertEvidenceIdentity {
   evaluationId: string;
   sourceCommit: string;
   configurationFingerprint: string;
+  alertAdmissionPolicy?: EvidenceAlertAdmissionPolicy;
 }
 
 export interface CorrelatedAlertEvidenceBridgeInput {
@@ -18,6 +21,8 @@ export interface CorrelatedAlertEvidenceBridgeInput {
 }
 
 export class CorrelatedAlertEvidenceBridge {
+  private readonly alertAdmissionPolicy: EvidenceAlertAdmissionPolicy;
+
   public constructor(private readonly identity: CorrelatedAlertEvidenceIdentity) {
     if (
       identity.evaluationId.trim().length === 0 ||
@@ -26,6 +31,7 @@ export class CorrelatedAlertEvidenceBridge {
     ) {
       throw new Error('Evidence identity fields must not be empty');
     }
+    this.alertAdmissionPolicy = identity.alertAdmissionPolicy ?? 'CORRELATED';
   }
 
   public createEvidence(
@@ -38,6 +44,16 @@ export class CorrelatedAlertEvidenceBridge {
     }
     if (alert.bias !== 'BULLISH' && alert.bias !== 'BEARISH') {
       throw new Error('Only directional correlated alerts qualify for evidence');
+    }
+    if (
+      this.alertAdmissionPolicy === 'OKX_ONLY' &&
+      (alert.relationship !== 'OKX_ONLY' ||
+        alert.externalSignalsUsed !== 0 ||
+        alert.externalEffectiveConfidence !== 0)
+    ) {
+      throw new Error(
+        'OKX-only evidence requires an OKX_ONLY alert with zero external contribution',
+      );
     }
 
     return createQualifiedAlertEvidenceRecord({
