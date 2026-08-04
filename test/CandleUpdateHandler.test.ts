@@ -6,7 +6,11 @@ import { MarketState } from '../src/core/MarketState';
 
 import type { OKXCandle } from '../src/clients/okx/OKXCandleWebSocketClient';
 
-const createCandle = (instId: string, timestamp: number): OKXCandle => ({
+const createCandle = (
+  instId: string,
+  timestamp: number,
+  overrides: Partial<OKXCandle> = {},
+): OKXCandle => ({
   instId,
   timestamp,
   open: 100,
@@ -17,6 +21,7 @@ const createCandle = (instId: string, timestamp: number): OKXCandle => ({
   volumeCurrency: 1_000,
   volumeCurrencyQuote: 101_000,
   confirm: true,
+  ...overrides,
 });
 
 describe('CandleUpdateHandler', () => {
@@ -131,6 +136,26 @@ describe('CandleUpdateHandler', () => {
 
     handler.handle(createCandle('UNKNOWN-USDT', 1_000));
 
+    expect(logger).not.toHaveBeenCalled();
+  });
+
+  it('does not count or log malformed candles', () => {
+    const state = new MarketState();
+    const logger = vi.fn();
+    const handler = new CandleUpdateHandler(
+      new Map([['BTC-USDT', state]]),
+      logger,
+    );
+
+    for (let index = 0; index < 10; index += 1) {
+      handler.handle(
+        createCandle('BTC-USDT', 1_000 + index, {
+          close: Number.NaN,
+        }),
+      );
+    }
+
+    expect(state.candleHistory.getSize()).toBe(0);
     expect(logger).not.toHaveBeenCalled();
   });
 

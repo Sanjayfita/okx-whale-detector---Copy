@@ -72,4 +72,14 @@ export class MarketState {
       clock,
     });
   }
+
+  public resetOrderBookDerivedState(): void {
+    this.whaleTracker.reset();
+    this.whaleScoreEngine.reset();
+    this.whaleEventDetector.reset();
+    this.wallDetector.reset();
+    this.whaleRefillDetector.reset();
+    this.whaleBehaviorEngine.reset();
+    this.behaviorTransitionTracker.reset();
+  }
 }

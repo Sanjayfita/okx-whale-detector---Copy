@@ -223,7 +223,7 @@ export const appConfig: AppConfig = {
     showExecutions: false,
   },
   history: {
-    candleLimit: 100,
+    candleLimit: 1_200,
     orderBookLevelLimit: 400,
   },
 };

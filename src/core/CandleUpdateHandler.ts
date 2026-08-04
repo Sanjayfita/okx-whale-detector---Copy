@@ -28,11 +28,15 @@ export class CandleUpdateHandler {
      * not printed.
      */
     const historyStartedAt = performance.now();
-    state.candleHistory.add(candle);
+    const accepted = state.candleHistory.add(candle);
     this.profiler?.record(
       'candle.history.handle',
       performance.now() - historyStartedAt,
     );
+
+    if (!accepted) {
+      return;
+    }
 
     const count = (this.candleCounters.get(candle.instId) ?? 0) + 1;
 

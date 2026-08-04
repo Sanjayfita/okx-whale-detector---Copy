@@ -45,6 +45,16 @@ export class OrderBookManager {
   ): boolean {
     this.lastUpdatePrunedDepth = false;
 
+    if (
+      !Number.isSafeInteger(timestamp) ||
+      timestamp < 0 ||
+      !Number.isSafeInteger(seqId) ||
+      !Number.isSafeInteger(prevSeqId)
+    ) {
+      this.markInvalid();
+      return false;
+    }
+
     if (action === 'snapshot') {
       this.orderBook.bids.clear();
       this.orderBook.asks.clear();
@@ -64,10 +74,10 @@ export class OrderBookManager {
     if (
       !this.orderBook.initialized ||
       this.orderBook.lastSeqId === null ||
-      prevSeqId !== this.orderBook.lastSeqId
+      prevSeqId !== this.orderBook.lastSeqId ||
+      timestamp < this.orderBook.updatedAt
     ) {
-      this.orderBook.status = 'INVALID';
-      this.orderBook.initialized = false;
+      this.markInvalid();
 
       return false;
     }
@@ -133,12 +143,18 @@ export class OrderBookManager {
         continue;
       }
 
+      const notionalQuote = price * size * this.instrument.baseUnitsPerSize;
+
+      if (!Number.isFinite(notionalQuote) || notionalQuote <= 0) {
+        continue;
+      }
+
       side.set(price, {
         price,
         rawPrice,
         size,
         rawSize,
-        notionalQuote: price * size * this.instrument.baseUnitsPerSize,
+        notionalQuote,
         quoteCurrency: this.instrument.quoteCurrency,
         updatedAt: timestamp,
       });
@@ -215,5 +231,25 @@ export class OrderBookManager {
     }
 
     return (bestBid.price + bestAsk.price) / 2;
+  }
+
+  public isUsableForSignals(): boolean {
+    if (!this.orderBook.initialized || this.orderBook.status !== 'SYNCED') {
+      return false;
+    }
+
+    const bestBid = this.getBestBid();
+    const bestAsk = this.getBestAsk();
+
+    return (
+      bestBid !== undefined &&
+      bestAsk !== undefined &&
+      bestBid.price < bestAsk.price
+    );
+  }
+
+  private markInvalid(): void {
+    this.orderBook.status = 'INVALID';
+    this.orderBook.initialized = false;
   }
 }

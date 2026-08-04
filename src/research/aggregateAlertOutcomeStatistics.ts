@@ -1,8 +1,12 @@
 import {
   ALERT_OUTCOME_HORIZONS_MINUTES,
+  hasObservedExcursionPath,
   type AlertOutcomeHorizonMinutes,
 } from './alertOutcomeObservation';
-import type { QualifiedAlertOutcomeBundle } from './qualifiedAlertOutcomeBundle';
+import {
+  validateQualifiedAlertOutcomeBundle,
+  type QualifiedAlertOutcomeBundle,
+} from './qualifiedAlertOutcomeBundle';
 
 export const AGGREGATE_ALERT_OUTCOME_STATISTICS_SCHEMA_VERSION = 1 as const;
 
@@ -14,8 +18,9 @@ export interface AlertOutcomeHorizonStatistics {
   flats: number;
   winRatePercent: number;
   averageDirectionAdjustedReturnPercent: number;
-  averageMaximumFavorableExcursionPercent: number;
-  averageMaximumAdverseExcursionPercent: number;
+  excursionSampleSize: number;
+  averageMaximumFavorableExcursionPercent: number | null;
+  averageMaximumAdverseExcursionPercent: number | null;
 }
 
 export interface AggregateAlertOutcomeStatistics {
@@ -40,9 +45,7 @@ export const aggregateAlertOutcomeStatistics = (
   const evaluationId = bundles[0]!.evidence.evaluationId;
 
   for (const bundle of bundles) {
-    if (!bundle.complete) {
-      throw new Error('Every qualified alert outcome bundle must be complete');
-    }
+    validateQualifiedAlertOutcomeBundle(bundle);
     if (bundle.evidence.evaluationId !== evaluationId) {
       throw new Error('All bundles must belong to the same evaluation');
     }
@@ -70,6 +73,7 @@ export const aggregateAlertOutcomeStatistics = (
       const wins = returns.filter((value) => value > 0).length;
       const losses = returns.filter((value) => value < 0).length;
       const flats = returns.length - wins - losses;
+      const pathObservations = observations.filter(hasObservedExcursionPath);
 
       return Object.freeze({
         horizonMinutes,
@@ -79,16 +83,23 @@ export const aggregateAlertOutcomeStatistics = (
         flats,
         winRatePercent: (wins / observations.length) * 100,
         averageDirectionAdjustedReturnPercent: average(returns),
-        averageMaximumFavorableExcursionPercent: average(
-          observations.map(
-            (observation) => observation.maximumFavorableExcursionPercent,
-          ),
-        ),
-        averageMaximumAdverseExcursionPercent: average(
-          observations.map(
-            (observation) => observation.maximumAdverseExcursionPercent,
-          ),
-        ),
+        excursionSampleSize: pathObservations.length,
+        averageMaximumFavorableExcursionPercent:
+          pathObservations.length === 0
+            ? null
+            : average(
+                pathObservations.map(
+                  (observation) => observation.maximumFavorableExcursionPercent,
+                ),
+              ),
+        averageMaximumAdverseExcursionPercent:
+          pathObservations.length === 0
+            ? null
+            : average(
+                pathObservations.map(
+                  (observation) => observation.maximumAdverseExcursionPercent,
+                ),
+              ),
       });
     },
   );

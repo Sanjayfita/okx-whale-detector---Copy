@@ -8,7 +8,9 @@ import {
   createStatisticalValidationReport,
 } from '../src/research/statisticalValidation';
 
-const createEvidence = (count: number): {
+const createEvidence = (
+  count: number,
+): {
   alerts: QualifiedAlertEvidenceRecord[];
   outcomes: AlertOutcomeObservation[];
 } => {
@@ -79,6 +81,34 @@ describe('statistical validation', () => {
     expect(interval.upper).toBeGreaterThanOrEqual(interval.mean);
   });
 
+  it('rejects invalid bootstrap inputs without entering an unbounded loop', () => {
+    expect(() =>
+      blockBootstrapMeanConfidenceInterval([1], { blockSize: Number.NaN }),
+    ).toThrow('blockSize');
+    expect(() =>
+      blockBootstrapMeanConfidenceInterval([Number.POSITIVE_INFINITY]),
+    ).toThrow('finite');
+    expect(() =>
+      blockBootstrapMeanConfidenceInterval([1], {
+        iterations: 1,
+        random: () => 1,
+      }),
+    ).toThrow('random');
+  });
+
+  it('uses a deterministic default bootstrap stream', () => {
+    const first = blockBootstrapMeanConfidenceInterval([1, -1, 2, -2], {
+      iterations: 100,
+      blockSize: 2,
+    });
+    const second = blockBootstrapMeanConfidenceInterval([1, -1, 2, -2], {
+      iterations: 100,
+      blockSize: 2,
+    });
+
+    expect(second).toEqual(first);
+  });
+
   it('applies Benjamini-Hochberg correction without changing input order', () => {
     const results = applyBenjaminiHochberg([
       { key: 'a', pValue: 0.001 },
@@ -89,6 +119,18 @@ describe('statistical validation', () => {
     expect(results.map((result) => result.key)).toEqual(['a', 'b', 'c']);
     expect(results[0]?.rejected).toBe(true);
     expect(results[2]?.rejected).toBe(false);
+  });
+
+  it('rejects malformed multiple-testing inputs', () => {
+    expect(() =>
+      applyBenjaminiHochberg([{ key: 'invalid', pValue: Number.NaN }]),
+    ).toThrow('p-values');
+    expect(() =>
+      applyBenjaminiHochberg([
+        { key: 'duplicate', pValue: 0.1 },
+        { key: 'duplicate', pValue: 0.2 },
+      ]),
+    ).toThrow('unique');
   });
 
   it('requires positive out-of-sample evidence before qualification', () => {
@@ -113,12 +155,22 @@ describe('statistical validation', () => {
     });
 
     expect(report.sampleRequirementMet).toBe(true);
+    expect(report.independentAlerts).toBe(30);
     expect(report.overallConfidenceInterval.lower).toBeGreaterThan(0);
     expect(report.chronologicalSplit.testCount).toBeGreaterThan(0);
-    expect(report.chronologicalSplit.testMeanNetReturnPercent).toBeGreaterThan(0);
+    expect(report.chronologicalSplit.testMeanNetReturnPercent).toBeGreaterThan(
+      0,
+    );
     expect(report.readyForQualification).toBe(true);
     expect(report.liveOrderExecutionAllowed).toBe(false);
     expect(report.orderExecutionAuthorized).toBe(false);
+    expect(
+      report.byRegime.every(
+        (regime) =>
+          regime.basis === 'OUTCOME_PATH_VOLATILITY' &&
+          !regime.availableAtDecisionTime,
+      ),
+    ).toBe(true);
   });
 
   it('blocks qualification for insufficient data', () => {
@@ -141,5 +193,74 @@ describe('statistical validation', () => {
 
     expect(report.readyForQualification).toBe(false);
     expect(report.reasons[0]).toContain('Requires at least 100');
+  });
+
+  it('counts one alert with multiple horizons as one independent sample', () => {
+    const { alerts, outcomes } = createEvidence(1);
+    const baseOutcome = outcomes[0];
+
+    if (!baseOutcome) {
+      throw new Error('Expected a base outcome');
+    }
+
+    const repeatedHorizons: AlertOutcomeObservation[] = (
+      [1, 5, 15, 30, 60] as const
+    ).map((horizonMinutes) => ({
+      ...baseOutcome,
+      horizonMinutes,
+      observedAt: baseOutcome.detectedAt + horizonMinutes * 60_000,
+    }));
+    const report = createStatisticalValidationReport({
+      generatedAt: 9_999,
+      evaluationId: 'eval-statistics',
+      alerts,
+      outcomes: repeatedHorizons,
+      policy: {
+        startingCapital: 10_000,
+        positionNotional: 100,
+        roundTripCostPercent: 0.2,
+      },
+      options: { minimumSampleSize: 2, bootstrapIterations: 20 },
+    });
+
+    expect(report.matchedObservations).toBe(5);
+    expect(report.independentAlerts).toBe(1);
+    expect(report.sampleRequirementMet).toBe(false);
+  });
+
+  it('purges training labels that overlap a later split boundary', () => {
+    const { alerts, outcomes } = createEvidence(10);
+    const shiftedAlerts = alerts.map((currentAlert, index) => {
+      const detectedAt = 1_000_000 + index * 10 * 60_000;
+      return { ...currentAlert, detectedAt, recordedAt: detectedAt + 1 };
+    });
+    const shiftedOutcomes = outcomes.map((currentOutcome, index) => {
+      const detectedAt = 1_000_000 + index * 10 * 60_000;
+      return {
+        ...currentOutcome,
+        detectedAt,
+        horizonMinutes: 60 as const,
+        observedAt: detectedAt + 60 * 60_000,
+      };
+    });
+
+    const report = createStatisticalValidationReport({
+      generatedAt: 9_999,
+      evaluationId: 'eval-statistics',
+      alerts: shiftedAlerts,
+      outcomes: shiftedOutcomes,
+      policy: {
+        startingCapital: 10_000,
+        positionNotional: 100,
+        roundTripCostPercent: 0.2,
+      },
+      options: {
+        minimumSampleSize: 1,
+        bootstrapIterations: 20,
+        purgeMs: 0,
+      },
+    });
+
+    expect(report.chronologicalSplit.trainCount).toBe(0);
   });
 });

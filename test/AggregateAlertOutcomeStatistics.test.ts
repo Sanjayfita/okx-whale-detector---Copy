@@ -63,6 +63,7 @@ describe('aggregateAlertOutcomeStatistics', () => {
     expect(result.horizonStatistics[0]).toMatchObject({
       horizonMinutes: 1,
       sampleSize: 2,
+      excursionSampleSize: 2,
       wins: 2,
       losses: 0,
       flats: 0,

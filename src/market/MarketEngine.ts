@@ -22,6 +22,24 @@ import type { CorrelatedAlertProvenance } from '../types/correlatedAlertEvaluati
 import type { MarketEvaluation } from '../types/marketEvaluation';
 import type { OrderLevel } from '../types/orderbook';
 import type { Wall } from '../types/wall';
+import type { VersionedCorrelatedAlert } from '../types/correlatedAlert';
+import type { CorrelatedAlertEvaluationContext } from '../types/correlatedAlertEvaluation';
+import type { AlphaMarketContextSnapshot } from '../research/alphaFeatureTypes';
+
+export interface MarketEngineFreshnessOptions {
+  readonly maximumOrderBookAgeMs?: number;
+  readonly maximumFutureSkewMs?: number;
+}
+
+export interface AlphaMarketContextObserverInput {
+  readonly alert: VersionedCorrelatedAlert;
+  readonly evaluationContext: CorrelatedAlertEvaluationContext;
+  readonly marketContext: AlphaMarketContextSnapshot;
+}
+
+export type AlphaMarketContextObserver = (
+  input: AlphaMarketContextObserverInput,
+) => void;
 
 export const prepareMarketSummaryAggregates = (
   whaleScan: Pick<
@@ -87,7 +105,10 @@ const sumNotional = (levels: Iterable<OrderLevel>): number => {
 
 export class MarketEngine {
   private readonly sequenceGapSymbols = new Set<string>();
+  private readonly suspendedSymbols = new Set<string>();
   private readonly lastEvaluations = new Map<string, MarketEvaluation>();
+  private readonly maximumOrderBookAgeMs: number;
+  private readonly maximumFutureSkewMs: number;
 
   constructor(
     private readonly marketStates: Map<string, MarketState>,
@@ -104,7 +125,23 @@ export class MarketEngine {
     private readonly clock: () => number = Date.now,
     private readonly alertProvenance: CorrelatedAlertProvenance = 'LIVE',
     private readonly onSequenceGap?: (symbol: string) => void,
-  ) {}
+    freshness: MarketEngineFreshnessOptions = {},
+    private readonly alphaMarketContextObserver?: AlphaMarketContextObserver,
+  ) {
+    this.maximumOrderBookAgeMs =
+      freshness.maximumOrderBookAgeMs ?? Number.POSITIVE_INFINITY;
+    this.maximumFutureSkewMs = freshness.maximumFutureSkewMs ?? 5_000;
+
+    if (
+      (this.maximumOrderBookAgeMs !== Number.POSITIVE_INFINITY &&
+        (!Number.isSafeInteger(this.maximumOrderBookAgeMs) ||
+          this.maximumOrderBookAgeMs <= 0)) ||
+      !Number.isSafeInteger(this.maximumFutureSkewMs) ||
+      this.maximumFutureSkewMs < 0
+    ) {
+      throw new Error('Invalid market-engine freshness configuration');
+    }
+  }
 
   public processOrderBookUpdate(
     update: OKXOrderBookUpdate,
@@ -136,6 +173,8 @@ export class MarketEngine {
       );
 
       if (!wasApplied) {
+        this.suspendOrderBookDerivedState(update.instId, state);
+
         if (!this.sequenceGapSymbols.has(update.instId)) {
           this.sequenceGapSymbols.add(update.instId);
           state.orderBookManager.markResyncing();
@@ -172,6 +211,26 @@ export class MarketEngine {
       if (!orderBook.initialized || orderBook.status !== 'SYNCED') {
         return;
       }
+
+      const now = this.clock();
+      const bookAgeMs = now - update.timestamp;
+
+      if (
+        !Number.isSafeInteger(now) ||
+        now < 0 ||
+        bookAgeMs >= this.maximumOrderBookAgeMs ||
+        bookAgeMs < -this.maximumFutureSkewMs
+      ) {
+        this.suspendOrderBookDerivedState(update.instId, state);
+        return;
+      }
+
+      if (!state.orderBookManager.isUsableForSignals()) {
+        this.suspendOrderBookDerivedState(update.instId, state);
+        return;
+      }
+
+      this.suspendedSymbols.delete(update.instId);
 
       const result = trace.measure('whaleTracker.scan', () =>
         state.whaleTracker.scan(orderBook),
@@ -226,9 +285,7 @@ export class MarketEngine {
           if (event.type === 'REMOVED') {
             const assessment = state.tradeFlowTracker.assessRemoval(
               event.whale,
-              event.whale.side === 'BID'
-                ? bidDepthNotional
-                : askDepthNotional,
+              event.whale.side === 'BID' ? bidDepthNotional : askDepthNotional,
               this.clock(),
             );
             const behavior = state.whaleBehaviorEngine.analyzeRemoval(
@@ -323,7 +380,7 @@ export class MarketEngine {
 
             if (evaluationContext) {
               try {
-                this.correlatedAlertRecorder?.record(
+                const recordResult = this.correlatedAlertRecorder?.record(
                   alert,
                   {
                     provenance: this.alertProvenance,
@@ -331,6 +388,24 @@ export class MarketEngine {
                   },
                   trace,
                 );
+                if (
+                  recordResult?.persisted &&
+                  this.alphaMarketContextObserver
+                ) {
+                  const marketContext = this.captureAlphaMarketContext(
+                    state,
+                    result,
+                    orderBook,
+                    alert,
+                  );
+                  if (marketContext) {
+                    this.alphaMarketContextObserver({
+                      alert,
+                      evaluationContext,
+                      marketContext,
+                    });
+                  }
+                }
               } catch (error: unknown) {
                 console.error(
                   `Correlated alert recording failed for ${update.instId}:`,
@@ -361,6 +436,7 @@ export class MarketEngine {
 
   public reset(): void {
     this.sequenceGapSymbols.clear();
+    this.suspendedSymbols.clear();
     this.summaryThrottle.reset();
     this.processingMonitor.reset();
     this.pipelineProfiler.reset();
@@ -371,8 +447,11 @@ export class MarketEngine {
   public resetSymbols(symbols: readonly string[]): void {
     for (const symbol of symbols) {
       this.sequenceGapSymbols.delete(symbol);
+      this.suspendedSymbols.delete(symbol);
       this.summaryThrottle.reset(symbol);
-      this.marketStates.get(symbol)?.tradeFlowTracker.reset();
+      const state = this.marketStates.get(symbol);
+      state?.tradeFlowTracker.reset();
+      state?.resetOrderBookDerivedState();
     }
 
     this.processingMonitor.resetSymbols(symbols);
@@ -381,5 +460,97 @@ export class MarketEngine {
       this.lastEvaluations.delete(symbol);
       this.correlatedAlertEngine?.resetSymbol(symbol);
     }
+  }
+
+  private suspendOrderBookDerivedState(
+    symbol: string,
+    state: MarketState,
+  ): void {
+    if (this.suspendedSymbols.has(symbol)) {
+      return;
+    }
+
+    this.suspendedSymbols.add(symbol);
+    state.resetOrderBookDerivedState();
+    this.summaryThrottle.reset(symbol);
+    this.lastEvaluations.delete(symbol);
+    this.correlatedAlertEngine?.resetSymbol(symbol);
+  }
+
+  private captureAlphaMarketContext(
+    state: MarketState,
+    whaleScan: WhaleScanResult,
+    orderBook: ReturnType<MarketState['orderBookManager']['getOrderBook']>,
+    alert: VersionedCorrelatedAlert,
+  ): AlphaMarketContextSnapshot | undefined {
+    if (orderBook.updatedAt > alert.createdAt) return undefined;
+    const requiredSide = alert.bias === 'BULLISH' ? 'BID' : 'ASK';
+    const whale = whaleScan.active
+      .filter((candidate) => candidate.side === requiredSide)
+      .sort(
+        (left, right) =>
+          right.notionalQuote - left.notionalQuote ||
+          left.wallId.localeCompare(right.wallId),
+      )[0];
+    if (!whale) return undefined;
+    const executionEvidence = state.tradeFlowTracker.measureWhaleExecution(
+      whale,
+      alert.createdAt,
+    );
+    const candles = state.candleHistory
+      .getAll()
+      .filter(
+        (candle) =>
+          candle.confirm && candle.timestamp + 60_000 <= alert.createdAt,
+      )
+      .map((candle) =>
+        Object.freeze({
+          intervalStart: candle.timestamp,
+          intervalEnd: candle.timestamp + 60_000,
+          availabilityTimestamp: alert.createdAt,
+          open: candle.open,
+          high: candle.high,
+          low: candle.low,
+          close: candle.close,
+          volume: candle.volumeCurrencyQuote,
+        }),
+      );
+    return Object.freeze({
+      instrumentId: alert.symbol,
+      detectedAt: alert.createdAt,
+      candles: Object.freeze(candles),
+      orderBook: Object.freeze({
+        eventTimestamp: orderBook.updatedAt,
+        availabilityTimestamp: alert.createdAt,
+        bids: Object.freeze(
+          [...orderBook.bids.values()]
+            .sort((left, right) => right.price - left.price)
+            .map((level) =>
+              Object.freeze({ price: level.price, size: level.size }),
+            ),
+        ),
+        asks: Object.freeze(
+          [...orderBook.asks.values()]
+            .sort((left, right) => left.price - right.price)
+            .map((level) =>
+              Object.freeze({ price: level.price, size: level.size }),
+            ),
+        ),
+      }),
+      trades: state.tradeFlowTracker.getResearchTrades(alert.createdAt),
+      whale: Object.freeze({
+        availabilityTimestamp: alert.createdAt,
+        wallPersistenceMs:
+          whale.ageSeconds === undefined ? null : whale.ageSeconds * 1_000,
+        refillCount: state.whaleRefillDetector.getRefillCount(whale),
+        spoofProbability: null,
+        absorptionScore: null,
+        executionRatio: Math.min(
+          1,
+          Math.max(0, executionEvidence.executedRatio),
+        ),
+        whaleNotionalQuote: whale.notionalQuote,
+      }),
+    });
   }
 }

@@ -62,4 +62,27 @@ describe('createQualifiedAlertEvidenceRecord', () => {
       }),
     ).toThrow('bestAsk must be a positive finite number');
   });
+
+  it('rejects non-directional alerts and invalid spread evidence', () => {
+    expect(() =>
+      createQualifiedAlertEvidenceRecord({
+        ...validInput(),
+        direction: 'NEUTRAL',
+      }),
+    ).toThrow('direction must be BULLISH or BEARISH');
+
+    expect(() =>
+      createQualifiedAlertEvidenceRecord({
+        ...validInput(),
+        bestBid: 100.2,
+      }),
+    ).toThrow('bestBid must be lower than bestAsk');
+
+    expect(() =>
+      createQualifiedAlertEvidenceRecord({
+        ...validInput(),
+        spreadPercent: 99,
+      }),
+    ).toThrow('spreadPercent does not match');
+  });
 });

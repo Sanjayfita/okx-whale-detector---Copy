@@ -1,6 +1,10 @@
-import type { QualifiedAlertOutcomeBundle } from './qualifiedAlertOutcomeBundle';
+import { requireArrayElement } from '../core/arrayAccess';
+import {
+  validateQualifiedAlertOutcomeBundle,
+  type QualifiedAlertOutcomeBundle,
+} from './qualifiedAlertOutcomeBundle';
 
-export const CHRONOLOGICAL_DATASET_SPLIT_SCHEMA_VERSION = 1 as const;
+export const CHRONOLOGICAL_DATASET_SPLIT_SCHEMA_VERSION = 2 as const;
 
 export interface ChronologicalDatasetSplit {
   schemaVersion: typeof CHRONOLOGICAL_DATASET_SPLIT_SCHEMA_VERSION;
@@ -11,6 +15,10 @@ export interface ChronologicalDatasetSplit {
   trainingPercent: number;
   validationPercent: number;
   testingPercent: number;
+  purgeMs: number;
+  embargoMs: number;
+  purgedTrainingBundles: number;
+  purgedValidationBundles: number;
   chronological: true;
   complete: true;
   liveOrderExecutionAllowed: false;
@@ -28,6 +36,8 @@ export const createChronologicalDatasetSplit = (input: {
   trainingPercent?: number;
   validationPercent?: number;
   testingPercent?: number;
+  purgeMs?: number;
+  embargoMs?: number;
 }): ChronologicalDatasetSplit => {
   const trainingPercent = requirePercent(
     input.trainingPercent ?? 60,
@@ -41,6 +51,14 @@ export const createChronologicalDatasetSplit = (input: {
     input.testingPercent ?? 20,
     'testingPercent',
   );
+  const purgeMs = input.purgeMs ?? 0;
+  const embargoMs = input.embargoMs ?? 0;
+  if (!Number.isSafeInteger(purgeMs) || purgeMs < 0) {
+    throw new Error('purgeMs must be a non-negative safe integer');
+  }
+  if (!Number.isSafeInteger(embargoMs) || embargoMs < 0) {
+    throw new Error('embargoMs must be a non-negative safe integer');
+  }
 
   if (trainingPercent + validationPercent + testingPercent !== 100) {
     throw new Error('Dataset split percentages must total exactly 100');
@@ -49,12 +67,14 @@ export const createChronologicalDatasetSplit = (input: {
     throw new Error('At least five completed bundles are required');
   }
 
-  const evaluationId = input.bundles[0]!.evidence.evaluationId;
+  const evaluationId = requireArrayElement(
+    input.bundles,
+    0,
+    'first chronological bundle',
+  ).evidence.evaluationId;
 
   for (const bundle of input.bundles) {
-    if (!bundle.complete) {
-      throw new Error('Every bundle must be complete');
-    }
+    validateQualifiedAlertOutcomeBundle(bundle);
     if (bundle.evidence.evaluationId !== evaluationId) {
       throw new Error('All bundles must belong to the same evaluation');
     }
@@ -65,32 +85,68 @@ export const createChronologicalDatasetSplit = (input: {
   );
 
   for (let index = 1; index < ordered.length; index += 1) {
-    if (
-      ordered[index - 1]!.evidence.detectedAt ===
-      ordered[index]!.evidence.detectedAt
-    ) {
+    const previous = requireArrayElement(
+      ordered,
+      index - 1,
+      'previous chronological bundle',
+    );
+    const current = requireArrayElement(
+      ordered,
+      index,
+      'current chronological bundle',
+    );
+    if (previous.evidence.detectedAt === current.evidence.detectedAt) {
       throw new Error('Bundle detection timestamps must be unique');
     }
   }
 
-  const trainingCount = Math.floor(
-    ordered.length * (trainingPercent / 100),
-  );
+  const trainingCount = Math.floor(ordered.length * (trainingPercent / 100));
   const validationCount = Math.floor(
     ordered.length * (validationPercent / 100),
   );
   const testingCount = ordered.length - trainingCount - validationCount;
 
   if (trainingCount === 0 || validationCount === 0 || testingCount === 0) {
-    throw new Error('Every chronological split must contain at least one bundle');
+    throw new Error(
+      'Every chronological split must contain at least one bundle',
+    );
   }
 
-  const training = ordered.slice(0, trainingCount);
-  const validation = ordered.slice(
+  const trainingCandidates = ordered.slice(0, trainingCount);
+  const validationCandidates = ordered.slice(
     trainingCount,
     trainingCount + validationCount,
   );
   const testing = ordered.slice(trainingCount + validationCount);
+  const validationStartedAt = requireArrayElement(
+    validationCandidates,
+    0,
+    'first validation bundle',
+  ).evidence.detectedAt;
+  const testingStartedAt = requireArrayElement(
+    testing,
+    0,
+    'first testing bundle',
+  ).evidence.detectedAt;
+  const labelsAvailableBy = (bundle: QualifiedAlertOutcomeBundle): number =>
+    Math.max(
+      ...bundle.observations.map((observation) => observation.observedAt),
+    );
+  const training = trainingCandidates.filter(
+    (bundle) =>
+      labelsAvailableBy(bundle) <= validationStartedAt - purgeMs &&
+      bundle.evidence.detectedAt < validationStartedAt - embargoMs,
+  );
+  const validation = validationCandidates.filter(
+    (bundle) =>
+      labelsAvailableBy(bundle) <= testingStartedAt - purgeMs &&
+      bundle.evidence.detectedAt < testingStartedAt - embargoMs,
+  );
+  if (training.length === 0 || validation.length === 0) {
+    throw new Error(
+      'Purging and embargo leave an empty chronological training or validation split',
+    );
+  }
 
   return Object.freeze({
     schemaVersion: CHRONOLOGICAL_DATASET_SPLIT_SCHEMA_VERSION,
@@ -101,6 +157,10 @@ export const createChronologicalDatasetSplit = (input: {
     trainingPercent,
     validationPercent,
     testingPercent,
+    purgeMs,
+    embargoMs,
+    purgedTrainingBundles: trainingCandidates.length - training.length,
+    purgedValidationBundles: validationCandidates.length - validation.length,
     chronological: true,
     complete: true,
     liveOrderExecutionAllowed: false,

@@ -23,6 +23,7 @@ export class OKXCandleWebSocketClient {
   private ws: WebSocket | null = null;
   private reconnectTimer?: NodeJS.Timeout;
   private heartbeatTimer?: NodeJS.Timeout;
+  private awaitingHeartbeatResponse = false;
   private reconnectAttempt = 0;
   private intentionallyClosed = false;
 
@@ -55,11 +56,13 @@ export class OKXCandleWebSocketClient {
       console.log('Connected to OKX Candle WebSocket');
 
       this.reconnectAttempt = 0;
+      this.awaitingHeartbeatResponse = false;
       this.startHeartbeat();
       this.resubscribeAll();
     });
 
     ws.on('message', (data) => {
+      this.awaitingHeartbeatResponse = false;
       this.handleMessage(data, performance.now());
     });
 
@@ -168,14 +171,25 @@ export class OKXCandleWebSocketClient {
     const volumeCurrencyQuote = Number(values[7]);
 
     if (
-      !Number.isFinite(timestamp) ||
+      !Number.isSafeInteger(timestamp) ||
+      timestamp < 0 ||
       !Number.isFinite(open) ||
+      open <= 0 ||
       !Number.isFinite(high) ||
+      high <= 0 ||
       !Number.isFinite(low) ||
+      low <= 0 ||
       !Number.isFinite(close) ||
+      close <= 0 ||
       !Number.isFinite(volume) ||
+      volume < 0 ||
       !Number.isFinite(volumeCurrency) ||
-      !Number.isFinite(volumeCurrencyQuote)
+      volumeCurrency < 0 ||
+      !Number.isFinite(volumeCurrencyQuote) ||
+      volumeCurrencyQuote < 0 ||
+      high < Math.max(open, close) ||
+      low > Math.min(open, close) ||
+      (values[8] !== '0' && values[8] !== '1')
     ) {
       console.error('Rejected invalid OKX candle values');
 
@@ -240,13 +254,32 @@ export class OKXCandleWebSocketClient {
     this.stopHeartbeat();
 
     this.heartbeatTimer = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send('ping');
+      const ws = this.ws;
+
+      if (ws?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      if (this.awaitingHeartbeatResponse) {
+        console.warn('OKX Candle WebSocket heartbeat timed out; reconnecting');
+        this.awaitingHeartbeatResponse = false;
+        ws.terminate();
+        return;
+      }
+
+      try {
+        ws.send('ping');
+        this.awaitingHeartbeatResponse = true;
+      } catch (error: unknown) {
+        console.error('Failed to send OKX Candle WebSocket heartbeat:', error);
+        ws.terminate();
       }
     }, 20_000);
   }
 
   private stopHeartbeat(): void {
+    this.awaitingHeartbeatResponse = false;
+
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
 

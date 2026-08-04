@@ -1,4 +1,11 @@
-import type { AlertOutcomeObservation } from './alertOutcomeObservation';
+import {
+  prepareEvidenceRecords,
+  type JoinedEvidenceObservation,
+} from './evidenceIntegrity';
+import {
+  hasObservedExcursionPath,
+  type AlertOutcomeObservation,
+} from './alertOutcomeObservation';
 import type { QualifiedAlertEvidenceRecord } from './qualifiedAlertEvidence';
 
 export interface ProfitabilityPolicy {
@@ -20,8 +27,9 @@ export interface ProfitabilityGroup {
   grossExpectancyUsdt: number;
   netExpectancyUsdt: number;
   hypotheticalNetPnlUsdt: number;
-  averageMfePercent: number;
-  averageMaePercent: number;
+  excursionSampleSize: number;
+  averageMfePercent: number | null;
+  averageMaePercent: number | null;
 }
 
 export interface EvidenceProfitabilityReport {
@@ -41,15 +49,16 @@ export interface EvidenceProfitabilityReport {
   orderExecutionAuthorized: false;
 }
 
-interface JoinedObservation {
-  alert: QualifiedAlertEvidenceRecord;
-  outcome: AlertOutcomeObservation;
-}
-
-const round = (value: number): number => Math.round(value * 1_000_000) / 1_000_000;
+const round = (value: number): number =>
+  Math.round(value * 1_000_000) / 1_000_000;
 
 const average = (values: readonly number[]): number =>
-  values.length === 0 ? 0 : values.reduce((sum, value) => sum + value, 0) / values.length;
+  values.length === 0
+    ? 0
+    : values.reduce((sum, value) => sum + value, 0) / values.length;
+
+const nullableAverage = (values: readonly number[]): number | null =>
+  values.length === 0 ? null : round(average(values));
 
 const median = (values: readonly number[]): number => {
   if (values.length === 0) return 0;
@@ -60,32 +69,47 @@ const median = (values: readonly number[]): number => {
     : (sorted[middle] ?? 0);
 };
 
-const validatePolicy = (policy: ProfitabilityPolicy): ProfitabilityPolicy => {
+export const validateProfitabilityPolicy = (
+  policy: ProfitabilityPolicy,
+): ProfitabilityPolicy => {
   if (!Number.isFinite(policy.startingCapital) || policy.startingCapital <= 0) {
     throw new Error('startingCapital must be a positive finite number');
   }
-  if (!Number.isFinite(policy.positionNotional) || policy.positionNotional <= 0) {
+  if (
+    !Number.isFinite(policy.positionNotional) ||
+    policy.positionNotional <= 0
+  ) {
     throw new Error('positionNotional must be a positive finite number');
   }
-  if (!Number.isFinite(policy.roundTripCostPercent) || policy.roundTripCostPercent < 0) {
-    throw new Error('roundTripCostPercent must be a non-negative finite number');
+  if (
+    !Number.isFinite(policy.roundTripCostPercent) ||
+    policy.roundTripCostPercent < 0
+  ) {
+    throw new Error(
+      'roundTripCostPercent must be a non-negative finite number',
+    );
   }
   return Object.freeze({ ...policy });
 };
 
 const summarize = (
   key: string,
-  observations: readonly JoinedObservation[],
+  observations: readonly JoinedEvidenceObservation[],
   policy: ProfitabilityPolicy,
 ): ProfitabilityGroup => {
   const grossReturns = observations.map(
     ({ outcome }) => outcome.directionAdjustedReturnPercent,
   );
-  const netReturns = grossReturns.map((value) => value - policy.roundTripCostPercent);
+  const netReturns = grossReturns.map(
+    (value) => value - policy.roundTripCostPercent,
+  );
   const wins = netReturns.filter((value) => value > 0).length;
   const losses = netReturns.filter((value) => value < 0).length;
   const flat = netReturns.length - wins - losses;
   const notionalMultiplier = policy.positionNotional / 100;
+  const pathObservations = observations.filter(({ outcome }) =>
+    hasObservedExcursionPath(outcome),
+  );
 
   return Object.freeze({
     key,
@@ -93,7 +117,9 @@ const summarize = (
     wins,
     losses,
     flat,
-    winRatePercent: round(observations.length === 0 ? 0 : (wins / observations.length) * 100),
+    winRatePercent: round(
+      observations.length === 0 ? 0 : (wins / observations.length) * 100,
+    ),
     averageGrossReturnPercent: round(average(grossReturns)),
     medianGrossReturnPercent: round(median(grossReturns)),
     averageNetReturnPercent: round(average(netReturns)),
@@ -102,21 +128,26 @@ const summarize = (
     hypotheticalNetPnlUsdt: round(
       netReturns.reduce((sum, value) => sum + value * notionalMultiplier, 0),
     ),
-    averageMfePercent: round(
-      average(observations.map(({ outcome }) => outcome.maximumFavorableExcursionPercent)),
+    excursionSampleSize: pathObservations.length,
+    averageMfePercent: nullableAverage(
+      pathObservations.map(
+        ({ outcome }) => outcome.maximumFavorableExcursionPercent,
+      ),
     ),
-    averageMaePercent: round(
-      average(observations.map(({ outcome }) => outcome.maximumAdverseExcursionPercent)),
+    averageMaePercent: nullableAverage(
+      pathObservations.map(
+        ({ outcome }) => outcome.maximumAdverseExcursionPercent,
+      ),
     ),
   });
 };
 
 const groupBy = (
-  observations: readonly JoinedObservation[],
-  keyOf: (item: JoinedObservation) => string,
+  observations: readonly JoinedEvidenceObservation[],
+  keyOf: (item: JoinedEvidenceObservation) => string,
   policy: ProfitabilityPolicy,
 ): readonly ProfitabilityGroup[] => {
-  const groups = new Map<string, JoinedObservation[]>();
+  const groups = new Map<string, JoinedEvidenceObservation[]>();
   for (const item of observations) {
     const key = keyOf(item);
     const group = groups.get(key) ?? [];
@@ -125,7 +156,9 @@ const groupBy = (
   }
   return Object.freeze(
     [...groups.entries()]
-      .sort(([left], [right]) => left.localeCompare(right, undefined, { numeric: true }))
+      .sort(([left], [right]) =>
+        left.localeCompare(right, undefined, { numeric: true }),
+      )
       .map(([key, values]) => summarize(key, values, policy)),
   );
 };
@@ -138,37 +171,38 @@ export const createEvidenceProfitabilityReport = (input: {
   malformedRecords?: number;
   policy?: Partial<ProfitabilityPolicy>;
 }): EvidenceProfitabilityReport => {
-  const policy = validatePolicy({
+  const policy = validateProfitabilityPolicy({
     startingCapital: input.policy?.startingCapital ?? 10_000,
     positionNotional: input.policy?.positionNotional ?? 100,
     roundTripCostPercent: input.policy?.roundTripCostPercent ?? 0.2,
   });
-  const alertById = new Map(input.alerts.map((alert) => [alert.alertId, alert]));
-  const joined: JoinedObservation[] = [];
-  let unmatchedObservations = 0;
-
-  for (const outcome of input.outcomes) {
-    const alert = alertById.get(outcome.alertId);
-    if (alert === undefined) {
-      unmatchedObservations += 1;
-      continue;
-    }
-    joined.push({ alert, outcome });
-  }
+  const integrity = prepareEvidenceRecords({
+    evaluationId: input.evaluationId,
+    alerts: input.alerts,
+    outcomes: input.outcomes,
+    malformedRecords: input.malformedRecords,
+  });
+  const joined = integrity.joined;
+  const independentAlerts = new Set(joined.map(({ alert }) => alert.alertId))
+    .size;
 
   return Object.freeze({
     generatedAt: input.generatedAt,
     evaluationId: input.evaluationId,
     policy,
-    qualifiedAlerts: input.alerts.length,
-    completedObservations: input.outcomes.length,
-    unmatchedObservations,
-    malformedRecords: input.malformedRecords ?? 0,
+    qualifiedAlerts: integrity.alerts.length,
+    completedObservations: integrity.outcomes.length,
+    unmatchedObservations: integrity.unmatchedObservations,
+    malformedRecords: integrity.malformedRecords,
     overall: summarize('ALL', joined, policy),
-    byHorizon: groupBy(joined, ({ outcome }) => `${outcome.horizonMinutes}m`, policy),
+    byHorizon: groupBy(
+      joined,
+      ({ outcome }) => `${outcome.horizonMinutes}m`,
+      policy,
+    ),
     byInstrument: groupBy(joined, ({ alert }) => alert.instrumentId, policy),
     byDirection: groupBy(joined, ({ alert }) => alert.direction, policy),
-    insufficientData: joined.length < 100,
+    insufficientData: independentAlerts < 100,
     liveOrderExecutionAllowed: false,
     orderExecutionAuthorized: false,
   });

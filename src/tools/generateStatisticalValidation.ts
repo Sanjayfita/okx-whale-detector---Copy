@@ -1,43 +1,21 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import type { AlertOutcomeObservation } from '../research/alertOutcomeObservation';
+import { isErrorWithCode } from '../core/errorGuards';
+import { parseAlertOutcomeObservation } from '../research/alertOutcomeObservation';
+import { parseEvidenceNdjson } from '../research/evidenceNdjson';
 import type { ProfitabilityPolicy } from '../research/evidenceProfitability';
-import type { QualifiedAlertEvidenceRecord } from '../research/qualifiedAlertEvidence';
+import { parseQualifiedAlertEvidenceRecord } from '../research/qualifiedAlertEvidence';
 import {
   createStatisticalValidationReport,
   type StatisticalValidationReport,
 } from '../research/statisticalValidation';
 
-interface ParsedNdjson<T> {
-  readonly records: T[];
-  readonly malformed: number;
-}
-
-const parseNdjson = <T>(content: string): ParsedNdjson<T> => {
-  const records: T[] = [];
-  let malformed = 0;
-
-  for (const line of content.split(/\r?\n/u)) {
-    if (line.trim() === '') {
-      continue;
-    }
-
-    try {
-      records.push(JSON.parse(line) as T);
-    } catch {
-      malformed += 1;
-    }
-  }
-
-  return { records, malformed };
-};
-
 const readOptional = async (path: string): Promise<string> => {
   try {
     return await readFile(path, 'utf8');
   } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+    if (isErrorWithCode(error, 'ENOENT')) {
       return '';
     }
     throw error;
@@ -70,13 +48,20 @@ export const generateStatisticalValidationReport = async (input: {
   readonly purgeMs?: number;
 }): Promise<StatisticalValidationReport> => {
   const evaluationDirectory =
-    input.evaluationDirectory ?? resolve('data', 'evaluations', input.evaluationId);
+    input.evaluationDirectory ??
+    resolve('data', 'evaluations', input.evaluationId);
   const [alertsText, outcomesText] = await Promise.all([
     readOptional(resolve(evaluationDirectory, 'qualified-alerts.ndjson')),
     readOptional(resolve(evaluationDirectory, 'outcomes.ndjson')),
   ]);
-  const alerts = parseNdjson<QualifiedAlertEvidenceRecord>(alertsText);
-  const outcomes = parseNdjson<AlertOutcomeObservation>(outcomesText);
+  const alerts = parseEvidenceNdjson(
+    alertsText,
+    parseQualifiedAlertEvidenceRecord,
+  );
+  const outcomes = parseEvidenceNdjson(
+    outcomesText,
+    parseAlertOutcomeObservation,
+  );
   const policy: ProfitabilityPolicy = {
     startingCapital: input.policy?.startingCapital ?? 10_000,
     positionNotional: input.policy?.positionNotional ?? 100,
@@ -137,7 +122,9 @@ const main = async (): Promise<void> => {
     console.log(`- ${reason}`);
   }
   console.log(`Output: ${outputPath}`);
-  console.log('Research analytics only. Live order execution remains disabled.');
+  console.log(
+    'Research analytics only. Live order execution remains disabled.',
+  );
 };
 
 if (require.main === module) {

@@ -5,10 +5,13 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { loadEvidenceCollectBootstrap } from '../src/research/evidenceCollectBootstrap';
+import { createCurrentEvidenceEvaluationDefinition } from '../src/research/evidenceEvaluationDefinition';
 import { createEvaluationSessionManifest } from '../src/research/evaluationSessionManifest';
 
 const createFixture = async () => {
-  const projectDirectory = await mkdtemp(join(tmpdir(), 'evidence-collect-bootstrap-'));
+  const projectDirectory = await mkdtemp(
+    join(tmpdir(), 'evidence-collect-bootstrap-'),
+  );
   const evaluationId = 'eval-test-v1';
   const evaluationDirectory = join(
     projectDirectory,
@@ -18,11 +21,16 @@ const createFixture = async () => {
   );
   await mkdir(evaluationDirectory, { recursive: true });
 
+  const definition = createCurrentEvidenceEvaluationDefinition();
   const manifest = createEvaluationSessionManifest({
     evaluationId,
     sourceCommit: 'abc123',
-    configuration: { instruments: ['BTC-USDT'] },
-    instruments: ['BTC-USDT'],
+    configuration: definition.configuration,
+    instruments: definition.instruments,
+    horizonsMinutes: definition.horizonsMinutes,
+    minimumCollectionDays: definition.minimumCollectionDays,
+    minimumQualifiedAlerts: definition.minimumQualifiedAlerts,
+    minimumInstruments: definition.minimumInstruments,
     createdAt: 1_000,
   });
   await writeFile(
@@ -41,11 +49,31 @@ describe('loadEvidenceCollectBootstrap', () => {
     const result = await loadEvidenceCollectBootstrap(
       fixture.evaluationId,
       fixture.projectDirectory,
+      { sourceCommit: 'abc123', gitStatus: '' },
     );
 
     expect(result.evaluationDirectory).toBe(fixture.evaluationDirectory);
     expect(result.manifest).toEqual(fixture.manifest);
     expect(result.liveOrderExecutionAllowed).toBe(false);
+  });
+
+  it('rejects a dirty or different source checkout', async () => {
+    const fixture = await createFixture();
+
+    await expect(
+      loadEvidenceCollectBootstrap(
+        fixture.evaluationId,
+        fixture.projectDirectory,
+        { sourceCommit: 'different', gitStatus: '' },
+      ),
+    ).rejects.toThrow('clean source commit');
+    await expect(
+      loadEvidenceCollectBootstrap(
+        fixture.evaluationId,
+        fixture.projectDirectory,
+        { sourceCommit: 'abc123', gitStatus: ' M src/index.ts' },
+      ),
+    ).rejects.toThrow('clean source commit');
   });
 
   it('rejects unsafe evaluation directory names', async () => {

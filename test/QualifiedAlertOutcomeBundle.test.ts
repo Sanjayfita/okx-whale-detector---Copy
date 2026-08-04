@@ -6,6 +6,7 @@ import {
 } from '../src/research/alertOutcomeObservation';
 import { createQualifiedAlertEvidenceRecord } from '../src/research/qualifiedAlertEvidence';
 import { createQualifiedAlertOutcomeBundle } from '../src/research/qualifiedAlertOutcomeBundle';
+import { validateQualifiedAlertOutcomeBundle } from '../src/research/qualifiedAlertOutcomeBundle';
 
 const evidence = createQualifiedAlertEvidenceRecord({
   evaluationId: 'evaluation-1',
@@ -89,6 +90,38 @@ describe('createQualifiedAlertOutcomeBundle', () => {
           mismatched,
         ],
       }),
-    ).toThrow('Every observation must match the qualified alert evidence record');
+    ).toThrow(
+      'Every observation must match the qualified alert evidence record',
+    );
+  });
+
+  it('rejects a directionally inverted label and a forged complete envelope', () => {
+    const inverted = {
+      ...observation(60),
+      directionAdjustedReturnPercent: -1,
+    };
+    expect(() =>
+      createQualifiedAlertOutcomeBundle({
+        evidence,
+        observations: [
+          observation(1),
+          observation(5),
+          observation(15),
+          observation(30),
+          inverted,
+        ],
+      }),
+    ).toThrow('does not match the alert direction');
+
+    const complete = createQualifiedAlertOutcomeBundle({
+      evidence,
+      observations: ALERT_OUTCOME_HORIZONS_MINUTES.map(observation),
+    });
+    expect(() =>
+      validateQualifiedAlertOutcomeBundle({
+        ...complete,
+        completeHorizons: [1, 5, 15, 30, 30],
+      }),
+    ).toThrow('bundle horizons');
   });
 });

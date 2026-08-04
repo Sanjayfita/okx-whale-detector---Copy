@@ -1,4 +1,7 @@
-import { createAlertOutcomeObservation } from './alertOutcomeObservation';
+import {
+  createAlertOutcomeObservation,
+  type ExcursionMeasurement,
+} from './alertOutcomeObservation';
 import { PersistentOutcomeScheduler } from './persistentOutcomeScheduler';
 import { QualifiedAlertRecorder } from './qualifiedAlertRecorder';
 import type { QualifiedAlertEvidenceRecord } from './qualifiedAlertEvidence';
@@ -9,18 +12,43 @@ export interface LivePriceSnapshot {
   price: number;
   maximumFavorableExcursionPercent: number;
   maximumAdverseExcursionPercent: number;
+  excursionMeasurement: ExcursionMeasurement;
 }
 
 export interface LiveEvidenceCollectorDependencies {
   recorder: QualifiedAlertRecorder;
   scheduler: PersistentOutcomeScheduler;
-  readPrice: (instrumentId: string, dueAt: number) => Promise<LivePriceSnapshot>;
+  readPrice: (
+    instrumentId: string,
+    dueAt: number,
+  ) => Promise<LivePriceSnapshot>;
+  maximumObservationDelayMs?: number;
+  maximumFutureSkewMs?: number;
 }
 
 export class LiveEvidenceCollector {
   private initialized = false;
+  private readonly maximumObservationDelayMs: number;
+  private readonly maximumFutureSkewMs: number;
 
-  public constructor(private readonly dependencies: LiveEvidenceCollectorDependencies) {}
+  public constructor(
+    private readonly dependencies: LiveEvidenceCollectorDependencies,
+  ) {
+    this.maximumObservationDelayMs =
+      dependencies.maximumObservationDelayMs ?? 10_000;
+    this.maximumFutureSkewMs = dependencies.maximumFutureSkewMs ?? 5_000;
+
+    if (
+      !Number.isSafeInteger(this.maximumObservationDelayMs) ||
+      this.maximumObservationDelayMs < 0 ||
+      !Number.isSafeInteger(this.maximumFutureSkewMs) ||
+      this.maximumFutureSkewMs < 0
+    ) {
+      throw new Error(
+        'Evidence timestamp tolerances must be non-negative safe integers',
+      );
+    }
+  }
 
   public async initialize(): Promise<void> {
     await this.dependencies.recorder.initialize();
@@ -42,15 +70,35 @@ export class LiveEvidenceCollector {
     let completed = 0;
 
     for (const job of dueJobs) {
-      const snapshot = await this.dependencies.readPrice(job.instrumentId, job.dueAt);
+      const snapshot = await this.dependencies.readPrice(
+        job.instrumentId,
+        job.dueAt,
+      );
       if (snapshot.instrumentId !== job.instrumentId) {
-        throw new Error('Price snapshot instrument does not match the pending job');
+        throw new Error(
+          'Price snapshot instrument does not match the pending job',
+        );
       }
       if (!Number.isFinite(snapshot.price) || snapshot.price <= 0) {
         throw new Error('Price snapshot must contain a positive finite price');
       }
-      if (snapshot.observedAt < job.dueAt) {
-        throw new Error('Price snapshot was captured before the pending job was due');
+      if (
+        !Number.isSafeInteger(snapshot.observedAt) ||
+        snapshot.observedAt < job.dueAt
+      ) {
+        throw new Error(
+          'Price snapshot was captured before the pending job was due',
+        );
+      }
+      if (snapshot.observedAt - job.dueAt > this.maximumObservationDelayMs) {
+        throw new Error(
+          'Price snapshot was captured too late for the pending job',
+        );
+      }
+      if (snapshot.observedAt - now > this.maximumFutureSkewMs) {
+        throw new Error(
+          'Price snapshot timestamp is implausibly far in the future',
+        );
       }
 
       const rawReturnPercent =
@@ -71,8 +119,8 @@ export class LiveEvidenceCollector {
         directionAdjustedReturnPercent,
         maximumFavorableExcursionPercent:
           snapshot.maximumFavorableExcursionPercent,
-        maximumAdverseExcursionPercent:
-          snapshot.maximumAdverseExcursionPercent,
+        maximumAdverseExcursionPercent: snapshot.maximumAdverseExcursionPercent,
+        excursionMeasurement: snapshot.excursionMeasurement,
       });
 
       await this.dependencies.scheduler.completeObservation(observation);

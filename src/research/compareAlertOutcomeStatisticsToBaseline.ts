@@ -6,9 +6,7 @@ import type {
 export const ALERT_OUTCOME_BASELINE_COMPARISON_SCHEMA_VERSION = 1 as const;
 
 export type BaselineComparisonOutcome =
-  | 'OUTPERFORMED'
-  | 'MATCHED'
-  | 'UNDERPERFORMED';
+  'OUTPERFORMED' | 'MATCHED' | 'UNDERPERFORMED';
 
 export interface AlertOutcomeBaselineHorizonComparison {
   horizonMinutes: number;
@@ -16,8 +14,8 @@ export interface AlertOutcomeBaselineHorizonComparison {
   baselineSampleSize: number;
   winRateDeltaPercent: number;
   averageDirectionAdjustedReturnDeltaPercent: number;
-  averageMaximumFavorableExcursionDeltaPercent: number;
-  averageMaximumAdverseExcursionDeltaPercent: number;
+  averageMaximumFavorableExcursionDeltaPercent: number | null;
+  averageMaximumAdverseExcursionDeltaPercent: number | null;
   outcome: BaselineComparisonOutcome;
 }
 
@@ -48,6 +46,11 @@ const findHorizon = (
   return result;
 };
 
+const difference = (
+  left: number | null,
+  right: number | null,
+): number | null => (left === null || right === null ? null : left - right);
+
 export const compareAlertOutcomeStatisticsToBaseline = (input: {
   detector: AggregateAlertOutcomeStatistics;
   baseline: AggregateAlertOutcomeStatistics;
@@ -55,7 +58,9 @@ export const compareAlertOutcomeStatisticsToBaseline = (input: {
   const { detector, baseline } = input;
 
   if (!detector.complete || !baseline.complete) {
-    throw new Error('Detector and baseline aggregate statistics must be complete');
+    throw new Error(
+      'Detector and baseline aggregate statistics must be complete',
+    );
   }
 
   const detectorHorizons = detector.horizonStatistics.map(
@@ -83,23 +88,29 @@ export const compareAlertOutcomeStatisticsToBaseline = (input: {
       const averageDirectionAdjustedReturnDeltaPercent =
         detectorStatistics.averageDirectionAdjustedReturnPercent -
         baselineStatistics.averageDirectionAdjustedReturnPercent;
-      const averageMaximumFavorableExcursionDeltaPercent =
-        detectorStatistics.averageMaximumFavorableExcursionPercent -
-        baselineStatistics.averageMaximumFavorableExcursionPercent;
-      const averageMaximumAdverseExcursionDeltaPercent =
-        detectorStatistics.averageMaximumAdverseExcursionPercent -
-        baselineStatistics.averageMaximumAdverseExcursionPercent;
+      const averageMaximumFavorableExcursionDeltaPercent = difference(
+        detectorStatistics.averageMaximumFavorableExcursionPercent,
+        baselineStatistics.averageMaximumFavorableExcursionPercent,
+      );
+      const averageMaximumAdverseExcursionDeltaPercent = difference(
+        detectorStatistics.averageMaximumAdverseExcursionPercent,
+        baselineStatistics.averageMaximumAdverseExcursionPercent,
+      );
 
       const positive =
         winRateDeltaPercent > 0 ||
         averageDirectionAdjustedReturnDeltaPercent > 0 ||
-        averageMaximumFavorableExcursionDeltaPercent > 0 ||
-        averageMaximumAdverseExcursionDeltaPercent < 0;
+        (averageMaximumFavorableExcursionDeltaPercent !== null &&
+          averageMaximumFavorableExcursionDeltaPercent > 0) ||
+        (averageMaximumAdverseExcursionDeltaPercent !== null &&
+          averageMaximumAdverseExcursionDeltaPercent < 0);
       const negative =
         winRateDeltaPercent < 0 ||
         averageDirectionAdjustedReturnDeltaPercent < 0 ||
-        averageMaximumFavorableExcursionDeltaPercent < 0 ||
-        averageMaximumAdverseExcursionDeltaPercent > 0;
+        (averageMaximumFavorableExcursionDeltaPercent !== null &&
+          averageMaximumFavorableExcursionDeltaPercent < 0) ||
+        (averageMaximumAdverseExcursionDeltaPercent !== null &&
+          averageMaximumAdverseExcursionDeltaPercent > 0);
 
       const outcome: BaselineComparisonOutcome = positive
         ? negative

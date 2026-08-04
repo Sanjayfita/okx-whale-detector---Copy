@@ -242,6 +242,17 @@ export class WallDetector {
   }
 
   private createWallId(side: WallSide, price: number): string {
-    return `${side}:${price}`;
+    const baseId = `${side}:${price}`;
+
+    if (!this.walls.has(baseId)) {
+      return baseId;
+    }
+
+    let suffix = 2;
+    while (this.walls.has(`${baseId}#${suffix}`)) {
+      suffix += 1;
+    }
+
+    return `${baseId}#${suffix}`;
   }
 }

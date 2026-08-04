@@ -16,6 +16,7 @@ export const runStrategyResearchSimulation = (): void => {
         direction: 'HIGHER_IS_BETTER',
         baseline: 0.12,
         candidate: 0.18,
+        normalizationScale: 0.1,
         weight: 3,
       },
       {
@@ -23,6 +24,7 @@ export const runStrategyResearchSimulation = (): void => {
         direction: 'LOWER_IS_BETTER',
         baseline: 0.15,
         candidate: 0.11,
+        normalizationScale: 0.1,
         weight: 2,
       },
       {
@@ -30,6 +32,7 @@ export const runStrategyResearchSimulation = (): void => {
         direction: 'HIGHER_IS_BETTER',
         baseline: 0.8,
         candidate: 0.82,
+        normalizationScale: 0.1,
       },
     ],
   });
@@ -52,6 +55,7 @@ export const runStrategyResearchSimulation = (): void => {
             direction: 'HIGHER_IS_BETTER',
             baseline: 0.1,
             candidate: 0.14,
+            normalizationScale: 0.1,
             weight: 3,
           },
           {
@@ -59,6 +63,7 @@ export const runStrategyResearchSimulation = (): void => {
             direction: 'LOWER_IS_BETTER',
             baseline: 0.16,
             candidate: 0.13,
+            normalizationScale: 0.1,
             weight: 2,
           },
         ],
@@ -73,6 +78,7 @@ export const runStrategyResearchSimulation = (): void => {
             direction: 'HIGHER_IS_BETTER',
             baseline: 0.11,
             candidate: 0.16,
+            normalizationScale: 0.1,
             weight: 3,
           },
           {
@@ -80,6 +86,7 @@ export const runStrategyResearchSimulation = (): void => {
             direction: 'LOWER_IS_BETTER',
             baseline: 0.14,
             candidate: 0.12,
+            normalizationScale: 0.1,
             weight: 2,
           },
         ],
@@ -94,6 +101,7 @@ export const runStrategyResearchSimulation = (): void => {
             direction: 'HIGHER_IS_BETTER',
             baseline: 0.09,
             candidate: 0.12,
+            normalizationScale: 0.1,
             weight: 3,
           },
           {
@@ -101,6 +109,7 @@ export const runStrategyResearchSimulation = (): void => {
             direction: 'LOWER_IS_BETTER',
             baseline: 0.18,
             candidate: 0.15,
+            normalizationScale: 0.1,
             weight: 2,
           },
         ],
@@ -123,7 +132,9 @@ export const runStrategyResearchSimulation = (): void => {
   console.log(`Direct comparison verdict: ${directComparison.verdict}`);
   console.log(`Walk-forward windows: ${walkForward.windows.length}`);
   console.log(`Walk-forward verdict: ${walkForward.verdict}`);
-  console.log(`Cumulative weighted score: ${walkForward.cumulativeWeightedScore}`);
+  console.log(
+    `Cumulative weighted score: ${walkForward.cumulativeWeightedScore}`,
+  );
   console.log('Deterministic controlled strategy research verified: true');
   console.log('Research analytics only. No orders were placed.');
 };

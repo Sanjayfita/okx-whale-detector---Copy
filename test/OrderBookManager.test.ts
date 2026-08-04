@@ -62,6 +62,51 @@ describe('OrderBookManager', () => {
     expect(manager.getOrderBook().status).toBe('INVALID');
   });
 
+  it('rejects non-integer and backwards update timestamps', () => {
+    const manager = new OrderBookManager();
+
+    expect(
+      manager.applyUpdate(
+        [level('100', '10')],
+        [level('101', '10')],
+        1.5,
+        10,
+        -1,
+        'snapshot',
+      ),
+    ).toBe(false);
+
+    expect(
+      manager.applyUpdate(
+        [level('100', '10')],
+        [level('101', '10')],
+        2_000,
+        20,
+        -1,
+        'snapshot',
+      ),
+    ).toBe(true);
+    expect(manager.applyUpdate([], [], 1_999, 21, 20, 'update')).toBe(false);
+    expect(manager.getOrderBook().status).toBe('INVALID');
+  });
+
+  it('ignores levels whose quote notional overflows', () => {
+    const manager = new OrderBookManager();
+
+    manager.applyUpdate(
+      [level('1e308', '1e308')],
+      [level('101', '10')],
+      1,
+      1,
+      -1,
+      'snapshot',
+    );
+
+    expect(manager.getBestBid()).toBeUndefined();
+    expect(manager.getBestAsk()?.price).toBe(101);
+    expect(manager.isUsableForSignals()).toBe(false);
+  });
+
   it('uses base-asset size directly for spot notional', () => {
     const manager = new OrderBookManager({
       instId: 'BTC-USDT',
@@ -148,6 +193,31 @@ describe('OrderBookManager', () => {
       expect(manager.getBestBid()?.price).toBe(100);
       expect(manager.getBestAsk()?.price).toBe(101);
       expect(manager.getMidPrice()).toBe(100.5);
+      expect(manager.isUsableForSignals()).toBe(true);
+    });
+
+    it('rejects empty, locked, and crossed books for signal generation', () => {
+      const manager = new OrderBookManager();
+
+      manager.applyUpdate(
+        [['101', '10', '0', '1']],
+        [['101', '8', '0', '1']],
+        1_000,
+        1,
+        -1,
+        'snapshot',
+      );
+      expect(manager.isUsableForSignals()).toBe(false);
+
+      manager.applyUpdate(
+        [['102', '10', '0', '1']],
+        [['101', '8', '0', '1']],
+        2_000,
+        2,
+        -1,
+        'snapshot',
+      );
+      expect(manager.isUsableForSignals()).toBe(false);
     });
 
     it('finds best levels regardless of insertion order', () => {

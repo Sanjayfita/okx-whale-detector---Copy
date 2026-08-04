@@ -1,37 +1,20 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import type { AlertOutcomeObservation } from '../research/alertOutcomeObservation';
+import { isErrorWithCode } from '../core/errorGuards';
+import { parseAlertOutcomeObservation } from '../research/alertOutcomeObservation';
+import { parseEvidenceNdjson } from '../research/evidenceNdjson';
 import {
   createEvidenceProfitabilityReport,
   type EvidenceProfitabilityReport,
 } from '../research/evidenceProfitability';
-import type { QualifiedAlertEvidenceRecord } from '../research/qualifiedAlertEvidence';
-
-interface ParsedNdjson<T> {
-  records: T[];
-  malformed: number;
-}
-
-const parseNdjson = <T>(content: string): ParsedNdjson<T> => {
-  const records: T[] = [];
-  let malformed = 0;
-  for (const line of content.split(/\r?\n/u)) {
-    if (line.trim() === '') continue;
-    try {
-      records.push(JSON.parse(line) as T);
-    } catch {
-      malformed += 1;
-    }
-  }
-  return { records, malformed };
-};
+import { parseQualifiedAlertEvidenceRecord } from '../research/qualifiedAlertEvidence';
 
 const readOptional = async (path: string): Promise<string> => {
   try {
     return await readFile(path, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return '';
+  } catch (error: unknown) {
+    if (isErrorWithCode(error, 'ENOENT')) return '';
     throw error;
   }
 };
@@ -45,13 +28,20 @@ export const generateEvidenceProfitabilityReport = async (input: {
   roundTripCostPercent?: number;
 }): Promise<EvidenceProfitabilityReport> => {
   const evaluationDirectory =
-    input.evaluationDirectory ?? resolve('data', 'evaluations', input.evaluationId);
+    input.evaluationDirectory ??
+    resolve('data', 'evaluations', input.evaluationId);
   const [alertsText, outcomesText] = await Promise.all([
     readOptional(resolve(evaluationDirectory, 'qualified-alerts.ndjson')),
     readOptional(resolve(evaluationDirectory, 'outcomes.ndjson')),
   ]);
-  const alerts = parseNdjson<QualifiedAlertEvidenceRecord>(alertsText);
-  const outcomes = parseNdjson<AlertOutcomeObservation>(outcomesText);
+  const alerts = parseEvidenceNdjson(
+    alertsText,
+    parseQualifiedAlertEvidenceRecord,
+  );
+  const outcomes = parseEvidenceNdjson(
+    outcomesText,
+    parseAlertOutcomeObservation,
+  );
 
   return createEvidenceProfitabilityReport({
     generatedAt: input.generatedAt ?? Date.now(),
@@ -80,7 +70,8 @@ const readNumberArgument = (
 
 const main = async (): Promise<void> => {
   const args = process.argv.slice(2);
-  const evaluationId = args.find((value) => !value.startsWith('--')) ?? 'eval-2026-08-02-v1';
+  const evaluationId =
+    args.find((value) => !value.startsWith('--')) ?? 'eval-2026-08-02-v1';
   const evaluationDirectory = resolve('data', 'evaluations', evaluationId);
   const report = await generateEvidenceProfitabilityReport({
     evaluationId,
@@ -98,10 +89,16 @@ const main = async (): Promise<void> => {
   console.log(`Evaluation ID: ${report.evaluationId}`);
   console.log(`Qualified alerts: ${report.qualifiedAlerts}`);
   console.log(`Completed observations: ${report.completedObservations}`);
-  console.log(`Net expectancy: ${report.overall.netExpectancyUsdt} USDT/observation`);
-  console.log(`Hypothetical net PnL: ${report.overall.hypotheticalNetPnlUsdt} USDT`);
+  console.log(
+    `Net expectancy: ${report.overall.netExpectancyUsdt} USDT/observation`,
+  );
+  console.log(
+    `Hypothetical net PnL: ${report.overall.hypotheticalNetPnlUsdt} USDT`,
+  );
   console.log(`Output: ${outputPath}`);
-  console.log('Research analytics only. Live order execution remains disabled.');
+  console.log(
+    'Research analytics only. Live order execution remains disabled.',
+  );
 };
 
 if (require.main === module) {

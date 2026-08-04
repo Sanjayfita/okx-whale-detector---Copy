@@ -18,6 +18,8 @@ const mockState = vi.hoisted(() => {
 
     public closeCallCount = 0;
 
+    public terminateCallCount = 0;
+
     private readonly listeners = new Map<string, Listener[]>();
 
     private readonly onceListeners = new Map<string, Listener[]>();
@@ -59,6 +61,12 @@ const mockState = vi.hoisted(() => {
 
       this.readyState = MockWebSocket.CLOSED;
 
+      this.emit('close');
+    }
+
+    public terminate(): void {
+      this.terminateCallCount += 1;
+      this.readyState = MockWebSocket.CLOSED;
       this.emit('close');
     }
 
@@ -281,6 +289,42 @@ describe('OKXCandleWebSocketClient lifecycle', () => {
     client.close();
   });
 
+  it('terminates and reconnects when a heartbeat receives no response', () => {
+    const client = new OKXCandleWebSocketClient();
+    const socket = requireSocket(0);
+
+    socket.triggerOpen();
+    vi.advanceTimersByTime(20_000);
+    vi.advanceTimersByTime(20_000);
+
+    expect(socket.terminateCallCount).toBe(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      'OKX Candle WebSocket heartbeat timed out; reconnecting',
+    );
+
+    vi.advanceTimersByTime(1_000);
+    expect(mockState.sockets).toHaveLength(2);
+
+    client.close();
+  });
+
+  it('accepts a pong as proof that the heartbeat connection is alive', () => {
+    const client = new OKXCandleWebSocketClient();
+    const socket = requireSocket(0);
+
+    socket.triggerOpen();
+    vi.advanceTimersByTime(20_000);
+    socket.triggerMessage('pong');
+    vi.advanceTimersByTime(20_000);
+
+    expect(socket.terminateCallCount).toBe(0);
+    expect(
+      socket.sentMessages.filter((message) => message === 'ping'),
+    ).toHaveLength(2);
+
+    client.close();
+  });
+
   it('does not send heartbeat while the socket is closed', () => {
     const client = new OKXCandleWebSocketClient();
 
@@ -292,6 +336,26 @@ describe('OKXCandleWebSocketClient lifecycle', () => {
     vi.advanceTimersByTime(20_000);
 
     expect(socket.sentMessages).not.toContain('ping');
+
+    client.close();
+  });
+
+  it('rejects a candle whose high and low do not contain its open and close', () => {
+    const client = new OKXCandleWebSocketClient();
+    const callback = vi.fn();
+
+    client.onCandle(callback);
+    requireSocket(0).triggerMessage(
+      JSON.stringify({
+        arg: { channel: 'candle1m', instId: 'BTC-USDT' },
+        data: [['1000', '100', '99', '98', '101', '10', '10', '1000', '1']],
+      }),
+    );
+
+    expect(callback).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      'Rejected invalid OKX candle values',
+    );
 
     client.close();
   });

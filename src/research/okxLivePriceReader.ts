@@ -1,23 +1,11 @@
 import type { LivePriceSnapshot } from './liveEvidenceCollector';
 
-interface OKXTickerRow {
-  instId?: unknown;
-  last?: unknown;
-  bidPx?: unknown;
-  askPx?: unknown;
-  ts?: unknown;
-}
-
-interface OKXTickerResponse {
-  code?: unknown;
-  msg?: unknown;
-  data?: unknown;
-}
-
 export interface OKXLivePriceReaderOptions {
   baseUrl?: string;
   fetchFn?: typeof fetch;
   clock?: () => number;
+  maximumTickerAgeMs?: number;
+  maximumFutureSkewMs?: number;
 }
 
 const positiveNumber = (value: unknown): number | undefined => {
@@ -28,18 +16,41 @@ const positiveNumber = (value: unknown): number | undefined => {
 
 const timestamp = (value: unknown): number | undefined => {
   const parsed = positiveNumber(value);
-  return parsed !== undefined && Number.isSafeInteger(parsed) ? parsed : undefined;
+  return parsed !== undefined && Number.isSafeInteger(parsed)
+    ? parsed
+    : undefined;
 };
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 export class OKXLivePriceReader {
   private readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
   private readonly clock: () => number;
+  private readonly maximumTickerAgeMs: number;
+  private readonly maximumFutureSkewMs: number;
 
   public constructor(options: OKXLivePriceReaderOptions = {}) {
-    this.baseUrl = (options.baseUrl ?? 'https://www.okx.com').replace(/\/$/, '');
+    this.baseUrl = (options.baseUrl ?? 'https://www.okx.com').replace(
+      /\/$/,
+      '',
+    );
     this.fetchFn = options.fetchFn ?? fetch;
     this.clock = options.clock ?? Date.now;
+    this.maximumTickerAgeMs = options.maximumTickerAgeMs ?? 10_000;
+    this.maximumFutureSkewMs = options.maximumFutureSkewMs ?? 5_000;
+
+    if (
+      !Number.isSafeInteger(this.maximumTickerAgeMs) ||
+      this.maximumTickerAgeMs < 0 ||
+      !Number.isSafeInteger(this.maximumFutureSkewMs) ||
+      this.maximumFutureSkewMs < 0
+    ) {
+      throw new Error(
+        'Ticker timestamp tolerances must be non-negative safe integers',
+      );
+    }
   }
 
   public readPrice = async (
@@ -64,12 +75,24 @@ export class OKXLivePriceReader {
       throw new Error(`OKX ticker request failed with HTTP ${response.status}`);
     }
 
-    const payload = (await response.json()) as OKXTickerResponse;
-    if (payload.code !== '0' || !Array.isArray(payload.data) || payload.data.length !== 1) {
-      throw new Error(`OKX ticker response is invalid: ${String(payload.msg ?? payload.code)}`);
+    const payload: unknown = await response.json();
+    if (!isRecord(payload)) {
+      throw new Error('OKX ticker response is invalid');
+    }
+    if (
+      payload.code !== '0' ||
+      !Array.isArray(payload.data) ||
+      payload.data.length !== 1
+    ) {
+      throw new Error(
+        `OKX ticker response is invalid: ${String(payload.msg ?? payload.code)}`,
+      );
     }
 
-    const row = payload.data[0] as OKXTickerRow;
+    const row = payload.data[0];
+    if (!isRecord(row)) {
+      throw new Error('OKX ticker response row is invalid');
+    }
     if (row.instId !== normalizedInstrumentId) {
       throw new Error('OKX ticker instrument does not match the request');
     }
@@ -77,26 +100,42 @@ export class OKXLivePriceReader {
     const bid = positiveNumber(row.bidPx);
     const ask = positiveNumber(row.askPx);
     const last = positiveNumber(row.last);
+    if (bid !== undefined && ask !== undefined && ask < bid) {
+      throw new Error('OKX ticker contains a crossed bid/ask quote');
+    }
     const price =
-      bid !== undefined && ask !== undefined && ask >= bid
-        ? (bid + ask) / 2
-        : last;
-    if (price === undefined) {
+      bid !== undefined && ask !== undefined ? bid + (ask - bid) / 2 : last;
+    if (price === undefined || !Number.isFinite(price)) {
       throw new Error('OKX ticker does not contain a usable positive price');
     }
 
     const serverTimestamp = timestamp(row.ts);
-    const observedAt = Math.max(this.clock(), serverTimestamp ?? 0);
-    if (observedAt < dueAt) {
-      throw new Error('OKX ticker snapshot was captured before the requested due time');
+    const now = this.clock();
+    if (serverTimestamp === undefined) {
+      throw new Error('OKX ticker does not contain a valid exchange timestamp');
+    }
+    if (!Number.isSafeInteger(now) || now < 0) {
+      throw new Error('Local clock must return a non-negative safe integer');
+    }
+    if (now - serverTimestamp > this.maximumTickerAgeMs) {
+      throw new Error('OKX ticker snapshot is stale');
+    }
+    if (serverTimestamp - now > this.maximumFutureSkewMs) {
+      throw new Error('OKX ticker timestamp is implausibly far in the future');
+    }
+    if (serverTimestamp < dueAt) {
+      throw new Error(
+        'OKX ticker snapshot was captured before the requested due time',
+      );
     }
 
     return Object.freeze({
       instrumentId: normalizedInstrumentId,
-      observedAt,
+      observedAt: serverTimestamp,
       price,
       maximumFavorableExcursionPercent: 0,
       maximumAdverseExcursionPercent: 0,
+      excursionMeasurement: 'UNAVAILABLE',
     });
   };
 }

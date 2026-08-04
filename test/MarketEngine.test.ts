@@ -589,12 +589,126 @@ describe('MarketEngine', () => {
     });
   });
 
-  it('does not persist a version 2 record for an invalid crossed book', () => {
+  it('captures an event-time alpha context only after a whale alert is persisted', () => {
     const evaluation = createCorrelatedEvaluation();
     const correlationService = new ExternalSignalCorrelationService();
     vi.spyOn(correlationService, 'correlateMarketSignal').mockReturnValue(
       evaluation,
     );
+    const whale: Whale = {
+      wallId: 'alpha-bid-wall',
+      side: 'BID',
+      price: 100,
+      size: 10_000,
+      notionalQuote: 1_000_000,
+      quoteCurrency: 'USDT',
+      detectedAt: Date.now() - 30_000,
+      firstSeenAt: Date.now() - 30_000,
+      lastSeenAt: Date.now(),
+      ageSeconds: 30,
+      updateCount: 4,
+      maxNotionalQuote: 1_000_000,
+      strength: 70,
+    };
+    vi.spyOn(state.whaleTracker, 'scan').mockReturnValue({
+      active: [whale],
+      trackedWalls: 1,
+      newWalls: 0,
+      persistentWalls: 1,
+      strongWalls: 0,
+      totalBidNotionalQuote: whale.notionalQuote,
+      totalAskNotionalQuote: 0,
+      strongestBid: whale,
+      strongestAsk: undefined,
+      newWhales: [],
+      removedWhales: [],
+      movedWhales: [],
+    });
+    state.candleHistory.add({
+      instId: 'BTC-USDT',
+      timestamp: Date.now() - 120_000,
+      open: 99,
+      high: 101,
+      low: 98,
+      close: 100,
+      volume: 10,
+      volumeCurrency: 10,
+      volumeCurrencyQuote: 1_000,
+      confirm: true,
+    });
+    state.tradeFlowTracker.record({
+      instId: 'BTC-USDT',
+      tradeId: 'alpha-flow',
+      price: 100,
+      size: 2,
+      side: 'SELL',
+      timestamp: Date.now() - 100,
+    });
+    const alertRecorder = new CorrelatedAlertRecorder({
+      outputPath: 'data/alerts/test-alpha-context.jsonl',
+      writerFactory: () => ({ append: vi.fn(), close: vi.fn() }),
+    });
+    const observer = vi.fn();
+    const integratedEngine = new MarketEngine(
+      marketStates,
+      new SummaryThrottle(5_000),
+      undefined,
+      undefined,
+      undefined,
+      correlationService,
+      new CorrelatedAlertEngine({ sourceSessionId: 'market-engine-alpha' }),
+      undefined,
+      alertRecorder,
+      Date.now,
+      'LIVE',
+      undefined,
+      {},
+      observer,
+    );
+
+    integratedEngine.processOrderBookUpdate(createSnapshot());
+
+    expect(observer).toHaveBeenCalledOnce();
+    expect(observer.mock.calls[0]?.[0]).toMatchObject({
+      alert: { symbol: 'BTC-USDT', bias: 'BULLISH' },
+      marketContext: {
+        instrumentId: 'BTC-USDT',
+        candles: [
+          expect.objectContaining({
+            intervalStart: Date.now() - 120_000,
+            availabilityTimestamp: Date.now(),
+          }),
+        ],
+        orderBook: {
+          eventTimestamp: 1_000,
+          availabilityTimestamp: Date.now(),
+          bids: [{ price: 100, size: 2 }],
+          asks: [{ price: 101, size: 3 }],
+        },
+        trades: [
+          expect.objectContaining({
+            tradeId: 'alpha-flow',
+            side: 'SELL',
+          }),
+        ],
+        whale: {
+          wallPersistenceMs: 30_000,
+          refillCount: 0,
+          spoofProbability: null,
+          absorptionScore: null,
+          whaleNotionalQuote: 1_000_000,
+        },
+      },
+    });
+  });
+
+  it('does not derive or persist signals from an invalid crossed book', () => {
+    const evaluation = createCorrelatedEvaluation();
+    const correlationService = new ExternalSignalCorrelationService();
+    const correlateSpy = vi
+      .spyOn(correlationService, 'correlateMarketSignal')
+      .mockReturnValue(evaluation);
+    const scanSpy = vi.spyOn(state.whaleTracker, 'scan');
     const alertRecorder = new CorrelatedAlertRecorder({
       outputPath: 'data/alerts/test-invalid-context.jsonl',
       writerFactory: () => ({
@@ -622,7 +736,69 @@ describe('MarketEngine', () => {
       }),
     );
 
+    expect(scanSpy).not.toHaveBeenCalled();
+    expect(correlateSpy).not.toHaveBeenCalled();
     expect(alertRecordSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not derive signals from a one-sided book', () => {
+    const scanSpy = vi.spyOn(state.whaleTracker, 'scan');
+
+    engine.processOrderBookUpdate(createSnapshot({ asks: [] }));
+
+    expect(state.orderBookManager.getOrderBook().status).toBe('SYNCED');
+    expect(state.orderBookManager.isUsableForSignals()).toBe(false);
+    expect(scanSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not derive signals from stale or implausibly future books', () => {
+    const now = 20_000;
+    const scanSpy = vi.spyOn(state.whaleTracker, 'scan');
+    const freshnessEngine = new MarketEngine(
+      marketStates,
+      new SummaryThrottle(5_000),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => now,
+      'LIVE',
+      undefined,
+      {
+        maximumOrderBookAgeMs: 5_000,
+        maximumFutureSkewMs: 1_000,
+      },
+    );
+
+    freshnessEngine.processOrderBookUpdate(
+      createSnapshot({ timestamp: 14_999 }),
+    );
+    freshnessEngine.processOrderBookUpdate(
+      createSnapshot({ timestamp: 21_001, seqId: 20 }),
+    );
+
+    expect(scanSpy).not.toHaveBeenCalled();
+
+    freshnessEngine.processOrderBookUpdate(
+      createSnapshot({ timestamp: 20_000, seqId: 30 }),
+    );
+
+    expect(scanSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears derived state once when sequence continuity is lost', () => {
+    engine.processOrderBookUpdate(createSnapshot());
+    const trackerReset = vi.spyOn(state.whaleTracker, 'reset');
+    const wallReset = vi.spyOn(state.wallDetector, 'reset');
+
+    engine.processOrderBookUpdate(createUpdate({ seqId: 12, prevSeqId: 999 }));
+    engine.processOrderBookUpdate(createUpdate({ seqId: 13, prevSeqId: 999 }));
+
+    expect(trackerReset).toHaveBeenCalledTimes(1);
+    expect(wallReset).toHaveBeenCalledTimes(1);
   });
 
   it('does not record when the alert engine emits no alert', () => {

@@ -11,8 +11,8 @@ const escapeHtml = (value: string): string =>
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#039;');
 
-const format = (value: number): string =>
-  Number.isFinite(value) ? value.toFixed(4) : '0.0000';
+const format = (value: number | null): string =>
+  value !== null && Number.isFinite(value) ? value.toFixed(4) : 'N/A';
 
 export const renderEvidenceDashboardHtml = async (
   evaluationId: string,
@@ -37,7 +37,10 @@ export const renderEvidenceDashboardHtml = async (
       <td>${format(group.averageMaePercent)}%</td>
     </tr>`;
 
-  const groupTable = (title: string, groups: typeof report.byHorizon): string => `
+  const groupTable = (
+    title: string,
+    groups: typeof report.byHorizon,
+  ): string => `
     <section class="panel">
       <h2>${title}</h2>
       <div class="table-wrap"><table>
@@ -45,11 +48,12 @@ export const renderEvidenceDashboardHtml = async (
         <tbody>${groups.map(row).join('')}</tbody>
       </table></div>
     </section>`;
-  const statisticalReasons = statistics.reasons.length === 0
-    ? '<li>No blocking statistical reasons.</li>'
-    : statistics.reasons
-        .map((reason) => `<li>${escapeHtml(reason)}</li>`)
-        .join('');
+  const statisticalReasons =
+    statistics.reasons.length === 0
+      ? '<li>No blocking statistical reasons.</li>'
+      : statistics.reasons
+          .map((reason) => `<li>${escapeHtml(reason)}</li>`)
+          .join('');
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -84,7 +88,9 @@ ${groupTable('Performance by direction', report.byDirection)}
 export const createEvidenceDashboardServer = (evaluationId: string): Server =>
   createServer((request, response) => {
     if (request.url === '/health') {
-      response.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
+      response.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+      });
       response.end(
         JSON.stringify({
           status: 'ok',
@@ -104,7 +110,9 @@ export const createEvidenceDashboardServer = (evaluationId: string): Server =>
         response.end(html);
       })
       .catch((error: unknown) => {
-        response.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
+        response.writeHead(500, {
+          'content-type': 'text/plain; charset=utf-8',
+        });
         response.end(error instanceof Error ? error.message : String(error));
       });
   });
@@ -119,7 +127,9 @@ const main = (): void => {
   server.listen(port, '127.0.0.1', () => {
     console.log(`Evidence profitability dashboard: http://127.0.0.1:${port}`);
     console.log(`Evaluation ID: ${evaluationId}`);
-    console.log('Read-only research dashboard. Live order execution remains disabled.');
+    console.log(
+      'Read-only research dashboard. Live order execution remains disabled.',
+    );
   });
   const stop = (): void => {
     server.close(() => process.exit(0));

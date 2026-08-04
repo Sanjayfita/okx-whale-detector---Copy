@@ -78,7 +78,7 @@ describe('OKXInstrumentClient', () => {
     });
   });
 
-  it('derives linear swap base units from ctVal only', async () => {
+  it('derives linear swap base units from ctVal and ctMult', async () => {
     const loader: JsonLoader = async (url) => {
       const instType = new URL(url).searchParams.get('instType');
 
@@ -95,9 +95,24 @@ describe('OKXInstrumentClient', () => {
       instId: 'XAU-USDT-SWAP',
       instType: 'SWAP',
       quoteCurrency: 'USDT',
-      baseUnitsPerSize: 0.001,
+      baseUnitsPerSize: 0.01,
     });
   });
+
+  it.each(['', '0', '-1', 'not-a-number'])(
+    'rejects an invalid swap contract multiplier %j',
+    async (ctMult) => {
+      const client = new OKXInstrumentClient(async () =>
+        response([{ ...swapInstrument, ctMult }]),
+      );
+
+      await expect(
+        client.loadMarketInstruments([
+          { symbol: 'XAU-USDT-SWAP', instrumentType: 'SWAP' },
+        ]),
+      ).rejects.toThrow('Invalid contract value metadata');
+    },
+  );
 
   it('rejects duplicate configured symbols before requesting metadata', async () => {
     const loader = createLoader();

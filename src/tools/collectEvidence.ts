@@ -1,9 +1,17 @@
 import { appConfig } from '../config/appConfig';
 import { EvidenceAwareCorrelatedAlertRecorder } from '../research/evidenceAwareCorrelatedAlertRecorder';
-import { loadEvidenceCollectBootstrap } from '../research/evidenceCollectBootstrap';
+import {
+  loadEvidenceCollectBootstrap,
+  type EvidenceCollectBootstrap,
+} from '../research/evidenceCollectBootstrap';
 import { createEvidenceCollectRuntimeBundle } from '../research/evidenceCollectRuntimeFactory';
+import {
+  EvidenceEvaluationLease,
+  type EvidenceEvaluationLeaseLike,
+} from '../research/evidenceEvaluationLease';
 import { OKXLivePriceReader } from '../research/okxLivePriceReader';
 import type { AppShutdownReason } from '../runtime/AppShutdownCoordinator';
+import type { AlphaMarketContextObserver } from '../market/MarketEngine';
 
 interface AppRuntimeLike {
   polymarketRuntime: { start: () => Promise<void> | void };
@@ -13,14 +21,15 @@ interface AppRuntimeLike {
 export interface EvidenceCollectCommandDependencies {
   createAppRuntime: (dependencies: {
     correlatedAlertRecorder: EvidenceAwareCorrelatedAlertRecorder;
+    alphaMarketContextObserver: AlphaMarketContextObserver;
   }) => Promise<AppRuntimeLike>;
   loadBootstrap?: typeof loadEvidenceCollectBootstrap;
   createPriceReader?: () => OKXLivePriceReader;
   createRuntimeBundle?: typeof createEvidenceCollectRuntimeBundle;
-  registerSignal?: (
-    signal: NodeJS.Signals,
-    handler: () => void,
-  ) => void;
+  createEvaluationLease?: (
+    bootstrap: EvidenceCollectBootstrap,
+  ) => EvidenceEvaluationLeaseLike;
+  registerSignal?: (signal: NodeJS.Signals, handler: () => void) => void;
   log?: (message: string) => void;
   error?: (message: string, error?: unknown) => void;
 }
@@ -31,15 +40,37 @@ export interface EvidenceCollectCommandHandle {
   liveOrderExecutionAllowed: false;
 }
 
+const rethrowWithCleanupErrors = (
+  primaryError: unknown,
+  cleanupErrors: readonly unknown[],
+  message: string,
+): never => {
+  if (cleanupErrors.length > 0) {
+    throw new AggregateError([primaryError, ...cleanupErrors], message);
+  }
+  throw primaryError;
+};
+
 export const runEvidenceCollectCommand = async (
   evaluationId: string,
   dependencies: EvidenceCollectCommandDependencies,
 ): Promise<EvidenceCollectCommandHandle> => {
-  const loadBootstrap = dependencies.loadBootstrap ?? loadEvidenceCollectBootstrap;
+  const loadBootstrap =
+    dependencies.loadBootstrap ?? loadEvidenceCollectBootstrap;
   const createPriceReader =
     dependencies.createPriceReader ?? (() => new OKXLivePriceReader());
   const createRuntimeBundle =
     dependencies.createRuntimeBundle ?? createEvidenceCollectRuntimeBundle;
+  const createEvaluationLease =
+    dependencies.createEvaluationLease ??
+    ((bootstrap: EvidenceCollectBootstrap) =>
+      new EvidenceEvaluationLease({
+        evaluationDirectory: bootstrap.evaluationDirectory,
+        evaluationId: bootstrap.manifest.evaluationId,
+        sourceCommit: bootstrap.manifest.sourceCommit,
+        configurationFingerprint: bootstrap.manifest.configurationFingerprint,
+        purpose: 'COLLECTION',
+      }));
   const registerSignal =
     dependencies.registerSignal ??
     ((signal, handler) => {
@@ -49,47 +80,109 @@ export const runEvidenceCollectCommand = async (
   const error = dependencies.error ?? console.error;
 
   const bootstrap = await loadBootstrap(evaluationId);
-  const priceReader = createPriceReader();
-  const bundle = createRuntimeBundle({
-    bootstrap,
-    readPrice: priceReader.readPrice,
-    onError: (runtimeError) => {
-      error('Evidence collection runtime error:', runtimeError);
-    },
-  });
+  const evaluationLease = createEvaluationLease(bootstrap);
+  await evaluationLease.acquire();
 
-  await bundle.runtime.start();
-
-  const correlatedAlertRecorder = new EvidenceAwareCorrelatedAlertRecorder({
-    enabled: appConfig.correlatedAlertRecording.enabled,
-    outputPath: appConfig.correlatedAlertRecording.outputPath,
-    flushAfterEachAlert: appConfig.correlatedAlertRecording.flushAfterEachAlert,
-    onPersistedLiveAlert: bundle.runtime.onPersistedLiveAlert,
-  });
-
-  let appRuntime: AppRuntimeLike;
+  let bundle: ReturnType<typeof createEvidenceCollectRuntimeBundle> | undefined;
+  let correlatedAlertRecorder: EvidenceAwareCorrelatedAlertRecorder | undefined;
+  let appRuntime: AppRuntimeLike | undefined;
   try {
-    appRuntime = await dependencies.createAppRuntime({ correlatedAlertRecorder });
+    const priceReader = createPriceReader();
+    bundle = createRuntimeBundle({
+      bootstrap,
+      readPrice: priceReader.readPrice,
+      onError: (runtimeError) => {
+        error('Evidence collection runtime error:', runtimeError);
+      },
+    });
+    await bundle.runtime.start();
+
+    correlatedAlertRecorder = new EvidenceAwareCorrelatedAlertRecorder({
+      enabled: appConfig.correlatedAlertRecording.enabled,
+      outputPath: appConfig.correlatedAlertRecording.outputPath,
+      flushAfterEachAlert:
+        appConfig.correlatedAlertRecording.flushAfterEachAlert,
+      onPersistedLiveAlert: bundle.runtime.onPersistedLiveAlert,
+    });
+    appRuntime = await dependencies.createAppRuntime({
+      correlatedAlertRecorder,
+      alphaMarketContextObserver: bundle.runtime.onPersistedAlphaMarketContext,
+    });
   } catch (startupError) {
-    await bundle.runtime.stop();
-    correlatedAlertRecorder.close();
-    throw startupError;
+    const cleanupErrors: unknown[] = [];
+    let evidenceRuntimeStopped = bundle === undefined;
+    if (bundle !== undefined) {
+      try {
+        await bundle.runtime.stop();
+        evidenceRuntimeStopped = true;
+      } catch (cleanupError: unknown) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    try {
+      correlatedAlertRecorder?.close();
+    } catch (cleanupError: unknown) {
+      cleanupErrors.push(cleanupError);
+    }
+    if (evidenceRuntimeStopped) {
+      try {
+        await evaluationLease.release();
+      } catch (cleanupError: unknown) {
+        cleanupErrors.push(cleanupError);
+      }
+    }
+    rethrowWithCleanupErrors(
+      startupError,
+      cleanupErrors,
+      'Evidence collection startup and cleanup failed',
+    );
   }
 
-  void Promise.resolve(appRuntime.polymarketRuntime.start()).catch(
+  const activeBundle = bundle;
+  const activeAppRuntime = appRuntime;
+  if (activeBundle === undefined || activeAppRuntime === undefined) {
+    throw new Error('Evidence collection startup did not produce a runtime');
+  }
+
+  void Promise.resolve(activeAppRuntime.polymarketRuntime.start()).catch(
     (polymarketError: unknown) => {
       error('Polymarket live ingestion failed:', polymarketError);
     },
   );
 
   let stopped = false;
-  const stop = async (
-    signal: AppShutdownReason = 'SIGINT',
-  ): Promise<void> => {
+  const stop = async (signal: AppShutdownReason = 'SIGINT'): Promise<void> => {
     if (stopped) return;
     stopped = true;
-    await bundle.runtime.stop();
-    await appRuntime.shutdown(signal);
+    const shutdownErrors: unknown[] = [];
+    try {
+      await activeAppRuntime.shutdown(signal);
+    } catch (shutdownError: unknown) {
+      shutdownErrors.push(shutdownError);
+    }
+    let evidenceRuntimeStopped = false;
+    try {
+      await activeBundle.runtime.stop();
+      evidenceRuntimeStopped = true;
+    } catch (evidenceShutdownError: unknown) {
+      shutdownErrors.push(evidenceShutdownError);
+    }
+    if (evidenceRuntimeStopped) {
+      try {
+        await evaluationLease.release();
+      } catch (leaseReleaseError: unknown) {
+        shutdownErrors.push(leaseReleaseError);
+      }
+    }
+    if (shutdownErrors.length === 1) {
+      throw shutdownErrors[0];
+    }
+    if (shutdownErrors.length > 1) {
+      throw new AggregateError(
+        shutdownErrors,
+        'Evidence collection shutdown failed',
+      );
+    }
   };
 
   registerSignal('SIGINT', () => {
@@ -118,7 +211,10 @@ export const runEvidenceCollectCommand = async (
 };
 
 const main = async (): Promise<void> => {
-  const evaluationId = process.argv[2] ?? 'eval-2026-08-02-v1';
+  const evaluationId = process.argv[2]?.trim();
+  if (!evaluationId) {
+    throw new Error('Usage: npm run evidence:collect -- <evaluation-id>');
+  }
   process.env.OKX_SKIP_AUTO_START = '1';
   const { createAppRuntime } = await import('../index.js');
   await runEvidenceCollectCommand(evaluationId, { createAppRuntime });

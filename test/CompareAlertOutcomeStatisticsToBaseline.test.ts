@@ -19,6 +19,7 @@ const aggregate = (
   horizonStatistics: [1, 5, 15, 30, 60].map((horizonMinutes) => ({
     horizonMinutes: horizonMinutes as 1 | 5 | 15 | 30 | 60,
     sampleSize: 100,
+    excursionSampleSize: 100,
     wins: winRate,
     losses: 100 - winRate,
     flats: 0,
@@ -60,10 +61,15 @@ describe('compareAlertOutcomeStatisticsToBaseline', () => {
     const detector = aggregate('detector', 0.2, 55, 0.9, 0.5);
     const baseline = aggregate('baseline', 0.2, 55, 0.9, 0.5);
 
-    const result = compareAlertOutcomeStatisticsToBaseline({ detector, baseline });
+    const result = compareAlertOutcomeStatisticsToBaseline({
+      detector,
+      baseline,
+    });
 
     expect(result.matchedHorizons).toBe(5);
-    expect(outcomes(result).every((outcome) => outcome === 'MATCHED')).toBe(true);
+    expect(outcomes(result).every((outcome) => outcome === 'MATCHED')).toBe(
+      true,
+    );
   });
 
   it('marks worse statistics as underperformed', () => {

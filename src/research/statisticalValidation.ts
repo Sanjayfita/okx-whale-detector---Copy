@@ -1,5 +1,12 @@
-import type { AlertOutcomeObservation } from './alertOutcomeObservation';
-import type { ProfitabilityPolicy } from './evidenceProfitability';
+import {
+  hasObservedExcursionPath,
+  type AlertOutcomeObservation,
+} from './alertOutcomeObservation';
+import {
+  validateProfitabilityPolicy,
+  type ProfitabilityPolicy,
+} from './evidenceProfitability';
+import { prepareEvidenceRecords } from './evidenceIntegrity';
 import type { QualifiedAlertEvidenceRecord } from './qualifiedAlertEvidence';
 
 export interface MeanConfidenceInterval {
@@ -38,6 +45,8 @@ export interface HorizonStatisticalValidation {
 
 export interface RegimeStatisticalValidation {
   readonly regime: 'LOW' | 'MEDIUM' | 'HIGH';
+  readonly basis: 'OUTCOME_PATH_VOLATILITY';
+  readonly availableAtDecisionTime: false;
   readonly observations: number;
   readonly meanNetReturnPercent: number;
 }
@@ -52,6 +61,7 @@ export interface StatisticalValidationReport {
   readonly generatedAt: number;
   readonly evaluationId: string;
   readonly matchedObservations: number;
+  readonly independentAlerts: number;
   readonly unmatchedObservations: number;
   readonly malformedRecords: number;
   readonly sampleRequirement: number;
@@ -60,6 +70,7 @@ export interface StatisticalValidationReport {
   readonly chronologicalSplit: ChronologicalSplitSummary;
   readonly byHorizon: readonly HorizonStatisticalValidation[];
   readonly byRegime: readonly RegimeStatisticalValidation[];
+  readonly pathExcursionObservations: number;
   readonly feeSensitivity: readonly FeeSensitivityPoint[];
   readonly readyForQualification: boolean;
   readonly reasons: readonly string[];
@@ -92,6 +103,34 @@ const average = (values: readonly number[]): number =>
   values.length === 0
     ? 0
     : values.reduce((sum, value) => sum + value, 0) / values.length;
+
+const averageReturnsByAlert = (
+  observations: readonly JoinedObservation[],
+): readonly number[] => {
+  const groups = new Map<
+    string,
+    { total: number; count: number; detectedAt: number }
+  >();
+
+  for (const item of observations) {
+    const existing = groups.get(item.alert.alertId);
+
+    if (existing) {
+      existing.total += item.netReturnPercent;
+      existing.count += 1;
+    } else {
+      groups.set(item.alert.alertId, {
+        total: item.netReturnPercent,
+        count: 1,
+        detectedAt: item.alert.detectedAt,
+      });
+    }
+  }
+
+  return [...groups.values()]
+    .sort((left, right) => left.detectedAt - right.detectedAt)
+    .map((group) => group.total / group.count);
+};
 
 const quantile = (values: readonly number[], probability: number): number => {
   if (values.length === 0) {
@@ -130,9 +169,7 @@ const errorFunction = (value: number): number => {
   const p = 0.3275911;
   const t = 1 / (1 + p * x);
   const y =
-    1 -
-    (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t) *
-      Math.exp(-x * x);
+    1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
   return sign * y;
 };
 
@@ -164,17 +201,33 @@ export const blockBootstrapMeanConfidenceInterval = (
 ): MeanConfidenceInterval => {
   const confidenceLevel = options.confidenceLevel ?? 0.95;
   const iterations = options.iterations ?? 2_000;
-  const blockSize = Math.min(
-    Math.max(1, options.blockSize ?? Math.ceil(Math.sqrt(values.length || 1))),
-    Math.max(1, values.length),
-  );
+  const requestedBlockSize =
+    options.blockSize ?? Math.ceil(Math.sqrt(values.length || 1));
 
-  if (confidenceLevel <= 0 || confidenceLevel >= 1) {
+  if (
+    !Number.isFinite(confidenceLevel) ||
+    confidenceLevel <= 0 ||
+    confidenceLevel >= 1
+  ) {
     throw new Error('confidenceLevel must be between 0 and 1');
   }
-  if (!Number.isInteger(iterations) || iterations <= 0) {
-    throw new Error('iterations must be a positive integer');
+  if (
+    !Number.isSafeInteger(iterations) ||
+    iterations <= 0 ||
+    iterations > 1_000_000
+  ) {
+    throw new Error(
+      'iterations must be a positive safe integer no greater than 1,000,000',
+    );
   }
+  if (!Number.isSafeInteger(requestedBlockSize) || requestedBlockSize <= 0) {
+    throw new Error('blockSize must be a positive safe integer');
+  }
+  if (values.some((value) => !Number.isFinite(value))) {
+    throw new Error('bootstrap values must all be finite');
+  }
+
+  const blockSize = Math.min(requestedBlockSize, Math.max(1, values.length));
 
   if (values.length === 0) {
     return {
@@ -187,13 +240,21 @@ export const blockBootstrapMeanConfidenceInterval = (
     };
   }
 
-  const random = options.random ?? Math.random;
+  const random = options.random ?? createRandom(0x5eed_1234);
   const bootstrapMeans: number[] = [];
 
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     const sample: number[] = [];
     while (sample.length < values.length) {
-      const start = Math.floor(random() * values.length);
+      const randomValue = random();
+      if (
+        !Number.isFinite(randomValue) ||
+        randomValue < 0 ||
+        randomValue >= 1
+      ) {
+        throw new Error('random must return a finite value in [0, 1)');
+      }
+      const start = Math.floor(randomValue * values.length);
       for (
         let offset = 0;
         offset < blockSize && sample.length < values.length;
@@ -220,15 +281,32 @@ export const applyBenjaminiHochberg = (
   values: readonly { key: string; pValue: number }[],
   falseDiscoveryRate = 0.05,
 ): readonly MultipleTestingResult[] => {
-  if (falseDiscoveryRate <= 0 || falseDiscoveryRate >= 1) {
+  if (
+    !Number.isFinite(falseDiscoveryRate) ||
+    falseDiscoveryRate <= 0 ||
+    falseDiscoveryRate >= 1
+  ) {
     throw new Error('falseDiscoveryRate must be between 0 and 1');
   }
 
+  const keys = new Set<string>();
+  for (const item of values) {
+    if (
+      item.key.trim().length === 0 ||
+      keys.has(item.key) ||
+      !Number.isFinite(item.pValue) ||
+      item.pValue < 0 ||
+      item.pValue > 1
+    ) {
+      throw new Error(
+        'multiple-testing inputs require unique non-empty keys and p-values in [0, 1]',
+      );
+    }
+    keys.add(item.key);
+  }
+
   const sorted = [...values]
-    .map((item) => ({
-      key: item.key,
-      pValue: Math.max(0, Math.min(1, item.pValue)),
-    }))
+    .map((item) => ({ ...item }))
     .sort((left, right) => left.pValue - right.pValue);
   const adjusted = new Map<string, number>();
   let runningMinimum = 1;
@@ -283,49 +361,50 @@ const createChronologicalSplit = (
       left.outcome.detectedAt - right.outcome.detectedAt ||
       left.outcome.horizonMinutes - right.outcome.horizonMinutes,
   );
+  const eventTimestamps = [
+    ...new Set(sorted.map((item) => item.outcome.detectedAt)),
+  ];
   const firstBoundaryIndex = Math.min(
-    sorted.length - 1,
-    Math.max(0, Math.floor(sorted.length * options.trainRatio)),
+    eventTimestamps.length - 1,
+    Math.max(0, Math.floor(eventTimestamps.length * options.trainRatio)),
   );
   const secondBoundaryIndex = Math.min(
-    sorted.length - 1,
+    eventTimestamps.length - 1,
     Math.max(
       firstBoundaryIndex,
       Math.floor(
-        sorted.length * (options.trainRatio + options.validationRatio),
+        eventTimestamps.length * (options.trainRatio + options.validationRatio),
       ),
     ),
   );
   const firstBoundary =
-    sorted[firstBoundaryIndex]?.outcome.detectedAt ?? Number.POSITIVE_INFINITY;
+    eventTimestamps[firstBoundaryIndex] ?? Number.POSITIVE_INFINITY;
   const secondBoundary =
-    sorted[secondBoundaryIndex]?.outcome.detectedAt ?? Number.POSITIVE_INFINITY;
+    eventTimestamps[secondBoundaryIndex] ?? Number.POSITIVE_INFINITY;
   const train = sorted.filter(
-    (item) => item.outcome.detectedAt < firstBoundary - options.purgeMs,
+    (item) => item.outcome.observedAt < firstBoundary - options.purgeMs,
   );
   const validation = sorted.filter(
     (item) =>
       item.outcome.detectedAt > firstBoundary + options.purgeMs &&
-      item.outcome.detectedAt < secondBoundary - options.purgeMs,
+      item.outcome.observedAt < secondBoundary - options.purgeMs,
   );
   const test = sorted.filter(
     (item) => item.outcome.detectedAt > secondBoundary + options.purgeMs,
   );
 
+  const trainReturns = averageReturnsByAlert(train);
+  const validationReturns = averageReturnsByAlert(validation);
+  const testReturns = averageReturnsByAlert(test);
+
   return {
     purgeMs: options.purgeMs,
-    trainCount: train.length,
-    validationCount: validation.length,
-    testCount: test.length,
-    trainMeanNetReturnPercent: round(
-      average(train.map((item) => item.netReturnPercent)),
-    ),
-    validationMeanNetReturnPercent: round(
-      average(validation.map((item) => item.netReturnPercent)),
-    ),
-    testMeanNetReturnPercent: round(
-      average(test.map((item) => item.netReturnPercent)),
-    ),
+    trainCount: trainReturns.length,
+    validationCount: validationReturns.length,
+    testCount: testReturns.length,
+    trainMeanNetReturnPercent: round(average(trainReturns)),
+    validationMeanNetReturnPercent: round(average(validationReturns)),
+    testMeanNetReturnPercent: round(average(testReturns)),
   };
 };
 
@@ -347,30 +426,47 @@ export const createStatisticalValidationReport = (input: {
   const validationRatio = options.validationRatio ?? 0.2;
   const falseDiscoveryRate = options.falseDiscoveryRate ?? 0.05;
   const randomSeed = options.randomSeed ?? 0x5eed1234;
+  const policy = validateProfitabilityPolicy(input.policy);
 
-  if (trainRatio <= 0 || validationRatio <= 0 || trainRatio + validationRatio >= 1) {
-    throw new Error('chronological split ratios must leave a positive test set');
+  if (
+    !Number.isFinite(trainRatio) ||
+    !Number.isFinite(validationRatio) ||
+    trainRatio <= 0 ||
+    validationRatio <= 0 ||
+    trainRatio + validationRatio >= 1
+  ) {
+    throw new Error(
+      'chronological split ratios must leave a positive test set',
+    );
   }
   if (!Number.isInteger(minimumSampleSize) || minimumSampleSize <= 0) {
     throw new Error('minimumSampleSize must be a positive integer');
   }
+  if (!Number.isSafeInteger(purgeMs) || purgeMs < 0) {
+    throw new Error('purgeMs must be a non-negative safe integer');
+  }
+  if (
+    !Number.isSafeInteger(randomSeed) ||
+    randomSeed < 0 ||
+    randomSeed > 0xffff_ffff
+  ) {
+    throw new Error('randomSeed must be an unsigned 32-bit integer');
+  }
 
-  const alertById = new Map(input.alerts.map((alert) => [alert.alertId, alert]));
+  const integrity = prepareEvidenceRecords({
+    evaluationId: input.evaluationId,
+    alerts: input.alerts,
+    outcomes: input.outcomes,
+    malformedRecords: input.malformedRecords,
+  });
   const joined: JoinedObservation[] = [];
-  let unmatchedObservations = 0;
 
-  for (const outcome of input.outcomes) {
-    const alert = alertById.get(outcome.alertId);
-    if (!alert) {
-      unmatchedObservations += 1;
-      continue;
-    }
+  for (const { alert, outcome } of integrity.joined) {
     joined.push({
       alert,
       outcome,
       netReturnPercent:
-        outcome.directionAdjustedReturnPercent -
-        input.policy.roundTripCostPercent,
+        outcome.directionAdjustedReturnPercent - policy.roundTripCostPercent,
     });
   }
 
@@ -379,7 +475,7 @@ export const createStatisticalValidationReport = (input: {
       left.outcome.detectedAt - right.outcome.detectedAt ||
       left.outcome.horizonMinutes - right.outcome.horizonMinutes,
   );
-  const allNetReturns = sortedJoined.map((item) => item.netReturnPercent);
+  const allNetReturns = averageReturnsByAlert(sortedJoined);
   const random = createRandom(randomSeed);
   const overallConfidenceInterval = blockBootstrapMeanConfidenceInterval(
     allNetReturns,
@@ -425,7 +521,7 @@ export const createStatisticalValidationReport = (input: {
           confidenceLevel,
           iterations: bootstrapIterations,
           blockSize: options.bootstrapBlockSize,
-          random: createRandom(randomSeed + index + 1),
+          random: createRandom((randomSeed + index + 1) >>> 0),
         }),
         significance: adjustedByHorizon.get(String(horizonMinutes)) ?? {
           key: String(horizonMinutes),
@@ -436,7 +532,10 @@ export const createStatisticalValidationReport = (input: {
       };
     });
 
-  const volatility = sortedJoined.map(
+  const pathJoined = sortedJoined.filter((item) =>
+    hasObservedExcursionPath(item.outcome),
+  );
+  const volatility = pathJoined.map(
     (item) =>
       item.outcome.maximumFavorableExcursionPercent +
       item.outcome.maximumAdverseExcursionPercent,
@@ -448,7 +547,7 @@ export const createStatisticalValidationReport = (input: {
     MEDIUM: [],
     HIGH: [],
   };
-  for (const item of sortedJoined) {
+  for (const item of pathJoined) {
     const value =
       item.outcome.maximumFavorableExcursionPercent +
       item.outcome.maximumAdverseExcursionPercent;
@@ -458,16 +557,18 @@ export const createStatisticalValidationReport = (input: {
   }
   const byRegime = (['LOW', 'MEDIUM', 'HIGH'] as const).map((regime) => ({
     regime,
+    basis: 'OUTCOME_PATH_VOLATILITY' as const,
+    availableAtDecisionTime: false as const,
     observations: regimeGroups[regime].length,
     meanNetReturnPercent: round(average(regimeGroups[regime])),
   }));
 
   const costs = [
     0,
-    input.policy.roundTripCostPercent / 2,
-    input.policy.roundTripCostPercent,
-    input.policy.roundTripCostPercent * 1.5,
-    input.policy.roundTripCostPercent * 2,
+    policy.roundTripCostPercent / 2,
+    policy.roundTripCostPercent,
+    policy.roundTripCostPercent * 1.5,
+    policy.roundTripCostPercent * 2,
   ];
   const uniqueCosts = [...new Set(costs.map((value) => round(value)))].sort(
     (left, right) => left - right,
@@ -486,16 +587,25 @@ export const createStatisticalValidationReport = (input: {
     };
   });
 
-  const malformedRecords = input.malformedRecords ?? 0;
-  const sampleRequirementMet = joined.length >= minimumSampleSize;
+  const malformedRecords = integrity.malformedRecords;
+  const unmatchedObservations = integrity.unmatchedObservations;
+  const independentAlerts = allNetReturns.length;
+  const sampleRequirementMet = independentAlerts >= minimumSampleSize;
   const reasons: string[] = [];
   if (!sampleRequirementMet) {
     reasons.push(
-      `Requires at least ${minimumSampleSize} matched observations; found ${joined.length}`,
+      `Requires at least ${minimumSampleSize} independent alerts; found ${independentAlerts}`,
     );
   }
   if (overallConfidenceInterval.lower <= 0) {
     reasons.push('The lower block-bootstrap confidence bound is not positive');
+  }
+  if (chronologicalSplit.validationCount === 0) {
+    reasons.push('The purged chronological validation set is empty');
+  } else if (chronologicalSplit.validationMeanNetReturnPercent <= 0) {
+    reasons.push(
+      'The purged chronological validation-set mean is not positive',
+    );
   }
   if (chronologicalSplit.testCount === 0) {
     reasons.push('The purged chronological test set is empty');
@@ -503,16 +613,21 @@ export const createStatisticalValidationReport = (input: {
     reasons.push('The purged chronological test-set mean is not positive');
   }
   if (unmatchedObservations > 0) {
-    reasons.push(`${unmatchedObservations} outcomes could not be matched to alerts`);
+    reasons.push(
+      `${unmatchedObservations} outcomes could not be matched to alerts`,
+    );
   }
   if (malformedRecords > 0) {
-    reasons.push(`${malformedRecords} malformed evidence records were detected`);
+    reasons.push(
+      `${malformedRecords} malformed evidence records were detected`,
+    );
   }
 
   return Object.freeze({
     generatedAt: input.generatedAt,
     evaluationId: input.evaluationId,
     matchedObservations: joined.length,
+    independentAlerts,
     unmatchedObservations,
     malformedRecords,
     sampleRequirement: minimumSampleSize,
@@ -521,6 +636,7 @@ export const createStatisticalValidationReport = (input: {
     chronologicalSplit,
     byHorizon: Object.freeze(byHorizon),
     byRegime: Object.freeze(byRegime),
+    pathExcursionObservations: pathJoined.length,
     feeSensitivity: Object.freeze(feeSensitivity),
     readyForQualification: reasons.length === 0,
     reasons: Object.freeze(reasons),

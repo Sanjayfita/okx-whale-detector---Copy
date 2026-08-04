@@ -99,6 +99,25 @@ describe('WallDetector one-to-one matching', () => {
     expect(movedWall.ageMs).toBe(30_000);
   });
 
+  it('keeps both walls when a moved wall vacates and then reuses its initial price', () => {
+    const detector = createDetector();
+    const original = detector.detect(
+      createOrderBook([createLevel(100, 6_000)]),
+    )[0];
+
+    detector.detect(createOrderBook([createLevel(100.05, 6_000)]));
+
+    const walls = detector.detect(
+      createOrderBook([createLevel(100.05, 6_000), createLevel(100, 7_000)]),
+    );
+
+    expect(walls).toHaveLength(2);
+    expect(walls[0]).toBe(original);
+    expect(walls.map((wall) => wall.currentPrice)).toEqual([100.05, 100]);
+    expect(new Set(walls.map((wall) => wall.wallId)).size).toBe(2);
+    expect(walls[1]?.wallId).toBe(`${WallSide.BUY}:100#2`);
+  });
+
   it('reuses the exact-price wall and updates its notional', () => {
     const detector = createDetector();
 

@@ -49,11 +49,11 @@ const run = (): void => {
   console.log(
     `Throughput: ${formatChange(comparison.totals.throughputUpdatesPerSecond)}`,
   );
-  console.log(
-    `Final whale events: ${formatChange(
-      comparison.events.whaleEvents.NEW,
-    )} NEW`,
-  );
+  const newWhaleEvents = comparison.events.whaleEvents.NEW;
+  if (newWhaleEvents === undefined) {
+    throw new Error('Replay comparison is missing NEW whale-event totals');
+  }
+  console.log(`Final whale events: ${formatChange(newWhaleEvents)} NEW`);
   console.log(`Sequence gaps: ${formatChange(comparison.events.sequenceGaps)}`);
 
   console.log('\nPIPELINE AVERAGE TIME');

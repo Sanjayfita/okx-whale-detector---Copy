@@ -33,7 +33,10 @@ import { SummaryThrottle } from './core/SummaryThrottle';
 import { ThroughputMonitor } from './core/ThroughputMonitor';
 import { PipelineProfiler } from './core/PipelineProfiler';
 import { ProcessingMonitor } from './core/ProcessingMonitor';
-import { MarketEngine } from './market/MarketEngine';
+import {
+  MarketEngine,
+  type AlphaMarketContextObserver,
+} from './market/MarketEngine';
 import { ExternalSignalCorrelationService } from './external/core/ExternalSignalCorrelationService';
 import { PolymarketLiveSignalRuntime } from './external/providers/polymarket/PolymarketLiveSignalRuntime';
 import { BoundedRecorderQueue } from './recording/BoundedRecorderQueue';
@@ -61,6 +64,7 @@ export interface AppRuntimeDependencies {
   correlatedAlertEngine?: CorrelatedAlertEngine;
   correlatedAlertReporter?: CorrelatedAlertReporter;
   correlatedAlertRecorder?: CorrelatedAlertRecorder;
+  alphaMarketContextObserver?: AlphaMarketContextObserver;
   polymarketRuntime?: PolymarketLiveSignalRuntime;
   marketDataRecorderFactory?: (
     directory: string,
@@ -85,16 +89,16 @@ export const createAppRuntime = async (
   let sourceSessionId: string;
 
   if (dependencies.sourceSessionId !== undefined) {
-    sourceSessionId = createRuntimeSessionId(
-      () => dependencies.sourceSessionId as string,
-    );
+    const providedSourceSessionId = dependencies.sourceSessionId;
+    sourceSessionId = createRuntimeSessionId(() => providedSourceSessionId);
   } else if (dependencies.runtimeSessionIdFactory !== undefined) {
     sourceSessionId = createRuntimeSessionId(
       dependencies.runtimeSessionIdFactory,
     );
   } else if (dependencies.correlatedAlertEngine !== undefined) {
+    const providedAlertEngine = dependencies.correlatedAlertEngine;
     sourceSessionId = createRuntimeSessionId(
-      () => dependencies.correlatedAlertEngine?.sourceSessionId as string,
+      () => providedAlertEngine.sourceSessionId,
     );
   } else {
     sourceSessionId = createRuntimeSessionId();
@@ -263,6 +267,11 @@ export const createAppRuntime = async (
         );
       }
     },
+    {
+      maximumOrderBookAgeMs: healthConfig.orderBookStaleAfterMs,
+      maximumFutureSkewMs: 5_000,
+    },
+    dependencies.alphaMarketContextObserver,
   );
   const polymarketRuntime =
     dependencies.polymarketRuntime ??
@@ -489,7 +498,7 @@ export const start = async (
   void appRuntime.polymarketRuntime.start();
 };
 
-if (shouldAutoStartApp()) {
+if (require.main === module && shouldAutoStartApp()) {
   void start().catch((error: unknown) => {
     console.error('Failed to start OKX Whale Detector:', error);
     process.exitCode = 1;

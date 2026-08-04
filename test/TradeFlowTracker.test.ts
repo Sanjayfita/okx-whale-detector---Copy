@@ -73,6 +73,87 @@ describe('TradeFlowTracker', () => {
     expect(tracker.getSnapshot().tradeCount).toBe(0);
   });
 
+  it('keeps out-of-order trades sorted so stale observations are pruned', () => {
+    let now = 10_000;
+    const tracker = new TradeFlowTracker(1, {
+      clock: () => now,
+      lookbackMs: 1_000,
+    });
+
+    expect(
+      tracker.record({
+        instId: 'BTC-USDT',
+        tradeId: 'newer',
+        price: 100,
+        size: 1,
+        side: 'SELL',
+        timestamp: 9_800,
+      }),
+    ).toBe(true);
+    expect(
+      tracker.record({
+        instId: 'BTC-USDT',
+        tradeId: 'older',
+        price: 100,
+        size: 1,
+        side: 'SELL',
+        timestamp: 9_500,
+      }),
+    ).toBe(true);
+    expect(tracker.getSnapshot()).toMatchObject({
+      tradeCount: 2,
+      oldestTimestamp: 9_500,
+      newestTimestamp: 9_800,
+    });
+
+    now = 10_501;
+    expect(tracker.getSnapshot()).toMatchObject({
+      tradeCount: 1,
+      oldestTimestamp: 9_800,
+      newestTimestamp: 9_800,
+    });
+  });
+
+  it('rejects implausibly future trades and never uses future flow early', () => {
+    let now = 5_000;
+    const tracker = new TradeFlowTracker(1, {
+      clock: () => now,
+      maximumFutureSkewMs: 5_000,
+    });
+
+    expect(
+      tracker.record({
+        instId: 'BTC-USDT',
+        tradeId: 'too-far-ahead',
+        price: 100,
+        size: 3,
+        side: 'BUY',
+        timestamp: 10_001,
+      }),
+    ).toBe(false);
+    expect(
+      tracker.record({
+        instId: 'BTC-USDT',
+        tradeId: 'within-clock-skew',
+        price: 100,
+        size: 3,
+        side: 'BUY',
+        timestamp: 9_000,
+      }),
+    ).toBe(true);
+
+    expect(tracker.getSnapshot().tradeCount).toBe(0);
+    expect(tracker.assessRemoval(whale('ASK'), 10_000).classification).toBe(
+      'POSSIBLE_CANCELLATION',
+    );
+
+    now = 9_000;
+    expect(tracker.getSnapshot().tradeCount).toBe(1);
+    expect(tracker.assessRemoval(whale('ASK'), 10_000).classification).toBe(
+      'LIKELY_EXECUTED',
+    );
+  });
+
   it('calculates a liquidity-normalized whale threshold', () => {
     expect(
       TradeFlowTracker.calculateLiquidityNormalizedThreshold(
@@ -81,5 +162,38 @@ describe('TradeFlowTracker', () => {
         0.05,
       ),
     ).toBe(1_000_000);
+  });
+
+  it('retains a bounded event-time research window without widening behavior flow', () => {
+    let now = 60_000;
+    const tracker = new TradeFlowTracker(2, {
+      clock: () => now,
+      lookbackMs: 5_000,
+      researchRetentionMs: 60_000,
+    });
+    expect(
+      tracker.record({
+        instId: 'BTC-USDT',
+        tradeId: 'research-trade',
+        price: 100,
+        size: 3,
+        side: 'BUY',
+        timestamp: now - 1_000,
+      }),
+    ).toBe(true);
+
+    now += 10_000;
+    expect(tracker.getSnapshot().tradeCount).toBe(0);
+    expect(tracker.getResearchTrades(now, 60_000)).toEqual([
+      {
+        tradeId: 'research-trade',
+        eventTimestamp: 59_000,
+        availabilityTimestamp: 60_000,
+        side: 'BUY',
+        price: 100,
+        size: 3,
+        notionalQuote: 600,
+      },
+    ]);
   });
 });

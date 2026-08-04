@@ -123,7 +123,19 @@ const resolveBaseUnitsPerSize = (
     );
   }
 
-  const baseUnitsPerSize = Number(instrument.ctVal);
+  const contractValue = Number(instrument.ctVal);
+  const contractMultiplier = Number(instrument.ctMult);
+
+  if (
+    !Number.isFinite(contractValue) ||
+    contractValue <= 0 ||
+    !Number.isFinite(contractMultiplier) ||
+    contractMultiplier <= 0
+  ) {
+    throw new Error(`Invalid contract value metadata for ${instrument.instId}`);
+  }
+
+  const baseUnitsPerSize = contractValue * contractMultiplier;
 
   if (!Number.isFinite(baseUnitsPerSize) || baseUnitsPerSize <= 0) {
     throw new Error(`Invalid contract value metadata for ${instrument.instId}`);

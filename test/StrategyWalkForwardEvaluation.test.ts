@@ -8,6 +8,7 @@ const metrics = (baseline: number | null, candidate: number | null) => [
     direction: 'HIGHER_IS_BETTER' as const,
     baseline,
     candidate,
+    normalizationScale: 1,
     weight: 2,
   },
 ];
@@ -18,12 +19,25 @@ describe('evaluateStrategyWalkForward', () => {
       baselineCandidateId: 'candidate:baseline',
       candidateCandidateId: 'candidate:challenger',
       windows: [
-        { windowId: 'window:2', startedAt: 20, endedAt: 30, metrics: metrics(1, 2) },
-        { windowId: 'window:1', startedAt: 10, endedAt: 20, metrics: metrics(1, 1.5) },
+        {
+          windowId: 'window:2',
+          startedAt: 20,
+          endedAt: 30,
+          metrics: metrics(1, 2),
+        },
+        {
+          windowId: 'window:1',
+          startedAt: 10,
+          endedAt: 20,
+          metrics: metrics(1, 1.5),
+        },
       ],
     });
 
-    expect(evaluation.windows.map((window) => window.windowId)).toEqual(['window:1', 'window:2']);
+    expect(evaluation.windows.map((window) => window.windowId)).toEqual([
+      'window:1',
+      'window:2',
+    ]);
     expect(evaluation.betterCount).toBe(2);
     expect(evaluation.cumulativeWeightedScore).toBe(3);
     expect(evaluation.verdict).toBe('ROBUSTLY_BETTER');
@@ -34,8 +48,18 @@ describe('evaluateStrategyWalkForward', () => {
       baselineCandidateId: 'candidate:baseline',
       candidateCandidateId: 'candidate:challenger',
       windows: [
-        { windowId: 'window:1', startedAt: 10, endedAt: 20, metrics: metrics(1, 2) },
-        { windowId: 'window:2', startedAt: 20, endedAt: 30, metrics: metrics(1, 0) },
+        {
+          windowId: 'window:1',
+          startedAt: 10,
+          endedAt: 20,
+          metrics: metrics(1, 2),
+        },
+        {
+          windowId: 'window:2',
+          startedAt: 20,
+          endedAt: 30,
+          metrics: metrics(1, 0),
+        },
       ],
     });
 
@@ -49,8 +73,18 @@ describe('evaluateStrategyWalkForward', () => {
       baselineCandidateId: 'candidate:baseline',
       candidateCandidateId: 'candidate:challenger',
       windows: [
-        { windowId: 'window:1', startedAt: 10, endedAt: 20, metrics: metrics(null, null) },
-        { windowId: 'window:2', startedAt: 20, endedAt: 30, metrics: metrics(null, null) },
+        {
+          windowId: 'window:1',
+          startedAt: 10,
+          endedAt: 20,
+          metrics: metrics(null, null),
+        },
+        {
+          windowId: 'window:2',
+          startedAt: 20,
+          endedAt: 30,
+          metrics: metrics(null, null),
+        },
       ],
     });
 
@@ -63,7 +97,14 @@ describe('evaluateStrategyWalkForward', () => {
       evaluateStrategyWalkForward({
         baselineCandidateId: 'candidate:baseline',
         candidateCandidateId: 'candidate:challenger',
-        windows: [{ windowId: 'window:1', startedAt: 10, endedAt: 20, metrics: metrics(1, 2) }],
+        windows: [
+          {
+            windowId: 'window:1',
+            startedAt: 10,
+            endedAt: 20,
+            metrics: metrics(1, 2),
+          },
+        ],
       }),
     ).toThrow('at least two windows');
 
@@ -72,8 +113,18 @@ describe('evaluateStrategyWalkForward', () => {
         baselineCandidateId: 'candidate:baseline',
         candidateCandidateId: 'candidate:challenger',
         windows: [
-          { windowId: 'window:1', startedAt: 10, endedAt: 25, metrics: metrics(1, 2) },
-          { windowId: 'window:2', startedAt: 20, endedAt: 30, metrics: metrics(1, 2) },
+          {
+            windowId: 'window:1',
+            startedAt: 10,
+            endedAt: 25,
+            metrics: metrics(1, 2),
+          },
+          {
+            windowId: 'window:2',
+            startedAt: 20,
+            endedAt: 30,
+            metrics: metrics(1, 2),
+          },
         ],
       }),
     ).toThrow('must not overlap');

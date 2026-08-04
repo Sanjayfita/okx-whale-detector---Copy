@@ -18,6 +18,8 @@ const mockState = vi.hoisted(() => {
 
     public closeCallCount = 0;
 
+    public terminateCallCount = 0;
+
     private readonly listeners = new Map<string, Listener[]>();
 
     private readonly onceListeners = new Map<string, Listener[]>();
@@ -59,6 +61,12 @@ const mockState = vi.hoisted(() => {
 
       this.readyState = MockWebSocket.CLOSED;
 
+      this.emit('close');
+    }
+
+    public terminate(): void {
+      this.terminateCallCount += 1;
+      this.readyState = MockWebSocket.CLOSED;
       this.emit('close');
     }
 
@@ -281,6 +289,42 @@ describe('OKXWebSocketClient lifecycle', () => {
     client.close();
   });
 
+  it('terminates and reconnects when a heartbeat receives no response', () => {
+    const client = new OKXWebSocketClient();
+    const socket = requireSocket(0);
+
+    socket.triggerOpen();
+    vi.advanceTimersByTime(20_000);
+    vi.advanceTimersByTime(20_000);
+
+    expect(socket.terminateCallCount).toBe(1);
+    expect(console.warn).toHaveBeenCalledWith(
+      'OKX WebSocket heartbeat timed out; reconnecting',
+    );
+
+    vi.advanceTimersByTime(1_000);
+    expect(mockState.sockets).toHaveLength(2);
+
+    client.close();
+  });
+
+  it('accepts a pong as proof that the heartbeat connection is alive', () => {
+    const client = new OKXWebSocketClient();
+    const socket = requireSocket(0);
+
+    socket.triggerOpen();
+    vi.advanceTimersByTime(20_000);
+    socket.triggerMessage('pong');
+    vi.advanceTimersByTime(20_000);
+
+    expect(socket.terminateCallCount).toBe(0);
+    expect(
+      socket.sentMessages.filter((message) => message === 'ping'),
+    ).toHaveLength(2);
+
+    client.close();
+  });
+
   it('records callback queue delay separately from handler duration', () => {
     const profiler = new PipelineProfiler();
     const client = new OKXWebSocketClient(profiler);
@@ -316,6 +360,35 @@ describe('OKXWebSocketClient lifecycle', () => {
     });
     expect(profiler.getRecentStage('okx.orderBook.queueDelay')?.count).toBe(1);
     expect(profiler.getRecentStage('okx.orderBook.handler')?.count).toBe(1);
+
+    client.close();
+  });
+
+  it('rejects an order-book message with a fractional exchange timestamp', () => {
+    const client = new OKXWebSocketClient();
+    const callback = vi.fn();
+
+    client.onOrderBook(callback);
+    requireSocket(0).triggerMessage(
+      JSON.stringify({
+        arg: { channel: 'books', instId: 'BTC-USDT' },
+        action: 'snapshot',
+        data: [
+          {
+            asks: [['101', '2', '0', '1']],
+            bids: [['100', '3', '0', '1']],
+            ts: '1000.5',
+            seqId: 1,
+            prevSeqId: -1,
+          },
+        ],
+      }),
+    );
+
+    expect(callback).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      'Rejected invalid OKX sequence or timestamp',
+    );
 
     client.close();
   });

@@ -29,6 +29,7 @@ const makeEvidence = () =>
 
 const makeDirectory = async (): Promise<string> => {
   const directory = await mkdtemp(join(tmpdir(), 'outcome-scheduler-'));
+  await writeFile(join(directory, 'qualified-alerts.ndjson'), '', 'utf8');
   await writeFile(join(directory, 'pending-observations.json'), '[]\n', 'utf8');
   await writeFile(join(directory, 'outcomes.ndjson'), '', 'utf8');
   return directory;
@@ -42,7 +43,9 @@ describe('PersistentOutcomeScheduler', () => {
 
     const created = await scheduler.scheduleAlert(makeEvidence());
 
-    expect(created.map((job) => job.horizonMinutes)).toEqual([1, 5, 15, 30, 60]);
+    expect(created.map((job) => job.horizonMinutes)).toEqual([
+      1, 5, 15, 30, 60,
+    ]);
     expect(scheduler.getPendingJobs()).toHaveLength(5);
     expect(scheduler.getPendingJobs()[0]?.dueAt).toBe(1_060_000);
 
@@ -63,6 +66,32 @@ describe('PersistentOutcomeScheduler', () => {
     expect(scheduler.getPendingJobs()).toHaveLength(5);
   });
 
+  it('schedules only the horizons frozen for the evaluation', async () => {
+    const scheduler = new PersistentOutcomeScheduler(
+      await makeDirectory(),
+      [5, 15],
+    );
+    await scheduler.initialize();
+
+    const created = await scheduler.scheduleAlert(makeEvidence());
+
+    expect(created.map((job) => job.horizonMinutes)).toEqual([5, 15]);
+    expect(scheduler.getPendingJobs()).toHaveLength(2);
+  });
+
+  it('serializes concurrent scheduling of the same alert', async () => {
+    const scheduler = new PersistentOutcomeScheduler(await makeDirectory());
+    await scheduler.initialize();
+
+    const [first, second] = await Promise.all([
+      scheduler.scheduleAlert(makeEvidence()),
+      scheduler.scheduleAlert(makeEvidence()),
+    ]);
+
+    expect(first.length + second.length).toBe(5);
+    expect(scheduler.getPendingJobs()).toHaveLength(5);
+  });
+
   it('recovers pending jobs after a restart and returns only due jobs', async () => {
     const directory = await makeDirectory();
     const first = new PersistentOutcomeScheduler(directory);
@@ -74,7 +103,78 @@ describe('PersistentOutcomeScheduler', () => {
 
     expect(recovered.getPendingJobs()).toHaveLength(5);
     expect(recovered.getDueJobs(1_059_999)).toHaveLength(0);
-    expect(recovered.getDueJobs(1_060_000).map((job) => job.horizonMinutes)).toEqual([1]);
+    expect(
+      recovered.getDueJobs(1_060_000).map((job) => job.horizonMinutes),
+    ).toEqual([1]);
+  });
+
+  it('reconstructs jobs when a crash occurs after the alert append', async () => {
+    const directory = await makeDirectory();
+    await writeFile(
+      join(directory, 'qualified-alerts.ndjson'),
+      `${JSON.stringify(makeEvidence())}\n`,
+      'utf8',
+    );
+
+    const recovered = new PersistentOutcomeScheduler(directory);
+    await recovered.initialize();
+
+    expect(recovered.getPendingJobs()).toHaveLength(5);
+    expect(recovered.getLastReconciliation()).toEqual({
+      addedMissingJobs: 5,
+      removedCompletedJobs: 0,
+      unchangedJobs: 0,
+    });
+  });
+
+  it('removes an already appended outcome after a crash before state persistence', async () => {
+    const directory = await makeDirectory();
+    const evidence = makeEvidence();
+    await writeFile(
+      join(directory, 'qualified-alerts.ndjson'),
+      `${JSON.stringify(evidence)}\n`,
+      'utf8',
+    );
+    const scheduler = new PersistentOutcomeScheduler(directory);
+    await scheduler.initialize();
+    const persistedBeforeCompletion = await readFile(
+      join(directory, 'pending-observations.json'),
+      'utf8',
+    );
+    const observation = createAlertOutcomeObservation({
+      evaluationId: evidence.evaluationId,
+      alertId: evidence.alertId,
+      instrumentId: evidence.instrumentId,
+      detectedAt: evidence.detectedAt,
+      horizonMinutes: 1,
+      observedAt: evidence.detectedAt + 60_000,
+      referencePrice: evidence.referencePrice,
+      observedPrice: 101,
+      rawReturnPercent: 1,
+      directionAdjustedReturnPercent: 1,
+      maximumFavorableExcursionPercent: 1,
+      maximumAdverseExcursionPercent: 0,
+    });
+    await writeFile(
+      join(directory, 'outcomes.ndjson'),
+      `${JSON.stringify(observation)}\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(directory, 'pending-observations.json'),
+      persistedBeforeCompletion,
+      'utf8',
+    );
+
+    const recovered = new PersistentOutcomeScheduler(directory);
+    await recovered.initialize();
+
+    expect(recovered.getPendingJobs()).toHaveLength(4);
+    expect(recovered.getLastReconciliation()).toEqual({
+      addedMissingJobs: 0,
+      removedCompletedJobs: 1,
+      unchangedJobs: 4,
+    });
   });
 
   it('appends a completed observation and removes its pending job', async () => {
@@ -127,6 +227,74 @@ describe('PersistentOutcomeScheduler', () => {
 
     await expect(scheduler.completeObservation(observation)).rejects.toThrow(
       'No matching pending observation job exists',
+    );
+  });
+
+  it('rejects duplicate or malformed persisted jobs during recovery', async () => {
+    const directory = await makeDirectory();
+    const scheduler = new PersistentOutcomeScheduler(directory);
+    await scheduler.initialize();
+    await scheduler.scheduleAlert(makeEvidence());
+
+    const pendingPath = join(directory, 'pending-observations.json');
+    const persisted = JSON.parse(await readFile(pendingPath, 'utf8')) as {
+      pending: unknown[];
+    };
+    await writeFile(
+      pendingPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        pending: [persisted.pending[0], persisted.pending[0]],
+        liveOrderExecutionAllowed: false,
+      }),
+      'utf8',
+    );
+
+    await expect(
+      new PersistentOutcomeScheduler(directory).initialize(),
+    ).rejects.toThrow('duplicate jobs');
+
+    const persistedJob = persisted.pending[0];
+    if (typeof persistedJob !== 'object' || persistedJob === null) {
+      throw new Error('Expected a persisted pending job');
+    }
+    await writeFile(
+      pendingPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        pending: [{ ...persistedJob, referencePrice: -1 }],
+        liveOrderExecutionAllowed: false,
+      }),
+      'utf8',
+    );
+
+    await expect(
+      new PersistentOutcomeScheduler(directory).initialize(),
+    ).rejects.toThrow('Invalid pending outcome job');
+  });
+
+  it('rejects a return whose direction conflicts with its scheduled alert', async () => {
+    const scheduler = new PersistentOutcomeScheduler(await makeDirectory());
+    await scheduler.initialize();
+    await scheduler.scheduleAlert(makeEvidence());
+
+    const observation = createAlertOutcomeObservation({
+      evaluationId: 'eval-r2',
+      alertId: 'alert-1',
+      instrumentId: 'BTC-USDT',
+      detectedAt: 1_000_000,
+      horizonMinutes: 1,
+      observedAt: 1_060_000,
+      referencePrice: 100,
+      observedPrice: 101,
+      rawReturnPercent: 1,
+      directionAdjustedReturnPercent: -1,
+      maximumFavorableExcursionPercent: 1,
+      maximumAdverseExcursionPercent: 0,
+    });
+
+    await expect(scheduler.completeObservation(observation)).rejects.toThrow(
+      'direction does not match',
     );
   });
 });

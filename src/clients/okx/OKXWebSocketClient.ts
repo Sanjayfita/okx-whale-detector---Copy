@@ -45,6 +45,7 @@ export class OKXWebSocketClient {
   private ws: WebSocket | null = null;
   private reconnectTimer?: NodeJS.Timeout;
   private heartbeatTimer?: NodeJS.Timeout;
+  private awaitingHeartbeatResponse = false;
   private reconnectAttempt = 0;
   private intentionallyClosed = false;
   private hasConnectedOnce = false;
@@ -58,10 +59,7 @@ export class OKXWebSocketClient {
     string,
     { instId: string; interval: string }
   >();
-  private readonly tradeSubscriptions = new Map<
-    string,
-    SupportedInstType
-  >();
+  private readonly tradeSubscriptions = new Map<string, SupportedInstType>();
   private onOrderBookUpdate?: (
     update: OKXOrderBookUpdate,
     performanceContext?: MessagePerformanceContext,
@@ -96,6 +94,7 @@ export class OKXWebSocketClient {
 
       this.hasConnectedOnce = true;
       this.reconnectAttempt = 0;
+      this.awaitingHeartbeatResponse = false;
 
       console.log(
         isReconnect
@@ -112,6 +111,7 @@ export class OKXWebSocketClient {
     });
 
     ws.on('message', (data) => {
+      this.awaitingHeartbeatResponse = false;
       this.handleMessage(data, performance.now());
     });
 
@@ -236,7 +236,8 @@ export class OKXWebSocketClient {
     const prevSeqId = Number(orderBook.prevSeqId);
 
     if (
-      !Number.isFinite(timestamp) ||
+      !Number.isSafeInteger(timestamp) ||
+      timestamp < 0 ||
       !Number.isSafeInteger(seqId) ||
       !Number.isSafeInteger(prevSeqId)
     ) {
@@ -314,7 +315,8 @@ export class OKXWebSocketClient {
         price <= 0 ||
         !Number.isFinite(size) ||
         size <= 0 ||
-        !Number.isFinite(timestamp) ||
+        !Number.isSafeInteger(timestamp) ||
+        timestamp < 0 ||
         typeof tradeId !== 'string' ||
         tradeId.length === 0 ||
         (rawSide !== 'buy' && rawSide !== 'sell')
@@ -389,12 +391,21 @@ export class OKXWebSocketClient {
     const volume = Number(rawCandle[5]);
 
     if (
-      !Number.isFinite(timestamp) ||
+      !Number.isSafeInteger(timestamp) ||
+      timestamp < 0 ||
       !Number.isFinite(open) ||
+      open <= 0 ||
       !Number.isFinite(high) ||
+      high <= 0 ||
       !Number.isFinite(low) ||
+      low <= 0 ||
       !Number.isFinite(close) ||
-      !Number.isFinite(volume)
+      close <= 0 ||
+      !Number.isFinite(volume) ||
+      volume < 0 ||
+      high < Math.max(open, close) ||
+      low > Math.min(open, close) ||
+      (rawCandle[8] !== '0' && rawCandle[8] !== '1')
     ) {
       console.error('Rejected invalid OKX candle values');
       return;
@@ -458,19 +469,36 @@ export class OKXWebSocketClient {
     this.stopHeartbeat();
 
     this.heartbeatTimer = setInterval(() => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
-        this.ws.send('ping');
+      const ws = this.ws;
+
+      if (ws?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+
+      if (this.awaitingHeartbeatResponse) {
+        console.warn('OKX WebSocket heartbeat timed out; reconnecting');
+        this.awaitingHeartbeatResponse = false;
+        ws.terminate();
+        return;
+      }
+
+      try {
+        ws.send('ping');
+        this.awaitingHeartbeatResponse = true;
+      } catch (error: unknown) {
+        console.error('Failed to send OKX WebSocket heartbeat:', error);
+        ws.terminate();
       }
     }, 20_000);
   }
 
   private stopHeartbeat(): void {
-    if (!this.heartbeatTimer) {
-      return;
-    }
+    this.awaitingHeartbeatResponse = false;
 
-    clearInterval(this.heartbeatTimer);
-    this.heartbeatTimer = undefined;
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = undefined;
+    }
   }
 
   private resubscribeAll(): void {

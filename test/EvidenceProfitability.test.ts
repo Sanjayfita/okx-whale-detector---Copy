@@ -4,7 +4,9 @@ import type { AlertOutcomeObservation } from '../src/research/alertOutcomeObserv
 import { createEvidenceProfitabilityReport } from '../src/research/evidenceProfitability';
 import type { QualifiedAlertEvidenceRecord } from '../src/research/qualifiedAlertEvidence';
 
-const alert = (overrides: Partial<QualifiedAlertEvidenceRecord> = {}): QualifiedAlertEvidenceRecord => ({
+const alert = (
+  overrides: Partial<QualifiedAlertEvidenceRecord> = {},
+): QualifiedAlertEvidenceRecord => ({
   schemaVersion: 1,
   evaluationId: 'eval-test',
   alertId: 'alert-1',
@@ -25,7 +27,9 @@ const alert = (overrides: Partial<QualifiedAlertEvidenceRecord> = {}): Qualified
   ...overrides,
 });
 
-const outcome = (overrides: Partial<AlertOutcomeObservation> = {}): AlertOutcomeObservation => ({
+const outcome = (
+  overrides: Partial<AlertOutcomeObservation> = {},
+): AlertOutcomeObservation => ({
   schemaVersion: 1,
   evaluationId: 'eval-test',
   alertId: 'alert-1',
@@ -49,7 +53,14 @@ describe('createEvidenceProfitabilityReport', () => {
     const report = createEvidenceProfitabilityReport({
       generatedAt: 70_000,
       evaluationId: 'eval-test',
-      alerts: [alert(), alert({ alertId: 'alert-2', direction: 'BEARISH', instrumentId: 'ETH-USDT' })],
+      alerts: [
+        alert(),
+        alert({
+          alertId: 'alert-2',
+          direction: 'BEARISH',
+          instrumentId: 'ETH-USDT',
+        }),
+      ],
       outcomes: [
         outcome(),
         outcome({
@@ -57,6 +68,8 @@ describe('createEvidenceProfitabilityReport', () => {
           instrumentId: 'ETH-USDT',
           horizonMinutes: 5,
           observedAt: 301_000,
+          observedPrice: 100.5,
+          rawReturnPercent: 0.5,
           directionAdjustedReturnPercent: -0.5,
           maximumFavorableExcursionPercent: 0.4,
           maximumAdverseExcursionPercent: 0.8,
@@ -88,5 +101,66 @@ describe('createEvidenceProfitabilityReport', () => {
 
     expect(report.unmatchedObservations).toBe(1);
     expect(report.overall.observations).toBe(0);
+  });
+
+  it('does not treat unavailable path excursions as observed zeroes', () => {
+    const report = createEvidenceProfitabilityReport({
+      generatedAt: 70_000,
+      evaluationId: 'eval-test',
+      alerts: [alert()],
+      outcomes: [
+        outcome({
+          maximumFavorableExcursionPercent: 0,
+          maximumAdverseExcursionPercent: 0,
+          excursionMeasurement: 'UNAVAILABLE',
+        }),
+      ],
+    });
+
+    expect(report.overall.excursionSampleSize).toBe(0);
+    expect(report.overall.averageMfePercent).toBeNull();
+    expect(report.overall.averageMaePercent).toBeNull();
+  });
+
+  it('rejects duplicate and cross-evaluation evidence from the calculation', () => {
+    const report = createEvidenceProfitabilityReport({
+      generatedAt: 70_000,
+      evaluationId: 'eval-test',
+      alerts: [
+        alert(),
+        alert(),
+        alert({ alertId: 'foreign', evaluationId: 'another-evaluation' }),
+      ],
+      outcomes: [
+        outcome(),
+        outcome(),
+        outcome({ alertId: 'foreign', evaluationId: 'another-evaluation' }),
+      ],
+    });
+
+    expect(report.qualifiedAlerts).toBe(1);
+    expect(report.completedObservations).toBe(1);
+    expect(report.overall.observations).toBe(1);
+    expect(report.malformedRecords).toBe(4);
+  });
+
+  it('rejects an outcome whose identity or direction does not match its alert', () => {
+    const report = createEvidenceProfitabilityReport({
+      generatedAt: 70_000,
+      evaluationId: 'eval-test',
+      alerts: [alert()],
+      outcomes: [
+        outcome({ instrumentId: 'ETH-USDT' }),
+        outcome({
+          horizonMinutes: 5,
+          observedAt: 301_000,
+          directionAdjustedReturnPercent: -1,
+        }),
+      ],
+    });
+
+    expect(report.completedObservations).toBe(0);
+    expect(report.overall.observations).toBe(0);
+    expect(report.malformedRecords).toBe(2);
   });
 });
