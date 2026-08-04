@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createCurrentEvidenceEvaluationDefinition,
   EVIDENCE_EVENT_GENERATOR_POLICY,
+  EVIDENCE_INDEPENDENCE_POLICY,
 } from '../src/research/evidenceEvaluationDefinition';
 
 describe('evidence evaluation definition', () => {
@@ -13,6 +14,9 @@ describe('evidence evaluation definition', () => {
       eventGeneratorPolicy: EVIDENCE_EVENT_GENERATOR_POLICY,
       externalSignalsMayQualifyEvents: false,
       publicOkxMarketDataOnly: true,
+      independencePolicy: EVIDENCE_INDEPENDENCE_POLICY,
+      independenceWindowMinutes: 60,
+      minimumQualifiedAlertsInterpretation: 'INDEPENDENT_EPISODES',
     });
     expect(definition.horizonsMinutes).toEqual([1, 5, 15, 30, 60]);
     expect(definition.minimumQualifiedAlerts).toBe(1_000);
