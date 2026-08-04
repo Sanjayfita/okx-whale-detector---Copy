@@ -90,7 +90,16 @@ const main = async (): Promise<void> => {
   console.log(`Qualified alerts: ${report.qualifiedAlerts}`);
   console.log(`Completed observations: ${report.completedObservations}`);
   console.log(
-    `Net expectancy: ${report.overall.netExpectancyUsdt} USDT/observation`,
+    `Primary horizon: ${report.policy.primaryHorizonMinutes} minute(s)`,
+  );
+  console.log(
+    `Primary-horizon complete alerts: ${report.primaryHorizonCompleteAlerts}`,
+  );
+  console.log(
+    `Independent primary-horizon alerts: ${report.independentPrimaryHorizonAlerts}`,
+  );
+  console.log(
+    `Net expectancy: ${report.overall.netExpectancyUsdt} USDT/primary-horizon alert`,
   );
   console.log(
     `Hypothetical net PnL: ${report.overall.hypotheticalNetPnlUsdt} USDT`,
