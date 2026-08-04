@@ -49,7 +49,7 @@ const outcome = (
 });
 
 describe('createEvidenceProfitabilityReport', () => {
-  it('calculates primary-horizon cost-adjusted profitability without authorizing execution', () => {
+  it('calculates independent primary-horizon cost-adjusted profitability', () => {
     const report = createEvidenceProfitabilityReport({
       generatedAt: 1_000_000,
       evaluationId: 'eval-test',
@@ -84,7 +84,7 @@ describe('createEvidenceProfitabilityReport', () => {
     });
 
     expect(report.policy.primaryHorizonMinutes).toBe(15);
-    expect(report.overall.key).toBe('PRIMARY_15m');
+    expect(report.overall.key).toBe('INDEPENDENT_PRIMARY_15m');
     expect(report.overall.observations).toBe(2);
     expect(report.overall.wins).toBe(1);
     expect(report.overall.losses).toBe(1);
@@ -121,7 +121,7 @@ describe('createEvidenceProfitabilityReport', () => {
     expect(report.overall.hypotheticalNetPnlUsdt).toBe(0.8);
   });
 
-  it('reports overlapping primary-horizon alerts as dependent', () => {
+  it('excludes overlapping primary-horizon alerts from headline metrics', () => {
     const secondDetectedAt = 10 * 60_000;
     const report = createEvidenceProfitabilityReport({
       generatedAt: 2_000_000,
@@ -147,6 +147,7 @@ describe('createEvidenceProfitabilityReport', () => {
     expect(report.primaryHorizonCompleteAlerts).toBe(2);
     expect(report.independentPrimaryHorizonAlerts).toBe(1);
     expect(report.dependentPrimaryHorizonAlerts).toBe(1);
+    expect(report.overall.observations).toBe(1);
   });
 
   it('counts observations without matching qualified alerts', () => {
