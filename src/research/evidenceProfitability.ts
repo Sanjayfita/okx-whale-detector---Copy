@@ -8,7 +8,7 @@ import {
   type AlertOutcomeHorizonMinutes,
   type AlertOutcomeObservation,
 } from './alertOutcomeObservation';
-import { measureEvidenceIndependence } from './evidenceIndependence';
+import { selectIndependentEvidenceAlertIds } from './evidenceIndependence';
 import type { QualifiedAlertEvidenceRecord } from './qualifiedAlertEvidence';
 
 export interface ProfitabilityPolicy {
@@ -198,10 +198,13 @@ export const createEvidenceProfitabilityReport = (input: {
     ({ outcome }) =>
       outcome.horizonMinutes === policy.primaryHorizonMinutes,
   );
-  const primaryAlerts = primaryJoined.map(({ alert }) => alert);
-  const independence = measureEvidenceIndependence(primaryAlerts, [
-    policy.primaryHorizonMinutes,
-  ]);
+  const independentIds = selectIndependentEvidenceAlertIds(
+    primaryJoined.map(({ alert }) => alert),
+    [policy.primaryHorizonMinutes],
+  );
+  const independentPrimaryJoined = primaryJoined.filter(({ alert }) =>
+    independentIds.has(alert.alertId),
+  );
 
   return Object.freeze({
     generatedAt: input.generatedAt,
@@ -210,13 +213,14 @@ export const createEvidenceProfitabilityReport = (input: {
     qualifiedAlerts: integrity.alerts.length,
     completedObservations: integrity.outcomes.length,
     primaryHorizonCompleteAlerts: primaryJoined.length,
-    independentPrimaryHorizonAlerts: independence.independentAlertCount,
-    dependentPrimaryHorizonAlerts: independence.dependentAlertCount,
+    independentPrimaryHorizonAlerts: independentPrimaryJoined.length,
+    dependentPrimaryHorizonAlerts:
+      primaryJoined.length - independentPrimaryJoined.length,
     unmatchedObservations: integrity.unmatchedObservations,
     malformedRecords: integrity.malformedRecords,
     overall: summarize(
-      `PRIMARY_${policy.primaryHorizonMinutes}m`,
-      primaryJoined,
+      `INDEPENDENT_PRIMARY_${policy.primaryHorizonMinutes}m`,
+      independentPrimaryJoined,
       policy,
     ),
     byHorizon: groupBy(
@@ -225,16 +229,16 @@ export const createEvidenceProfitabilityReport = (input: {
       policy,
     ),
     byInstrument: groupBy(
-      primaryJoined,
+      independentPrimaryJoined,
       ({ alert }) => alert.instrumentId,
       policy,
     ),
     byDirection: groupBy(
-      primaryJoined,
+      independentPrimaryJoined,
       ({ alert }) => alert.direction,
       policy,
     ),
-    insufficientData: independence.independentAlertCount < 100,
+    insufficientData: independentPrimaryJoined.length < 100,
     liveOrderExecutionAllowed: false,
     orderExecutionAuthorized: false,
   });
