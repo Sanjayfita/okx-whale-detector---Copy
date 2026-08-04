@@ -64,9 +64,11 @@ export interface RiskManagementResearchReport {
 }
 
 interface ActiveRisk {
+  readonly alertId: string;
   readonly exitedAt: number;
   readonly correlationGroup: string;
   readonly riskFraction: number;
+  readonly pnl: number;
 }
 
 const requirePositive = (value: number, name: string): void => {
@@ -189,12 +191,27 @@ export const simulateRiskManagementPolicy = (input: {
   const acceptedEquityReturns: number[] = [];
   let equity = input.policy.initialEquity;
 
-  for (const trade of trades) {
-    for (let index = active.length - 1; index >= 0; index -= 1) {
-      if ((active[index]?.exitedAt ?? Number.POSITIVE_INFINITY) <= trade.detectedAt) {
-        active.splice(index, 1);
-      }
+  const settlePositionsThrough = (timestamp: number): void => {
+    active.sort(
+      (left, right) =>
+        left.exitedAt - right.exitedAt || left.alertId.localeCompare(right.alertId),
+    );
+    while (
+      active.length > 0 &&
+      (active[0]?.exitedAt ?? Number.POSITIVE_INFINITY) <= timestamp
+    ) {
+      const settled = active.shift();
+      if (settled === undefined) break;
+      const equityBeforeSettlement = equity;
+      equity += settled.pnl;
+      acceptedEquityReturns.push(
+        (settled.pnl / equityBeforeSettlement) * 100,
+      );
     }
+  };
+
+  for (const trade of trades) {
+    settlePositionsThrough(trade.detectedAt);
     const portfolioRiskBefore = active.reduce(
       (sum, position) => sum + position.riskFraction,
       0,
@@ -233,13 +250,13 @@ export const simulateRiskManagementPolicy = (input: {
     if (decision === 'ACCEPTED') {
       const positionNotional = equityBefore * positionFraction;
       pnl = positionNotional * (trade.realizedNetReturnPercent / 100);
-      equity += pnl;
-      acceptedEquityReturns.push((pnl / equityBefore) * 100);
       active.push(
         Object.freeze({
+          alertId: trade.alertId,
           exitedAt: trade.exitedAt,
           correlationGroup: trade.correlationGroup,
           riskFraction,
+          pnl,
         }),
       );
     }
@@ -259,6 +276,7 @@ export const simulateRiskManagementPolicy = (input: {
       }),
     );
   }
+  settlePositionsThrough(Number.POSITIVE_INFINITY);
   const acceptedTradeCount = decisions.filter(
     (decision) => decision.decision === 'ACCEPTED',
   ).length;
