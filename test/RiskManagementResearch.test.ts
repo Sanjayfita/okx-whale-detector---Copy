@@ -103,6 +103,22 @@ describe('risk management research', () => {
     expect(report.endingEquity).toBe(12_000);
   });
 
+  it('uses effective risk after the maximum-position cap', () => {
+    const report = simulateRiskManagementPolicy({
+      policy: {
+        ...policy,
+        maximumPositionFraction: 0.25,
+        maximumConcurrentPortfolioRiskFraction: 0.01,
+        maximumConcurrentCorrelationRiskFraction: 0.01,
+      },
+      trades: [trade('position-capped', 1_800_000_000_000)],
+    });
+
+    expect(report.decisions[0]?.positionFraction).toBe(0.25);
+    expect(report.decisions[0]?.riskFraction).toBeCloseTo(0.0025);
+    expect(report.endingEquity).toBeCloseTo(10_025);
+  });
+
   it('reduces risk in volatility above the target', () => {
     const report = simulateRiskManagementPolicy({
       policy,
