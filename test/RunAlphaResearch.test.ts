@@ -4,7 +4,10 @@ import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { generateAlphaResearchReport } from '../src/tools/runAlphaResearch';
+import {
+  generateAlphaResearchBundle,
+  generateAlphaResearchReport,
+} from '../src/tools/runAlphaResearch';
 import {
   ALPHA_FIXTURE_EVALUATION_ID,
   createAlphaOutcomeFixture,
@@ -46,6 +49,22 @@ describe('alpha research command', () => {
     expect(report.configurationFingerprint).toMatch(/^[a-f0-9]{64}$/u);
     expect(report.datasetFingerprint).toMatch(/^[a-f0-9]{64}$/u);
     expect(report.productionFeaturesEnabled).toEqual([]);
+  });
+
+  it('generates feature and confidence reports from one immutable dataset', async () => {
+    const directory = await setup();
+    const bundle = await generateAlphaResearchBundle({
+      evaluationId: ALPHA_FIXTURE_EVALUATION_ID,
+      evaluationDirectory: directory,
+    });
+
+    expect(bundle.alphaReport.status).toBe('NO_EMPIRICAL_DATA');
+    expect(bundle.confidenceReport.status).toBe('NO_EMPIRICAL_DATA');
+    expect(bundle.confidenceReport.datasetFingerprint).toBe(
+      bundle.alphaReport.datasetFingerprint,
+    );
+    expect(bundle.confidenceReport.productionEnabled).toBe(false);
+    expect(bundle.confidenceReport.liveOrderExecutionAllowed).toBe(false);
   });
 
   it('fails closed when an input line is malformed', async () => {
