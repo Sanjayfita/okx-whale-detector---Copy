@@ -8,6 +8,7 @@ import {
   type AlertOutcomeHorizonMinutes,
   type AlertOutcomeObservation,
 } from './alertOutcomeObservation';
+import { EVIDENCE_PRIMARY_HORIZON_MINUTES } from './evidenceEvaluationDefinition';
 import { selectIndependentEvidenceAlertIds } from './evidenceIndependence';
 import type { QualifiedAlertEvidenceRecord } from './qualifiedAlertEvidence';
 
@@ -185,7 +186,8 @@ export const createEvidenceProfitabilityReport = (input: {
     startingCapital: input.policy?.startingCapital ?? 10_000,
     positionNotional: input.policy?.positionNotional ?? 100,
     roundTripCostPercent: input.policy?.roundTripCostPercent ?? 0.2,
-    primaryHorizonMinutes: input.policy?.primaryHorizonMinutes ?? 15,
+    primaryHorizonMinutes:
+      input.policy?.primaryHorizonMinutes ?? EVIDENCE_PRIMARY_HORIZON_MINUTES,
   });
   const integrity = prepareEvidenceRecords({
     evaluationId: input.evaluationId,
