@@ -144,6 +144,7 @@ describe('statistical validation', () => {
         startingCapital: 10_000,
         positionNotional: 100,
         roundTripCostPercent: 0.2,
+        primaryHorizonMinutes: 1,
       },
       options: {
         minimumSampleSize: 30,
@@ -184,6 +185,7 @@ describe('statistical validation', () => {
         startingCapital: 10_000,
         positionNotional: 100,
         roundTripCostPercent: 0.2,
+        primaryHorizonMinutes: 1,
       },
       options: {
         minimumSampleSize: 100,
@@ -219,6 +221,7 @@ describe('statistical validation', () => {
         startingCapital: 10_000,
         positionNotional: 100,
         roundTripCostPercent: 0.2,
+        primaryHorizonMinutes: 1,
       },
       options: { minimumSampleSize: 2, bootstrapIterations: 20 },
     });
@@ -253,6 +256,7 @@ describe('statistical validation', () => {
         startingCapital: 10_000,
         positionNotional: 100,
         roundTripCostPercent: 0.2,
+        primaryHorizonMinutes: 60,
       },
       options: {
         minimumSampleSize: 1,
