@@ -4,14 +4,18 @@ import {
 } from './evidenceIntegrity';
 import {
   hasObservedExcursionPath,
+  isAlertOutcomeHorizonMinutes,
+  type AlertOutcomeHorizonMinutes,
   type AlertOutcomeObservation,
 } from './alertOutcomeObservation';
+import { measureEvidenceIndependence } from './evidenceIndependence';
 import type { QualifiedAlertEvidenceRecord } from './qualifiedAlertEvidence';
 
 export interface ProfitabilityPolicy {
   startingCapital: number;
   positionNotional: number;
   roundTripCostPercent: number;
+  primaryHorizonMinutes: AlertOutcomeHorizonMinutes;
 }
 
 export interface ProfitabilityGroup {
@@ -38,6 +42,9 @@ export interface EvidenceProfitabilityReport {
   policy: ProfitabilityPolicy;
   qualifiedAlerts: number;
   completedObservations: number;
+  primaryHorizonCompleteAlerts: number;
+  independentPrimaryHorizonAlerts: number;
+  dependentPrimaryHorizonAlerts: number;
   unmatchedObservations: number;
   malformedRecords: number;
   overall: ProfitabilityGroup;
@@ -88,6 +95,9 @@ export const validateProfitabilityPolicy = (
     throw new Error(
       'roundTripCostPercent must be a non-negative finite number',
     );
+  }
+  if (!isAlertOutcomeHorizonMinutes(policy.primaryHorizonMinutes)) {
+    throw new Error('primaryHorizonMinutes is not a supported outcome horizon');
   }
   return Object.freeze({ ...policy });
 };
@@ -175,6 +185,7 @@ export const createEvidenceProfitabilityReport = (input: {
     startingCapital: input.policy?.startingCapital ?? 10_000,
     positionNotional: input.policy?.positionNotional ?? 100,
     roundTripCostPercent: input.policy?.roundTripCostPercent ?? 0.2,
+    primaryHorizonMinutes: input.policy?.primaryHorizonMinutes ?? 15,
   });
   const integrity = prepareEvidenceRecords({
     evaluationId: input.evaluationId,
@@ -183,8 +194,14 @@ export const createEvidenceProfitabilityReport = (input: {
     malformedRecords: input.malformedRecords,
   });
   const joined = integrity.joined;
-  const independentAlerts = new Set(joined.map(({ alert }) => alert.alertId))
-    .size;
+  const primaryJoined = joined.filter(
+    ({ outcome }) =>
+      outcome.horizonMinutes === policy.primaryHorizonMinutes,
+  );
+  const primaryAlerts = primaryJoined.map(({ alert }) => alert);
+  const independence = measureEvidenceIndependence(primaryAlerts, [
+    policy.primaryHorizonMinutes,
+  ]);
 
   return Object.freeze({
     generatedAt: input.generatedAt,
@@ -192,17 +209,32 @@ export const createEvidenceProfitabilityReport = (input: {
     policy,
     qualifiedAlerts: integrity.alerts.length,
     completedObservations: integrity.outcomes.length,
+    primaryHorizonCompleteAlerts: primaryJoined.length,
+    independentPrimaryHorizonAlerts: independence.independentAlertCount,
+    dependentPrimaryHorizonAlerts: independence.dependentAlertCount,
     unmatchedObservations: integrity.unmatchedObservations,
     malformedRecords: integrity.malformedRecords,
-    overall: summarize('ALL', joined, policy),
+    overall: summarize(
+      `PRIMARY_${policy.primaryHorizonMinutes}m`,
+      primaryJoined,
+      policy,
+    ),
     byHorizon: groupBy(
       joined,
       ({ outcome }) => `${outcome.horizonMinutes}m`,
       policy,
     ),
-    byInstrument: groupBy(joined, ({ alert }) => alert.instrumentId, policy),
-    byDirection: groupBy(joined, ({ alert }) => alert.direction, policy),
-    insufficientData: independentAlerts < 100,
+    byInstrument: groupBy(
+      primaryJoined,
+      ({ alert }) => alert.instrumentId,
+      policy,
+    ),
+    byDirection: groupBy(
+      primaryJoined,
+      ({ alert }) => alert.direction,
+      policy,
+    ),
+    insufficientData: independence.independentAlertCount < 100,
     liveOrderExecutionAllowed: false,
     orderExecutionAuthorized: false,
   });
