@@ -23,6 +23,17 @@ const alert: CorrelatedAlert = {
   createdAt: 1_000,
 };
 
+const okxOnlyAlert: CorrelatedAlert = {
+  ...alert,
+  eventType: 'NEW_SIGNAL',
+  relationship: 'OKX_ONLY',
+  combinedConfidence: 82,
+  alertImportance: 82,
+  externalEffectiveConfidence: 0,
+  externalSignalsUsed: 0,
+  reason: 'OKX whale pressure only',
+};
+
 const evaluationContext: CorrelatedAlertEvaluationContext = {
   instId: 'BTC-USDT',
   instType: 'SPOT',
@@ -64,6 +75,42 @@ describe('CorrelatedAlertEvidenceBridge', () => {
       liveOrderExecutionAllowed: false,
     });
     expect(Object.isFrozen(evidence)).toBe(true);
+  });
+
+  it('admits only zero-external OKX_ONLY alerts under the corrected policy', () => {
+    const bridge = new CorrelatedAlertEvidenceBridge({
+      evaluationId: 'eval-1',
+      sourceCommit: 'abc123',
+      configurationFingerprint: 'fingerprint-1',
+      alertAdmissionPolicy: 'OKX_ONLY',
+    });
+
+    expect(
+      bridge.createEvidence({
+        alert: okxOnlyAlert,
+        evaluationContext,
+        recordedAt: 1_010,
+      }),
+    ).toMatchObject({
+      signalType: 'NEW_SIGNAL:OKX_ONLY:STRONG',
+      confidence: 82,
+    });
+
+    expect(() =>
+      bridge.createEvidence({
+        alert,
+        evaluationContext,
+        recordedAt: 1_010,
+      }),
+    ).toThrow('zero external contribution');
+
+    expect(() =>
+      bridge.createEvidence({
+        alert: { ...okxOnlyAlert, externalSignalsUsed: 1 },
+        evaluationContext,
+        recordedAt: 1_010,
+      }),
+    ).toThrow('zero external contribution');
   });
 
   it('rejects neutral alerts and symbol mismatches', () => {
