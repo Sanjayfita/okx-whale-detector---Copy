@@ -36,6 +36,7 @@ export class LiveEvidenceCollector {
   private readonly clock: () => number;
   private readonly maximumObservationDelayMs: number;
   private readonly maximumFutureSkewMs: number;
+  private readonly reportedJobErrors = new Set<string>();
   private readonly onObservationError: (
     error: unknown,
     job: PendingOutcomeJob,
@@ -85,21 +86,32 @@ export class LiveEvidenceCollector {
 
   public async processDueObservations(now: number): Promise<number> {
     this.requireInitialized();
+    if (!Number.isSafeInteger(now) || now < 0) {
+      throw new Error('now must be a non-negative safe integer');
+    }
     const dueJobs = this.dependencies.scheduler.getDueJobs(now);
     let completed = 0;
 
     for (const job of dueJobs) {
+      const jobKey = this.getJobKey(job);
+      if (now - job.dueAt > this.maximumObservationDelayMs) {
+        this.reportObservationErrorOnce(
+          new Error(
+            'Outcome observation window expired; the job remains pending for integrity reporting',
+          ),
+          job,
+        );
+        continue;
+      }
+
       try {
         await this.processObservation(job);
+        this.reportedJobErrors.delete(jobKey);
         completed += 1;
       } catch (error: unknown) {
-        // A failed or overdue observation must remain pending for integrity
-        // reporting, but it must not poison the queue and block unrelated jobs.
-        try {
-          this.onObservationError(error, job);
-        } catch (handlerError: unknown) {
-          console.error('Outcome observation error handler failed:', handlerError);
-        }
+        // A failed observation remains pending and may be retried while its
+        // timestamp window is still valid. One bad job cannot block others.
+        this.reportObservationErrorOnce(error, job);
       }
     }
 
@@ -167,6 +179,26 @@ export class LiveEvidenceCollector {
     });
 
     await this.dependencies.scheduler.completeObservation(observation);
+  }
+
+  private reportObservationErrorOnce(
+    error: unknown,
+    job: PendingOutcomeJob,
+  ): void {
+    const jobKey = this.getJobKey(job);
+    if (this.reportedJobErrors.has(jobKey)) {
+      return;
+    }
+    this.reportedJobErrors.add(jobKey);
+    try {
+      this.onObservationError(error, job);
+    } catch (handlerError: unknown) {
+      console.error('Outcome observation error handler failed:', handlerError);
+    }
+  }
+
+  private getJobKey(job: PendingOutcomeJob): string {
+    return `${job.alertId}:${job.horizonMinutes}`;
   }
 
   private requireInitialized(): void {
