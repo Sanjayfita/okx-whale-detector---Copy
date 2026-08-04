@@ -19,7 +19,7 @@ afterEach(async () => {
 });
 
 describe('evidence profitability dashboard', () => {
-  it('renders a read-only safety banner and profitability sections', async () => {
+  it('renders a read-only safety banner and primary-horizon sections', async () => {
     const root = await mkdtemp(join(tmpdir(), 'evidence-dashboard-'));
     directories.push(root);
     const directory = join(root, 'data', 'evaluations', 'eval-dashboard');
@@ -74,7 +74,9 @@ describe('evidence profitability dashboard', () => {
 
     expect(html).toContain('Evidence Profitability Dashboard');
     expect(html).toContain('READ ONLY · EXECUTION DISABLED');
-    expect(html).toContain('Performance by horizon');
+    expect(html).toContain('Descriptive performance by horizon');
+    expect(html).toContain('Independent episodes');
+    expect(html).toContain('Primary 15m performance by instrument');
     expect(html).toContain('BTC-USDT');
     expect(html).toContain('INSUFFICIENT DATA');
   });
