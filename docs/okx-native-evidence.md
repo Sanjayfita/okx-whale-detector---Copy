@@ -17,15 +17,34 @@ New evaluations created from this branch freeze the following policy in the mani
 - no external signal may qualify an evidence event;
 - external-only alerts remain disabled;
 - live, testnet, and simulated order execution remain disabled;
-- the existing event-time snapshot and future-outcome integrity rules remain unchanged.
+- the existing event-time snapshot and future-outcome integrity rules remain unchanged;
+- the minimum alert requirement means non-overlapping maximum-horizon episodes, not raw alert rows.
 
 Evidence collection injects an isolated `ExternalSignalCorrelationService` with no external producers and a `CorrelatedAlertEngine` whose `OKX_ONLY` admission mode is explicitly enabled. A disabled Polymarket runtime is injected so accidental startup cannot connect or add external signals.
 
 The default application runtime is unchanged: OKX-only admission remains disabled unless explicitly enabled by the evidence collector.
 
+## Independent-sample policy
+
+Raw alerts remain available for descriptive analysis, but they do not all count toward final readiness. The progress inspector applies `NON_OVERLAPPING_MAX_HORIZON_WINDOWS_V1`:
+
+1. alerts are grouped by instrument;
+2. alerts are sorted deterministically by event time and alert ID;
+3. an alert counts as an independent episode only when its maximum configured outcome window does not overlap the previously accepted episode for that instrument;
+4. with the current 60-minute maximum horizon, alerts less than 60 minutes apart on the same instrument are dependent;
+5. the 1,000-alert requirement applies to independent episodes.
+
+This prevents repeated summaries of the same market move from inflating the effective sample size.
+
+## Outcome-collection resilience
+
+Every due outcome is processed independently. A failed, stale, or late observation remains pending so integrity reports continue to expose it, but that failure cannot block unrelated instruments or later jobs in the same pass. Exchange timestamps are compared with a fresh request-completion clock rather than the interval start time, preventing false future-timestamp failures during request bursts.
+
+No missing horizon may be backfilled with later prices. Overdue jobs block finalization.
+
 ## Scientific consequence
 
-This correction does not improve or claim profitability. It repairs the sampling frame. Future results can now estimate the unconditional performance of whale-derived events and then test confirmation features conditionally without selecting the event population using those same confirmations.
+These corrections do not improve or claim profitability. They repair the sampling frame, effective-sample accounting, and outcome-collection reliability. Future results can estimate the unconditional performance of whale-derived events and then test confirmation features conditionally without selecting the event population using those same confirmations.
 
 ## Required migration
 
@@ -33,6 +52,6 @@ This correction does not improve or claim profitability. It repairs the sampling
 2. Preserve its directory unchanged.
 3. Record that it used external-signal-gated event admission.
 4. Verify this branch under Node.js 24 with `npm run check` and `npm run build`.
-5. Commit the verified correction.
-6. Initialize a new evaluation ID from the corrected commit.
-7. Never copy, backfill, or combine records from the historical evaluation.
+5. Initialize a new evaluation ID from the corrected commit.
+6. Never copy, backfill, or combine records from the historical evaluation.
+7. Monitor both raw and independent alert counts with `npm run evidence:progress -- <evaluation-id>`.
