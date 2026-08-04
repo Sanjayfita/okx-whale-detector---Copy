@@ -14,6 +14,8 @@ export interface CorrelatedAlertEngineOptions {
   minimumContradictionAlertImportance?: number;
   externalOnlyAlertsEnabled?: boolean;
   minimumExternalOnlyAlertImportance?: number;
+  okxOnlyAlertsEnabled?: boolean;
+  minimumOkxOnlyAlertImportance?: number;
   severityThresholds?: Partial<CorrelatedAlertSeverityThresholds>;
   cooldownMs?: number;
   confidenceChangeThreshold?: number;
@@ -42,6 +44,8 @@ const DEFAULT_OPTIONS = {
   minimumContradictionAlertImportance: 55,
   externalOnlyAlertsEnabled: false,
   minimumExternalOnlyAlertImportance: 55,
+  okxOnlyAlertsEnabled: false,
+  minimumOkxOnlyAlertImportance: 55,
   cooldownMs: 60_000,
   confidenceChangeThreshold: 10,
 } as const;
@@ -65,6 +69,8 @@ export class CorrelatedAlertEngine {
   private readonly minimumContradictionAlertImportance: number;
   private readonly externalOnlyAlertsEnabled: boolean;
   private readonly minimumExternalOnlyAlertImportance: number;
+  private readonly okxOnlyAlertsEnabled: boolean;
+  private readonly minimumOkxOnlyAlertImportance: number;
   private readonly severityThresholds: CorrelatedAlertSeverityThresholds;
   private readonly cooldownMs: number;
   private readonly confidenceChangeThreshold: number;
@@ -87,6 +93,11 @@ export class CorrelatedAlertEngine {
     this.minimumExternalOnlyAlertImportance =
       options.minimumExternalOnlyAlertImportance ??
       DEFAULT_OPTIONS.minimumExternalOnlyAlertImportance;
+    this.okxOnlyAlertsEnabled =
+      options.okxOnlyAlertsEnabled ?? DEFAULT_OPTIONS.okxOnlyAlertsEnabled;
+    this.minimumOkxOnlyAlertImportance =
+      options.minimumOkxOnlyAlertImportance ??
+      DEFAULT_OPTIONS.minimumOkxOnlyAlertImportance;
     this.severityThresholds = {
       ...DEFAULT_SEVERITY_THRESHOLDS,
       ...options.severityThresholds,
@@ -111,7 +122,7 @@ export class CorrelatedAlertEngine {
     if (
       !this.enabled ||
       !correlatedSignal ||
-      correlatedSignal.consideredSignals === 0 ||
+      !this.hasEligibleEvidenceSource(correlatedSignal) ||
       !this.qualifies(correlatedSignal)
     ) {
       return undefined;
@@ -169,6 +180,25 @@ export class CorrelatedAlertEngine {
 
   public clear(): void {
     this.states.clear();
+  }
+
+  private hasEligibleEvidenceSource(signal: CorrelatedMarketSignal): boolean {
+    if (signal.agreement === 'OKX_ONLY') {
+      return this.okxOnlyAlertsEnabled && signal.consideredSignals === 0;
+    }
+
+    if (signal.agreement === 'EXTERNAL_ONLY') {
+      return this.externalOnlyAlertsEnabled && signal.consideredSignals > 0;
+    }
+
+    if (
+      signal.agreement === 'AGREEMENT' ||
+      signal.agreement === 'CONTRADICTION'
+    ) {
+      return signal.consideredSignals > 0;
+    }
+
+    return false;
   }
 
   private canBypassCooldown(
@@ -235,6 +265,13 @@ export class CorrelatedAlertEngine {
       );
     }
 
+    if (signal.agreement === 'OKX_ONLY') {
+      return (
+        this.okxOnlyAlertsEnabled &&
+        signal.alertImportance >= this.minimumOkxOnlyAlertImportance
+      );
+    }
+
     return false;
   }
 
@@ -280,6 +317,7 @@ export class CorrelatedAlertEngine {
         'minimumExternalOnlyAlertImportance',
         this.minimumExternalOnlyAlertImportance,
       ],
+      ['minimumOkxOnlyAlertImportance', this.minimumOkxOnlyAlertImportance],
     ] as const;
 
     for (const [name, value] of importanceThresholds) {
@@ -290,6 +328,10 @@ export class CorrelatedAlertEngine {
 
     if (typeof this.externalOnlyAlertsEnabled !== 'boolean') {
       throw new Error('externalOnlyAlertsEnabled must be a boolean');
+    }
+
+    if (typeof this.okxOnlyAlertsEnabled !== 'boolean') {
+      throw new Error('okxOnlyAlertsEnabled must be a boolean');
     }
 
     const { watch, strong, critical } = this.severityThresholds;
