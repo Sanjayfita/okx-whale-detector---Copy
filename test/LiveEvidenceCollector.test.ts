@@ -2,9 +2,12 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-import { createQualifiedAlertEvidenceRecord } from '../src/research/qualifiedAlertEvidence';
+import {
+  createQualifiedAlertEvidenceRecord,
+  type QualifiedAlertEvidenceRecord,
+} from '../src/research/qualifiedAlertEvidence';
 import { LiveEvidenceCollector } from '../src/research/liveEvidenceCollector';
 import { PersistentOutcomeScheduler } from '../src/research/persistentOutcomeScheduler';
 import { QualifiedAlertRecorder } from '../src/research/qualifiedAlertRecorder';
@@ -27,22 +30,25 @@ const createEvaluationDirectory = async (): Promise<string> => {
   return directory;
 };
 
-const createEvidence = () =>
+const createEvidence = (
+  overrides: Partial<QualifiedAlertEvidenceRecord> = {},
+) =>
   createQualifiedAlertEvidenceRecord({
-    evaluationId: 'evaluation-1',
-    alertId: 'alert-1',
-    instrumentId: 'BTC-USDT',
-    detectedAt: 1_000,
-    recordedAt: 1_001,
-    direction: 'BULLISH',
-    signalType: 'ABSORPTION',
-    confidence: 80,
-    referencePrice: 100,
-    bestBid: 99.9,
-    bestAsk: 100.1,
-    spreadPercent: 0.2,
-    sourceCommit: 'abc123',
-    configurationFingerprint: 'fingerprint-1',
+    evaluationId: overrides.evaluationId ?? 'evaluation-1',
+    alertId: overrides.alertId ?? 'alert-1',
+    instrumentId: overrides.instrumentId ?? 'BTC-USDT',
+    detectedAt: overrides.detectedAt ?? 1_000,
+    recordedAt: overrides.recordedAt ?? 1_001,
+    direction: overrides.direction ?? 'BULLISH',
+    signalType: overrides.signalType ?? 'ABSORPTION',
+    confidence: overrides.confidence ?? 80,
+    referencePrice: overrides.referencePrice ?? 100,
+    bestBid: overrides.bestBid ?? 99.9,
+    bestAsk: overrides.bestAsk ?? 100.1,
+    spreadPercent: overrides.spreadPercent ?? 0.2,
+    sourceCommit: overrides.sourceCommit ?? 'abc123',
+    configurationFingerprint:
+      overrides.configurationFingerprint ?? 'fingerprint-1',
   });
 
 describe('LiveEvidenceCollector', () => {
@@ -95,13 +101,15 @@ describe('LiveEvidenceCollector', () => {
     ).rejects.toThrow('must be initialized first');
   });
 
-  it('keeps a job pending when its price timestamp is too late', async () => {
+  it('keeps a late job pending and reports the failure', async () => {
     const directory = await createEvaluationDirectory();
     const scheduler = new PersistentOutcomeScheduler(directory);
+    const onObservationError = vi.fn();
     const collector = new LiveEvidenceCollector({
       recorder: new QualifiedAlertRecorder({ evaluationDirectory: directory }),
       scheduler,
       maximumObservationDelayMs: 1_000,
+      onObservationError,
       readPrice: async (instrumentId, dueAt) => ({
         instrumentId,
         observedAt: dueAt + 1_001,
@@ -115,9 +123,49 @@ describe('LiveEvidenceCollector', () => {
     await collector.initialize();
     await collector.recordQualifiedAlert(createEvidence());
 
-    await expect(collector.processDueObservations(62_001)).rejects.toThrow(
-      'too late',
+    expect(await collector.processDueObservations(62_001)).toBe(0);
+    expect(onObservationError).toHaveBeenCalledOnce();
+    expect(onObservationError.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ message: expect.stringContaining('too late') }),
     );
     expect(scheduler.getPendingJobs()).toHaveLength(5);
+  });
+
+  it('continues processing unrelated jobs after one observation fails', async () => {
+    const directory = await createEvaluationDirectory();
+    const scheduler = new PersistentOutcomeScheduler(directory);
+    const onObservationError = vi.fn();
+    const collector = new LiveEvidenceCollector({
+      recorder: new QualifiedAlertRecorder({ evaluationDirectory: directory }),
+      scheduler,
+      onObservationError,
+      readPrice: async (instrumentId, dueAt) => {
+        if (instrumentId === 'BTC-USDT') {
+          throw new Error('temporary BTC ticker failure');
+        }
+        return {
+          instrumentId,
+          observedAt: dueAt,
+          price: 101,
+          maximumFavorableExcursionPercent: 0,
+          maximumAdverseExcursionPercent: 0,
+          excursionMeasurement: 'UNAVAILABLE',
+        };
+      },
+    });
+
+    await collector.initialize();
+    await collector.recordQualifiedAlert(createEvidence());
+    await collector.recordQualifiedAlert(
+      createEvidence({ alertId: 'alert-2', instrumentId: 'ETH-USDT' }),
+    );
+
+    expect(await collector.processDueObservations(61_000)).toBe(1);
+    expect(onObservationError).toHaveBeenCalledOnce();
+    expect(scheduler.getPendingJobs()).toHaveLength(9);
+
+    const outcomes = await readFile(join(directory, 'outcomes.ndjson'), 'utf8');
+    expect(outcomes).toContain('"alertId":"alert-2"');
+    expect(outcomes).not.toContain('"alertId":"alert-1"');
   });
 });
