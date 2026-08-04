@@ -101,32 +101,30 @@ describe('LiveEvidenceCollector', () => {
     ).rejects.toThrow('must be initialized first');
   });
 
-  it('keeps a late job pending and reports the failure', async () => {
+  it('keeps an expired job pending without repeated ticker calls or logs', async () => {
     const directory = await createEvaluationDirectory();
     const scheduler = new PersistentOutcomeScheduler(directory);
     const onObservationError = vi.fn();
+    const readPrice = vi.fn(async () => {
+      throw new Error('expired jobs must not call the ticker');
+    });
     const collector = new LiveEvidenceCollector({
       recorder: new QualifiedAlertRecorder({ evaluationDirectory: directory }),
       scheduler,
       maximumObservationDelayMs: 1_000,
       onObservationError,
-      readPrice: async (instrumentId, dueAt) => ({
-        instrumentId,
-        observedAt: dueAt + 1_001,
-        price: 101,
-        maximumFavorableExcursionPercent: 1,
-        maximumAdverseExcursionPercent: 0,
-        excursionMeasurement: 'OBSERVED_PATH',
-      }),
+      readPrice,
     });
 
     await collector.initialize();
     await collector.recordQualifiedAlert(createEvidence());
 
     expect(await collector.processDueObservations(62_001)).toBe(0);
+    expect(await collector.processDueObservations(63_000)).toBe(0);
+    expect(readPrice).not.toHaveBeenCalled();
     expect(onObservationError).toHaveBeenCalledOnce();
     expect(onObservationError.mock.calls[0]?.[0]).toEqual(
-      expect.objectContaining({ message: expect.stringContaining('too late') }),
+      expect.objectContaining({ message: expect.stringContaining('expired') }),
     );
     expect(scheduler.getPendingJobs()).toHaveLength(5);
   });
