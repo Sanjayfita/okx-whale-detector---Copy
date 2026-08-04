@@ -77,6 +77,32 @@ describe('risk management research', () => {
     expect(report.liveOrderExecutionAllowed).toBe(false);
   });
 
+  it('does not use unresolved future PnL to size overlapping trades', () => {
+    const start = 1_800_000_000_000;
+    const report = simulateRiskManagementPolicy({
+      policy,
+      trades: [
+        trade('overlap-1', start, {
+          correlationGroup: 'GROUP-A',
+          exitedAt: start + 10 * 60_000,
+          realizedNetReturnPercent: 10,
+        }),
+        trade('overlap-2', start + 60_000, {
+          instrumentId: 'ETH-USDT',
+          correlationGroup: 'GROUP-B',
+          exitedAt: start + 11 * 60_000,
+          realizedNetReturnPercent: 10,
+        }),
+      ],
+    });
+
+    expect(report.acceptedTradeCount).toBe(2);
+    expect(report.decisions[0]?.equityBefore).toBe(10_000);
+    expect(report.decisions[1]?.equityBefore).toBe(10_000);
+    expect(report.decisions[1]?.pnl).toBe(1_000);
+    expect(report.endingEquity).toBe(12_000);
+  });
+
   it('reduces risk in volatility above the target', () => {
     const report = simulateRiskManagementPolicy({
       policy,
