@@ -1,6 +1,7 @@
 import { CorrelatedAlertEngine } from '../alerts/CorrelatedAlertEngine';
 import { appConfig } from '../config/appConfig';
 import { ExternalSignalCorrelationService } from '../external/core/ExternalSignalCorrelationService';
+import { PolymarketLiveSignalRuntime } from '../external/providers/polymarket/PolymarketLiveSignalRuntime';
 import type { AlphaMarketContextObserver } from '../market/MarketEngine';
 import { EvidenceAwareCorrelatedAlertRecorder } from '../research/evidenceAwareCorrelatedAlertRecorder';
 import {
@@ -17,6 +18,7 @@ import type { AppShutdownReason } from '../runtime/AppShutdownCoordinator';
 import { createRuntimeSessionId } from '../runtime/runtimeSession';
 
 interface AppRuntimeLike {
+  polymarketRuntime: { start: () => Promise<void> | void };
   shutdown: (signal: AppShutdownReason) => Promise<void>;
 }
 
@@ -26,6 +28,7 @@ export interface EvidenceCollectCommandDependencies {
     alphaMarketContextObserver: AlphaMarketContextObserver;
     externalSignalCorrelationService: ExternalSignalCorrelationService;
     correlatedAlertEngine: CorrelatedAlertEngine;
+    polymarketRuntime: PolymarketLiveSignalRuntime;
   }) => Promise<AppRuntimeLike>;
   loadBootstrap?: typeof loadEvidenceCollectBootstrap;
   createPriceReader?: () => OKXLivePriceReader;
@@ -58,6 +61,7 @@ const rethrowWithCleanupErrors = (
 const createOkxOnlyAlertDependencies = (): Readonly<{
   externalSignalCorrelationService: ExternalSignalCorrelationService;
   correlatedAlertEngine: CorrelatedAlertEngine;
+  polymarketRuntime: PolymarketLiveSignalRuntime;
 }> => {
   const externalSignalCorrelationService =
     new ExternalSignalCorrelationService({
@@ -81,10 +85,20 @@ const createOkxOnlyAlertDependencies = (): Readonly<{
     confidenceChangeThreshold:
       appConfig.correlatedAlerts.confidenceChangeThreshold,
   });
+  const polymarketRuntime = new PolymarketLiveSignalRuntime(
+    {
+      ...appConfig.polymarket,
+      enabled: false,
+    },
+    {
+      correlationService: externalSignalCorrelationService,
+    },
+  );
 
   return Object.freeze({
     externalSignalCorrelationService,
     correlatedAlertEngine,
+    polymarketRuntime,
   });
 };
 
@@ -148,6 +162,7 @@ export const runEvidenceCollectCommand = async (
       externalSignalCorrelationService:
         okxOnlyDependencies.externalSignalCorrelationService,
       correlatedAlertEngine: okxOnlyDependencies.correlatedAlertEngine,
+      polymarketRuntime: okxOnlyDependencies.polymarketRuntime,
     });
   } catch (startupError) {
     const cleanupErrors: unknown[] = [];
@@ -184,6 +199,12 @@ export const runEvidenceCollectCommand = async (
   if (activeBundle === undefined || activeAppRuntime === undefined) {
     throw new Error('Evidence collection startup did not produce a runtime');
   }
+
+  void Promise.resolve(activeAppRuntime.polymarketRuntime.start()).catch(
+    (polymarketError: unknown) => {
+      error('Disabled external-signal runtime failed unexpectedly:', polymarketError);
+    },
+  );
 
   let stopped = false;
   const stop = async (signal: AppShutdownReason = 'SIGINT'): Promise<void> => {
