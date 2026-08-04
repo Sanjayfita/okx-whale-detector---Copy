@@ -28,7 +28,7 @@ export const runEvidencePipelineSmokeTest =
     const evaluationId = 'smoke-evaluation';
     const sourceCommit = 'smoke-source-commit';
     const detectedAt = 1_800_000_000_000;
-    const completionAt = detectedAt + 60 * 60_000;
+    let observationNow = detectedAt;
     const manifest = createEvaluationSessionManifest({
       evaluationId,
       sourceCommit,
@@ -69,7 +69,7 @@ export const runEvidencePipelineSmokeTest =
       const collector = new LiveEvidenceCollector({
         recorder,
         scheduler,
-        clock: () => completionAt,
+        clock: () => observationNow,
         readPrice: async (instrumentId, dueAt) => ({
           instrumentId,
           observedAt: dueAt,
@@ -154,9 +154,13 @@ export const runEvidencePipelineSmokeTest =
           },
         }),
       );
-      await collector.processDueObservations(completionAt);
 
-      const progress = await inspectEvidenceProgress(directory, completionAt);
+      for (const horizonMinutes of manifest.horizonsMinutes) {
+        observationNow = detectedAt + horizonMinutes * 60_000;
+        await collector.processDueObservations(observationNow);
+      }
+
+      const progress = await inspectEvidenceProgress(directory, observationNow);
       const outcomes = (
         await readFile(join(directory, 'outcomes.ndjson'), 'utf8')
       )
