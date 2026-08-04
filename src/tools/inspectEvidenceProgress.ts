@@ -25,6 +25,15 @@ void inspectEvidenceProgress(evaluationDirectory)
       `Observed evidence span: ${report.evidenceSpanDays} UTC day(s)`,
     );
     console.log(`Qualified alerts: ${report.qualifiedAlertCount}`);
+    console.log(
+      `Independent alert episodes: ${report.independentAlertCount}`,
+    );
+    console.log(
+      `Overlapping dependent alerts: ${report.dependentAlertCount}`,
+    );
+    console.log(
+      `Independence window: ${report.maximumOutcomeHorizonMinutes} minute(s) per instrument`,
+    );
     console.log(`Event-time snapshots: ${report.snapshotCount}`);
     console.log(
       `Snapshots with persisted features: ${report.capturedFeatureSnapshotCount}`,
