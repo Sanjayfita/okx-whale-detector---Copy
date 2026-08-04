@@ -99,10 +99,10 @@ const main = async (): Promise<void> => {
     `Independent primary-horizon alerts: ${report.independentPrimaryHorizonAlerts}`,
   );
   console.log(
-    `Net expectancy: ${report.overall.netExpectancyUsdt} USDT/primary-horizon alert`,
+    `Independent net expectancy: ${report.overall.netExpectancyUsdt} USDT/alert`,
   );
   console.log(
-    `Hypothetical net PnL: ${report.overall.hypotheticalNetPnlUsdt} USDT`,
+    `Independent hypothetical net PnL: ${report.overall.hypotheticalNetPnlUsdt} USDT`,
   );
   console.log(`Output: ${outputPath}`);
   console.log(
