@@ -9,6 +9,8 @@ export const EVIDENCE_EVENT_GENERATOR_POLICY =
   'OKX_WHALE_SIGNAL_ONLY_V1' as const;
 export const EVIDENCE_INDEPENDENCE_POLICY =
   'NON_OVERLAPPING_MAX_HORIZON_WINDOWS_V1' as const;
+export const EVIDENCE_PRIMARY_HORIZON_MINUTES =
+  15 as const satisfies AlertOutcomeHorizonMinutes;
 
 export interface EvidenceEvaluationDefinition {
   readonly configuration: Readonly<Record<string, unknown>>;
@@ -34,6 +36,8 @@ export const createCurrentEvidenceEvaluationDefinition =
         eventGeneratorPolicy: EVIDENCE_EVENT_GENERATOR_POLICY,
         externalSignalsMayQualifyEvents: false,
         publicOkxMarketDataOnly: true,
+        primaryEvaluationHorizonMinutes: EVIDENCE_PRIMARY_HORIZON_MINUTES,
+        headlineMetricsUseIndependentEpisodes: true,
         independencePolicy: EVIDENCE_INDEPENDENCE_POLICY,
         independenceWindowMinutes: Math.max(...horizonsMinutes),
         minimumQualifiedAlertsInterpretation: 'INDEPENDENT_EPISODES',
