@@ -25,6 +25,7 @@ export interface LiveEvidenceCollectorDependencies {
     instrumentId: string,
     dueAt: number,
   ) => Promise<LivePriceSnapshot>;
+  clock?: () => number;
   maximumObservationDelayMs?: number;
   maximumFutureSkewMs?: number;
   onObservationError?: (error: unknown, job: PendingOutcomeJob) => void;
@@ -32,6 +33,7 @@ export interface LiveEvidenceCollectorDependencies {
 
 export class LiveEvidenceCollector {
   private initialized = false;
+  private readonly clock: () => number;
   private readonly maximumObservationDelayMs: number;
   private readonly maximumFutureSkewMs: number;
   private readonly onObservationError: (
@@ -42,6 +44,7 @@ export class LiveEvidenceCollector {
   public constructor(
     private readonly dependencies: LiveEvidenceCollectorDependencies,
   ) {
+    this.clock = dependencies.clock ?? Date.now;
     this.maximumObservationDelayMs =
       dependencies.maximumObservationDelayMs ?? 10_000;
     this.maximumFutureSkewMs = dependencies.maximumFutureSkewMs ?? 5_000;
@@ -87,7 +90,7 @@ export class LiveEvidenceCollector {
 
     for (const job of dueJobs) {
       try {
-        await this.processObservation(job, now);
+        await this.processObservation(job);
         completed += 1;
       } catch (error: unknown) {
         // A failed or overdue observation must remain pending for integrity
@@ -103,10 +106,7 @@ export class LiveEvidenceCollector {
     return completed;
   }
 
-  private async processObservation(
-    job: PendingOutcomeJob,
-    now: number,
-  ): Promise<void> {
+  private async processObservation(job: PendingOutcomeJob): Promise<void> {
     const snapshot = await this.dependencies.readPrice(
       job.instrumentId,
       job.dueAt,
@@ -132,7 +132,12 @@ export class LiveEvidenceCollector {
         'Price snapshot was captured too late for the pending job',
       );
     }
-    if (snapshot.observedAt - now > this.maximumFutureSkewMs) {
+
+    const validationNow = this.clock();
+    if (!Number.isSafeInteger(validationNow) || validationNow < 0) {
+      throw new Error('Evidence clock must return a non-negative safe integer');
+    }
+    if (snapshot.observedAt - validationNow > this.maximumFutureSkewMs) {
       throw new Error(
         'Price snapshot timestamp is implausibly far in the future',
       );
