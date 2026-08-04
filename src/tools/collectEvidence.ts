@@ -1,4 +1,7 @@
+import { CorrelatedAlertEngine } from '../alerts/CorrelatedAlertEngine';
 import { appConfig } from '../config/appConfig';
+import { ExternalSignalCorrelationService } from '../external/core/ExternalSignalCorrelationService';
+import type { AlphaMarketContextObserver } from '../market/MarketEngine';
 import { EvidenceAwareCorrelatedAlertRecorder } from '../research/evidenceAwareCorrelatedAlertRecorder';
 import {
   loadEvidenceCollectBootstrap,
@@ -11,10 +14,9 @@ import {
 } from '../research/evidenceEvaluationLease';
 import { OKXLivePriceReader } from '../research/okxLivePriceReader';
 import type { AppShutdownReason } from '../runtime/AppShutdownCoordinator';
-import type { AlphaMarketContextObserver } from '../market/MarketEngine';
+import { createRuntimeSessionId } from '../runtime/runtimeSession';
 
 interface AppRuntimeLike {
-  polymarketRuntime: { start: () => Promise<void> | void };
   shutdown: (signal: AppShutdownReason) => Promise<void>;
 }
 
@@ -22,6 +24,8 @@ export interface EvidenceCollectCommandDependencies {
   createAppRuntime: (dependencies: {
     correlatedAlertRecorder: EvidenceAwareCorrelatedAlertRecorder;
     alphaMarketContextObserver: AlphaMarketContextObserver;
+    externalSignalCorrelationService: ExternalSignalCorrelationService;
+    correlatedAlertEngine: CorrelatedAlertEngine;
   }) => Promise<AppRuntimeLike>;
   loadBootstrap?: typeof loadEvidenceCollectBootstrap;
   createPriceReader?: () => OKXLivePriceReader;
@@ -49,6 +53,39 @@ const rethrowWithCleanupErrors = (
     throw new AggregateError([primaryError, ...cleanupErrors], message);
   }
   throw primaryError;
+};
+
+const createOkxOnlyAlertDependencies = (): Readonly<{
+  externalSignalCorrelationService: ExternalSignalCorrelationService;
+  correlatedAlertEngine: CorrelatedAlertEngine;
+}> => {
+  const externalSignalCorrelationService =
+    new ExternalSignalCorrelationService({
+      correlation: appConfig.correlation,
+    });
+  const correlatedAlertEngine = new CorrelatedAlertEngine({
+    sourceSessionId: createRuntimeSessionId(),
+    enabled: true,
+    minimumAgreementAlertImportance:
+      appConfig.correlatedAlerts.minimumAgreementAlertImportance,
+    minimumContradictionAlertImportance:
+      appConfig.correlatedAlerts.minimumContradictionAlertImportance,
+    externalOnlyAlertsEnabled: false,
+    minimumExternalOnlyAlertImportance:
+      appConfig.correlatedAlerts.minimumExternalOnlyAlertImportance,
+    okxOnlyAlertsEnabled: true,
+    minimumOkxOnlyAlertImportance:
+      appConfig.correlatedAlerts.minimumAgreementAlertImportance,
+    severityThresholds: appConfig.correlatedAlerts.severityThresholds,
+    cooldownMs: appConfig.correlatedAlerts.cooldownSeconds * 1_000,
+    confidenceChangeThreshold:
+      appConfig.correlatedAlerts.confidenceChangeThreshold,
+  });
+
+  return Object.freeze({
+    externalSignalCorrelationService,
+    correlatedAlertEngine,
+  });
 };
 
 export const runEvidenceCollectCommand = async (
@@ -104,9 +141,13 @@ export const runEvidenceCollectCommand = async (
         appConfig.correlatedAlertRecording.flushAfterEachAlert,
       onPersistedLiveAlert: bundle.runtime.onPersistedLiveAlert,
     });
+    const okxOnlyDependencies = createOkxOnlyAlertDependencies();
     appRuntime = await dependencies.createAppRuntime({
       correlatedAlertRecorder,
       alphaMarketContextObserver: bundle.runtime.onPersistedAlphaMarketContext,
+      externalSignalCorrelationService:
+        okxOnlyDependencies.externalSignalCorrelationService,
+      correlatedAlertEngine: okxOnlyDependencies.correlatedAlertEngine,
     });
   } catch (startupError) {
     const cleanupErrors: unknown[] = [];
@@ -143,12 +184,6 @@ export const runEvidenceCollectCommand = async (
   if (activeBundle === undefined || activeAppRuntime === undefined) {
     throw new Error('Evidence collection startup did not produce a runtime');
   }
-
-  void Promise.resolve(activeAppRuntime.polymarketRuntime.start()).catch(
-    (polymarketError: unknown) => {
-      error('Polymarket live ingestion failed:', polymarketError);
-    },
-  );
 
   let stopped = false;
   const stop = async (signal: AppShutdownReason = 'SIGINT'): Promise<void> => {
@@ -201,7 +236,9 @@ export const runEvidenceCollectCommand = async (
   log('LIVE EVIDENCE COLLECTION COORDINATOR STARTED');
   log(`Evaluation ID: ${bootstrap.manifest.evaluationId}`);
   log(`Directory: ${bootstrap.evaluationDirectory}`);
-  log('Public market data only. Live order execution remains disabled.');
+  log('Event generator: OKX whale signal only.');
+  log('External signals cannot qualify evidence events.');
+  log('Public OKX market data only. Live order execution remains disabled.');
 
   return Object.freeze({
     evaluationId: bootstrap.manifest.evaluationId,
