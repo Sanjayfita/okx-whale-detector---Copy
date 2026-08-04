@@ -68,6 +68,7 @@ export const createEvidenceCollectRuntimeBundle = (
     evaluationId: bootstrap.manifest.evaluationId,
     sourceCommit: bootstrap.manifest.sourceCommit,
     configurationFingerprint: bootstrap.manifest.configurationFingerprint,
+    alertAdmissionPolicy: 'OKX_ONLY',
   });
   const runtime = new EvidenceCollectionRuntime({
     bridge,
