@@ -153,7 +153,7 @@ const validateTrade = (trade: RiskResearchTradeObservation): void => {
   }
 };
 
-const riskFractionFor = (
+const requestedRiskFractionFor = (
   trade: RiskResearchTradeObservation,
   policy: RiskManagementPolicy,
 ): number => {
@@ -222,13 +222,18 @@ export const simulateRiskManagementPolicy = (input: {
       )
       .reduce((sum, position) => sum + position.riskFraction, 0);
     const equityBefore = equity;
-    const riskFraction = riskFractionFor(trade, input.policy);
+    const requestedRiskFraction = requestedRiskFractionFor(
+      trade,
+      input.policy,
+    );
     const unconstrainedPositionFraction =
-      riskFraction / (trade.stopDistancePercent / 100);
+      requestedRiskFraction / (trade.stopDistancePercent / 100);
     const positionFraction = Math.min(
       input.policy.maximumPositionFraction,
       unconstrainedPositionFraction,
     );
+    const effectiveRiskFraction =
+      positionFraction * (trade.stopDistancePercent / 100);
     const expectedMoveThreshold =
       trade.estimatedTotalCostPercent *
       input.policy.minimumExpectedMoveCostMultiple;
@@ -236,12 +241,12 @@ export const simulateRiskManagementPolicy = (input: {
     if (trade.expectedMovePercent < expectedMoveThreshold) {
       decision = 'EXPECTED_MOVE_BELOW_COST_THRESHOLD';
     } else if (
-      portfolioRiskBefore + riskFraction >
+      portfolioRiskBefore + effectiveRiskFraction >
       input.policy.maximumConcurrentPortfolioRiskFraction
     ) {
       decision = 'PORTFOLIO_RISK_LIMIT';
     } else if (
-      correlationRiskBefore + riskFraction >
+      correlationRiskBefore + effectiveRiskFraction >
       input.policy.maximumConcurrentCorrelationRiskFraction
     ) {
       decision = 'CORRELATION_RISK_LIMIT';
@@ -255,7 +260,7 @@ export const simulateRiskManagementPolicy = (input: {
           alertId: trade.alertId,
           exitedAt: trade.exitedAt,
           correlationGroup: trade.correlationGroup,
-          riskFraction,
+          riskFraction: effectiveRiskFraction,
           pnl,
         }),
       );
@@ -266,7 +271,7 @@ export const simulateRiskManagementPolicy = (input: {
         instrumentId: trade.instrumentId,
         detectedAt: trade.detectedAt,
         decision,
-        riskFraction,
+        riskFraction: effectiveRiskFraction,
         positionFraction,
         equityBefore,
         equityAfter: equity,
