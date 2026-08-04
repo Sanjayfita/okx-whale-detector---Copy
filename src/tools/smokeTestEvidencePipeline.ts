@@ -28,10 +28,11 @@ export const runEvidencePipelineSmokeTest =
     const evaluationId = 'smoke-evaluation';
     const sourceCommit = 'smoke-source-commit';
     const detectedAt = 1_800_000_000_000;
+    const completionAt = detectedAt + 60 * 60_000;
     const manifest = createEvaluationSessionManifest({
       evaluationId,
       sourceCommit,
-      configuration: { smoke: true },
+      configuration: { smoke: true, eventGenerator: 'OKX_ONLY' },
       instruments: ['BTC-USDT'],
       minimumCollectionDays: 30,
       minimumQualifiedAlerts: 1_000,
@@ -68,6 +69,7 @@ export const runEvidencePipelineSmokeTest =
       const collector = new LiveEvidenceCollector({
         recorder,
         scheduler,
+        clock: () => completionAt,
         readPrice: async (instrumentId, dueAt) => ({
           instrumentId,
           observedAt: dueAt,
@@ -84,6 +86,7 @@ export const runEvidencePipelineSmokeTest =
         evaluationId,
         sourceCommit,
         configurationFingerprint,
+        alertAdmissionPolicy: 'OKX_ONLY',
       });
       const alert: CorrelatedAlert = {
         id: 'smoke-alert-1',
@@ -91,23 +94,23 @@ export const runEvidencePipelineSmokeTest =
         alertSequence: 1,
         symbol: 'BTC-USDT',
         severity: 'STRONG',
-        eventType: 'AGREEMENT',
+        eventType: 'NEW_SIGNAL',
         bias: 'BULLISH',
-        relationship: 'AGREEMENT',
+        relationship: 'OKX_ONLY',
         combinedConfidence: 80,
         alertImportance: 80,
-        okxConfidence: 75,
-        externalEffectiveConfidence: 70,
-        externalSignalsUsed: 1,
+        okxConfidence: 80,
+        externalEffectiveConfidence: 0,
+        externalSignalsUsed: 0,
         ignoredExternalSignals: 0,
-        reason: 'R6 smoke test',
+        reason: 'OKX-only evidence smoke test',
         createdAt: detectedAt,
       };
       const evaluationContext: CorrelatedAlertEvaluationContext = {
         instId: 'BTC-USDT',
         instType: 'SWAP',
         okxBias: 'BULLISH',
-        externalBias: 'BULLISH',
+        externalBias: 'NEUTRAL',
         sourceSignalTimestamp: detectedAt,
         sourceMarketTimestamp: detectedAt,
         referenceTimestamp: detectedAt,
@@ -116,7 +119,7 @@ export const runEvidencePipelineSmokeTest =
         referenceBestAsk: 100.1,
         referenceSpread: 0.2,
         referenceSpreadPercent: 0.2,
-        sourceSignalIds: ['smoke-signal'],
+        sourceSignalIds: [],
       };
 
       const evidence = bridge.createEvidence({
@@ -151,12 +154,9 @@ export const runEvidencePipelineSmokeTest =
           },
         }),
       );
-      await collector.processDueObservations(detectedAt + 60 * 60_000);
+      await collector.processDueObservations(completionAt);
 
-      const progress = await inspectEvidenceProgress(
-        directory,
-        detectedAt + 60 * 60_000,
-      );
+      const progress = await inspectEvidenceProgress(directory, completionAt);
       const outcomes = (
         await readFile(join(directory, 'outcomes.ndjson'), 'utf8')
       )
