@@ -66,6 +66,7 @@ export const generateStatisticalValidationReport = async (input: {
     startingCapital: input.policy?.startingCapital ?? 10_000,
     positionNotional: input.policy?.positionNotional ?? 100,
     roundTripCostPercent: input.policy?.roundTripCostPercent ?? 0.2,
+    primaryHorizonMinutes: input.policy?.primaryHorizonMinutes ?? 15,
   };
 
   return createStatisticalValidationReport({
