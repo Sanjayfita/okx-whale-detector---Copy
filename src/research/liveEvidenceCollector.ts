@@ -2,7 +2,10 @@ import {
   createAlertOutcomeObservation,
   type ExcursionMeasurement,
 } from './alertOutcomeObservation';
-import { PersistentOutcomeScheduler } from './persistentOutcomeScheduler';
+import {
+  PersistentOutcomeScheduler,
+  type PendingOutcomeJob,
+} from './persistentOutcomeScheduler';
 import { QualifiedAlertRecorder } from './qualifiedAlertRecorder';
 import type { QualifiedAlertEvidenceRecord } from './qualifiedAlertEvidence';
 
@@ -24,12 +27,17 @@ export interface LiveEvidenceCollectorDependencies {
   ) => Promise<LivePriceSnapshot>;
   maximumObservationDelayMs?: number;
   maximumFutureSkewMs?: number;
+  onObservationError?: (error: unknown, job: PendingOutcomeJob) => void;
 }
 
 export class LiveEvidenceCollector {
   private initialized = false;
   private readonly maximumObservationDelayMs: number;
   private readonly maximumFutureSkewMs: number;
+  private readonly onObservationError: (
+    error: unknown,
+    job: PendingOutcomeJob,
+  ) => void;
 
   public constructor(
     private readonly dependencies: LiveEvidenceCollectorDependencies,
@@ -37,6 +45,14 @@ export class LiveEvidenceCollector {
     this.maximumObservationDelayMs =
       dependencies.maximumObservationDelayMs ?? 10_000;
     this.maximumFutureSkewMs = dependencies.maximumFutureSkewMs ?? 5_000;
+    this.onObservationError =
+      dependencies.onObservationError ??
+      ((error, job) => {
+        console.error(
+          `Outcome observation failed for ${job.alertId}/${job.horizonMinutes}m:`,
+          error,
+        );
+      });
 
     if (
       !Number.isSafeInteger(this.maximumObservationDelayMs) ||
@@ -70,64 +86,82 @@ export class LiveEvidenceCollector {
     let completed = 0;
 
     for (const job of dueJobs) {
-      const snapshot = await this.dependencies.readPrice(
-        job.instrumentId,
-        job.dueAt,
-      );
-      if (snapshot.instrumentId !== job.instrumentId) {
-        throw new Error(
-          'Price snapshot instrument does not match the pending job',
-        );
+      try {
+        await this.processObservation(job, now);
+        completed += 1;
+      } catch (error: unknown) {
+        // A failed or overdue observation must remain pending for integrity
+        // reporting, but it must not poison the queue and block unrelated jobs.
+        try {
+          this.onObservationError(error, job);
+        } catch (handlerError: unknown) {
+          console.error('Outcome observation error handler failed:', handlerError);
+        }
       }
-      if (!Number.isFinite(snapshot.price) || snapshot.price <= 0) {
-        throw new Error('Price snapshot must contain a positive finite price');
-      }
-      if (
-        !Number.isSafeInteger(snapshot.observedAt) ||
-        snapshot.observedAt < job.dueAt
-      ) {
-        throw new Error(
-          'Price snapshot was captured before the pending job was due',
-        );
-      }
-      if (snapshot.observedAt - job.dueAt > this.maximumObservationDelayMs) {
-        throw new Error(
-          'Price snapshot was captured too late for the pending job',
-        );
-      }
-      if (snapshot.observedAt - now > this.maximumFutureSkewMs) {
-        throw new Error(
-          'Price snapshot timestamp is implausibly far in the future',
-        );
-      }
-
-      const rawReturnPercent =
-        ((snapshot.price - job.referencePrice) / job.referencePrice) * 100;
-      const directionAdjustedReturnPercent =
-        job.direction === 'BEARISH' ? -rawReturnPercent : rawReturnPercent;
-
-      const observation = createAlertOutcomeObservation({
-        evaluationId: job.evaluationId,
-        alertId: job.alertId,
-        instrumentId: job.instrumentId,
-        detectedAt: job.detectedAt,
-        horizonMinutes: job.horizonMinutes,
-        observedAt: snapshot.observedAt,
-        referencePrice: job.referencePrice,
-        observedPrice: snapshot.price,
-        rawReturnPercent,
-        directionAdjustedReturnPercent,
-        maximumFavorableExcursionPercent:
-          snapshot.maximumFavorableExcursionPercent,
-        maximumAdverseExcursionPercent: snapshot.maximumAdverseExcursionPercent,
-        excursionMeasurement: snapshot.excursionMeasurement,
-      });
-
-      await this.dependencies.scheduler.completeObservation(observation);
-      completed += 1;
     }
 
     return completed;
+  }
+
+  private async processObservation(
+    job: PendingOutcomeJob,
+    now: number,
+  ): Promise<void> {
+    const snapshot = await this.dependencies.readPrice(
+      job.instrumentId,
+      job.dueAt,
+    );
+    if (snapshot.instrumentId !== job.instrumentId) {
+      throw new Error(
+        'Price snapshot instrument does not match the pending job',
+      );
+    }
+    if (!Number.isFinite(snapshot.price) || snapshot.price <= 0) {
+      throw new Error('Price snapshot must contain a positive finite price');
+    }
+    if (
+      !Number.isSafeInteger(snapshot.observedAt) ||
+      snapshot.observedAt < job.dueAt
+    ) {
+      throw new Error(
+        'Price snapshot was captured before the pending job was due',
+      );
+    }
+    if (snapshot.observedAt - job.dueAt > this.maximumObservationDelayMs) {
+      throw new Error(
+        'Price snapshot was captured too late for the pending job',
+      );
+    }
+    if (snapshot.observedAt - now > this.maximumFutureSkewMs) {
+      throw new Error(
+        'Price snapshot timestamp is implausibly far in the future',
+      );
+    }
+
+    const rawReturnPercent =
+      ((snapshot.price - job.referencePrice) / job.referencePrice) * 100;
+    const directionAdjustedReturnPercent =
+      job.direction === 'BEARISH' ? -rawReturnPercent : rawReturnPercent;
+
+    const observation = createAlertOutcomeObservation({
+      evaluationId: job.evaluationId,
+      alertId: job.alertId,
+      instrumentId: job.instrumentId,
+      detectedAt: job.detectedAt,
+      horizonMinutes: job.horizonMinutes,
+      observedAt: snapshot.observedAt,
+      referencePrice: job.referencePrice,
+      observedPrice: snapshot.price,
+      rawReturnPercent,
+      directionAdjustedReturnPercent,
+      maximumFavorableExcursionPercent:
+        snapshot.maximumFavorableExcursionPercent,
+      maximumAdverseExcursionPercent:
+        snapshot.maximumAdverseExcursionPercent,
+      excursionMeasurement: snapshot.excursionMeasurement,
+    });
+
+    await this.dependencies.scheduler.completeObservation(observation);
   }
 
   private requireInitialized(): void {
