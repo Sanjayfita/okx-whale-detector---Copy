@@ -7,6 +7,7 @@ import {
   evaluateEvidenceDatasetQuality,
   type EvidenceDatasetQualityMetrics,
 } from './evidenceDatasetQuality';
+import { measureEvidenceIndependence } from './evidenceIndependence';
 import { readEvidenceNdjsonFile } from './evidenceNdjson';
 import {
   parseEvaluationSessionManifest,
@@ -35,6 +36,9 @@ export interface EvidenceProgressReport extends EvidenceDatasetQualityMetrics {
   readonly lastOutcomeObservedAt: number | null;
   readonly minimumCollectionDays: number;
   readonly minimumQualifiedAlerts: number;
+  readonly maximumOutcomeHorizonMinutes: number;
+  readonly independentAlertCount: number;
+  readonly dependentAlertCount: number;
   readonly durationRequirementMet: boolean;
   readonly alertRequirementMet: boolean;
   readonly evaluationLeaseActive: boolean;
@@ -235,6 +239,10 @@ export const inspectEvidenceProgress = async (
     maximumObservationDelayMs,
     alphaConfig,
   });
+  const independence = measureEvidenceIndependence(
+    alerts.records,
+    manifest.horizonsMinutes,
+  );
   const collectionDays = Math.max(0, (now - manifest.createdAt) / 86_400_000);
   const firstAlertDetectedAt = alerts.records.reduce<number | null>(
     (earliest, alert) =>
@@ -257,7 +265,7 @@ export const inspectEvidenceProgress = async (
   const durationRequirementMet =
     evidenceSpanDays >= manifest.minimumCollectionDays;
   const alertRequirementMet =
-    quality.qualifiedAlertCount >= manifest.minimumQualifiedAlerts;
+    independence.independentAlertCount >= manifest.minimumQualifiedAlerts;
   const readyForFinalEvaluation =
     durationRequirementMet &&
     alertRequirementMet &&
@@ -285,6 +293,10 @@ export const inspectEvidenceProgress = async (
     ),
     minimumCollectionDays: manifest.minimumCollectionDays,
     minimumQualifiedAlerts: manifest.minimumQualifiedAlerts,
+    maximumOutcomeHorizonMinutes:
+      independence.maximumOutcomeHorizonMinutes,
+    independentAlertCount: independence.independentAlertCount,
+    dependentAlertCount: independence.dependentAlertCount,
     durationRequirementMet,
     alertRequirementMet,
     evaluationLeaseActive,
