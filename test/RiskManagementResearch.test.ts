@@ -39,7 +39,10 @@ describe('risk management research', () => {
   it('applies cost, portfolio, and correlation gates chronologically', () => {
     const start = 1_800_000_000_000;
     const report = simulateRiskManagementPolicy({
-      policy,
+      policy: {
+        ...policy,
+        maximumConcurrentPortfolioRiskFraction: 0.019,
+      },
       trades: [
         trade('accepted-1', start, { exitedAt: start + 10 * 60_000 }),
         trade('cost-rejected', start + 60_000, {
