@@ -6,6 +6,7 @@ import {
   validateProfitabilityPolicy,
   type ProfitabilityPolicy,
 } from './evidenceProfitability';
+import { selectIndependentEvidenceAlertIds } from './evidenceIndependence';
 import { prepareEvidenceRecords } from './evidenceIntegrity';
 import type { QualifiedAlertEvidenceRecord } from './qualifiedAlertEvidence';
 
@@ -61,7 +62,10 @@ export interface StatisticalValidationReport {
   readonly generatedAt: number;
   readonly evaluationId: string;
   readonly matchedObservations: number;
+  readonly primaryHorizonMinutes: number;
+  readonly primaryHorizonObservations: number;
   readonly independentAlerts: number;
+  readonly dependentPrimaryHorizonAlerts: number;
   readonly unmatchedObservations: number;
   readonly malformedRecords: number;
   readonly sampleRequirement: number;
@@ -104,53 +108,21 @@ const average = (values: readonly number[]): number =>
     ? 0
     : values.reduce((sum, value) => sum + value, 0) / values.length;
 
-const averageReturnsByAlert = (
-  observations: readonly JoinedObservation[],
-): readonly number[] => {
-  const groups = new Map<
-    string,
-    { total: number; count: number; detectedAt: number }
-  >();
-
-  for (const item of observations) {
-    const existing = groups.get(item.alert.alertId);
-
-    if (existing) {
-      existing.total += item.netReturnPercent;
-      existing.count += 1;
-    } else {
-      groups.set(item.alert.alertId, {
-        total: item.netReturnPercent,
-        count: 1,
-        detectedAt: item.alert.detectedAt,
-      });
-    }
-  }
-
-  return [...groups.values()]
-    .sort((left, right) => left.detectedAt - right.detectedAt)
-    .map((group) => group.total / group.count);
-};
-
 const quantile = (values: readonly number[], probability: number): number => {
-  if (values.length === 0) {
-    return 0;
-  }
-
+  if (values.length === 0) return 0;
   const sorted = [...values].sort((left, right) => left - right);
   const position = (sorted.length - 1) * probability;
   const lowerIndex = Math.floor(position);
   const upperIndex = Math.ceil(position);
   const lower = sorted[lowerIndex] ?? 0;
   const upper = sorted[upperIndex] ?? lower;
-  const weight = position - lowerIndex;
-  return lower + (upper - lower) * weight;
+  return lower + (upper - lower) * (position - lowerIndex);
 };
 
 const createRandom = (seed: number): (() => number) => {
   let value = seed >>> 0;
   return () => {
-    value += 0x6d2b79f5;
+    value = (value + 0x6d2b79f5) >>> 0;
     let result = value;
     result = Math.imul(result ^ (result >>> 15), result | 1);
     result ^= result + Math.imul(result ^ (result >>> 7), result | 61);
@@ -169,23 +141,22 @@ const errorFunction = (value: number): number => {
   const p = 0.3275911;
   const t = 1 / (1 + p * x);
   const y =
-    1 - ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t * Math.exp(-x * x);
+    1 -
+    ((((a5 * t + a4) * t + a3) * t + a2) * t + a1) *
+      t *
+      Math.exp(-x * x);
   return sign * y;
 };
 
 const twoSidedSignPValue = (values: readonly number[]): number => {
-  if (values.length === 0) {
-    return 1;
-  }
-
   const positives = values.filter((value) => value > 0).length;
   const negatives = values.filter((value) => value < 0).length;
   const trials = positives + negatives;
-  if (trials === 0) {
-    return 1;
-  }
+  if (trials === 0) return 1;
 
-  const z = Math.abs((positives - trials / 2) / Math.sqrt(trials / 4));
+  const difference = Math.abs(positives - trials / 2);
+  const continuityCorrected = Math.max(0, difference - 0.5);
+  const z = continuityCorrected / Math.sqrt(trials / 4);
   const normalCdf = 0.5 * (1 + errorFunction(z / Math.sqrt(2)));
   return Math.max(0, Math.min(1, 2 * (1 - normalCdf)));
 };
@@ -228,21 +199,19 @@ export const blockBootstrapMeanConfidenceInterval = (
   }
 
   const blockSize = Math.min(requestedBlockSize, Math.max(1, values.length));
-
   if (values.length === 0) {
-    return {
+    return Object.freeze({
       confidenceLevel,
       iterations,
       blockSize,
       mean: 0,
       lower: 0,
       upper: 0,
-    };
+    });
   }
 
   const random = options.random ?? createRandom(0x5eed_1234);
   const bootstrapMeans: number[] = [];
-
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     const sample: number[] = [];
     while (sample.length < values.length) {
@@ -267,14 +236,14 @@ export const blockBootstrapMeanConfidenceInterval = (
   }
 
   const tailProbability = (1 - confidenceLevel) / 2;
-  return {
+  return Object.freeze({
     confidenceLevel,
     iterations,
     blockSize,
     mean: round(average(values)),
     lower: round(quantile(bootstrapMeans, tailProbability)),
     upper: round(quantile(bootstrapMeans, 1 - tailProbability)),
-  };
+  });
 };
 
 export const applyBenjaminiHochberg = (
@@ -305,34 +274,32 @@ export const applyBenjaminiHochberg = (
     keys.add(item.key);
   }
 
-  const sorted = [...values]
-    .map((item) => ({ ...item }))
-    .sort((left, right) => left.pValue - right.pValue);
+  const sorted = [...values].sort(
+    (left, right) => left.pValue - right.pValue || left.key.localeCompare(right.key),
+  );
   const adjusted = new Map<string, number>();
   let runningMinimum = 1;
-
   for (let index = sorted.length - 1; index >= 0; index -= 1) {
     const item = sorted[index];
-    if (!item) {
-      continue;
-    }
-    const rank = index + 1;
+    if (item === undefined) continue;
     runningMinimum = Math.min(
       runningMinimum,
-      (item.pValue * sorted.length) / rank,
+      (item.pValue * sorted.length) / (index + 1),
     );
     adjusted.set(item.key, Math.min(1, runningMinimum));
   }
 
-  return values.map((item) => {
-    const adjustedPValue = adjusted.get(item.key) ?? 1;
-    return {
-      key: item.key,
-      rawPValue: round(Math.max(0, Math.min(1, item.pValue))),
-      adjustedPValue: round(adjustedPValue),
-      rejected: adjustedPValue <= falseDiscoveryRate,
-    };
-  });
+  return Object.freeze(
+    values.map((item) => {
+      const adjustedPValue = adjusted.get(item.key) ?? 1;
+      return Object.freeze({
+        key: item.key,
+        rawPValue: round(item.pValue),
+        adjustedPValue: round(adjustedPValue),
+        rejected: adjustedPValue <= falseDiscoveryRate,
+      });
+    }),
+  );
 };
 
 const createChronologicalSplit = (
@@ -345,7 +312,7 @@ const createChronologicalSplit = (
   >,
 ): ChronologicalSplitSummary => {
   if (observations.length === 0) {
-    return {
+    return Object.freeze({
       purgeMs: options.purgeMs,
       trainCount: 0,
       validationCount: 0,
@@ -353,59 +320,58 @@ const createChronologicalSplit = (
       trainMeanNetReturnPercent: 0,
       validationMeanNetReturnPercent: 0,
       testMeanNetReturnPercent: 0,
-    };
+    });
   }
 
   const sorted = [...observations].sort(
     (left, right) =>
-      left.outcome.detectedAt - right.outcome.detectedAt ||
-      left.outcome.horizonMinutes - right.outcome.horizonMinutes,
+      left.alert.detectedAt - right.alert.detectedAt ||
+      left.alert.alertId.localeCompare(right.alert.alertId),
   );
-  const eventTimestamps = [
-    ...new Set(sorted.map((item) => item.outcome.detectedAt)),
-  ];
   const firstBoundaryIndex = Math.min(
-    eventTimestamps.length - 1,
-    Math.max(0, Math.floor(eventTimestamps.length * options.trainRatio)),
+    sorted.length - 1,
+    Math.max(0, Math.floor(sorted.length * options.trainRatio)),
   );
   const secondBoundaryIndex = Math.min(
-    eventTimestamps.length - 1,
+    sorted.length - 1,
     Math.max(
       firstBoundaryIndex,
       Math.floor(
-        eventTimestamps.length * (options.trainRatio + options.validationRatio),
+        sorted.length * (options.trainRatio + options.validationRatio),
       ),
     ),
   );
   const firstBoundary =
-    eventTimestamps[firstBoundaryIndex] ?? Number.POSITIVE_INFINITY;
+    sorted[firstBoundaryIndex]?.alert.detectedAt ?? Number.POSITIVE_INFINITY;
   const secondBoundary =
-    eventTimestamps[secondBoundaryIndex] ?? Number.POSITIVE_INFINITY;
+    sorted[secondBoundaryIndex]?.alert.detectedAt ?? Number.POSITIVE_INFINITY;
   const train = sorted.filter(
     (item) => item.outcome.observedAt < firstBoundary - options.purgeMs,
   );
   const validation = sorted.filter(
     (item) =>
-      item.outcome.detectedAt > firstBoundary + options.purgeMs &&
+      item.alert.detectedAt > firstBoundary + options.purgeMs &&
       item.outcome.observedAt < secondBoundary - options.purgeMs,
   );
   const test = sorted.filter(
-    (item) => item.outcome.detectedAt > secondBoundary + options.purgeMs,
+    (item) => item.alert.detectedAt > secondBoundary + options.purgeMs,
   );
 
-  const trainReturns = averageReturnsByAlert(train);
-  const validationReturns = averageReturnsByAlert(validation);
-  const testReturns = averageReturnsByAlert(test);
-
-  return {
+  return Object.freeze({
     purgeMs: options.purgeMs,
-    trainCount: trainReturns.length,
-    validationCount: validationReturns.length,
-    testCount: testReturns.length,
-    trainMeanNetReturnPercent: round(average(trainReturns)),
-    validationMeanNetReturnPercent: round(average(validationReturns)),
-    testMeanNetReturnPercent: round(average(testReturns)),
-  };
+    trainCount: train.length,
+    validationCount: validation.length,
+    testCount: test.length,
+    trainMeanNetReturnPercent: round(
+      average(train.map((item) => item.netReturnPercent)),
+    ),
+    validationMeanNetReturnPercent: round(
+      average(validation.map((item) => item.netReturnPercent)),
+    ),
+    testMeanNetReturnPercent: round(
+      average(test.map((item) => item.netReturnPercent)),
+    ),
+  });
 };
 
 export const createStatisticalValidationReport = (input: {
@@ -425,7 +391,7 @@ export const createStatisticalValidationReport = (input: {
   const trainRatio = options.trainRatio ?? 0.6;
   const validationRatio = options.validationRatio ?? 0.2;
   const falseDiscoveryRate = options.falseDiscoveryRate ?? 0.05;
-  const randomSeed = options.randomSeed ?? 0x5eed1234;
+  const randomSeed = options.randomSeed ?? 0x5eed_1234;
   const policy = validateProfitabilityPolicy(input.policy);
 
   if (
@@ -439,7 +405,7 @@ export const createStatisticalValidationReport = (input: {
       'chronological split ratios must leave a positive test set',
     );
   }
-  if (!Number.isInteger(minimumSampleSize) || minimumSampleSize <= 0) {
+  if (!Number.isSafeInteger(minimumSampleSize) || minimumSampleSize <= 0) {
     throw new Error('minimumSampleSize must be a positive integer');
   }
   if (!Number.isSafeInteger(purgeMs) || purgeMs < 0) {
@@ -459,34 +425,44 @@ export const createStatisticalValidationReport = (input: {
     outcomes: input.outcomes,
     malformedRecords: input.malformedRecords,
   });
-  const joined: JoinedObservation[] = [];
-
-  for (const { alert, outcome } of integrity.joined) {
-    joined.push({
-      alert,
-      outcome,
-      netReturnPercent:
-        outcome.directionAdjustedReturnPercent - policy.roundTripCostPercent,
-    });
-  }
-
+  const joined: JoinedObservation[] = integrity.joined.map(
+    ({ alert, outcome }) =>
+      Object.freeze({
+        alert,
+        outcome,
+        netReturnPercent:
+          outcome.directionAdjustedReturnPercent - policy.roundTripCostPercent,
+      }),
+  );
   const sortedJoined = [...joined].sort(
     (left, right) =>
-      left.outcome.detectedAt - right.outcome.detectedAt ||
-      left.outcome.horizonMinutes - right.outcome.horizonMinutes,
+      left.alert.detectedAt - right.alert.detectedAt ||
+      left.outcome.horizonMinutes - right.outcome.horizonMinutes ||
+      left.alert.alertId.localeCompare(right.alert.alertId),
   );
-  const allNetReturns = averageReturnsByAlert(sortedJoined);
-  const random = createRandom(randomSeed);
+  const primaryJoined = sortedJoined.filter(
+    (item) => item.outcome.horizonMinutes === policy.primaryHorizonMinutes,
+  );
+  const independentIds = selectIndependentEvidenceAlertIds(
+    primaryJoined.map((item) => item.alert),
+    [policy.primaryHorizonMinutes],
+  );
+  const independentPrimaryJoined = primaryJoined.filter((item) =>
+    independentIds.has(item.alert.alertId),
+  );
+  const independentNetReturns = independentPrimaryJoined.map(
+    (item) => item.netReturnPercent,
+  );
   const overallConfidenceInterval = blockBootstrapMeanConfidenceInterval(
-    allNetReturns,
+    independentNetReturns,
     {
       confidenceLevel,
       iterations: bootstrapIterations,
       blockSize: options.bootstrapBlockSize,
-      random,
+      random: createRandom(randomSeed),
     },
   );
-  const chronologicalSplit = createChronologicalSplit(sortedJoined, {
+  const chronologicalSplit = createChronologicalSplit(independentPrimaryJoined, {
     purgeMs,
     trainRatio,
     validationRatio,
@@ -512,27 +488,28 @@ export const createStatisticalValidationReport = (input: {
   const byHorizon: HorizonStatisticalValidation[] = [...horizonGroups.entries()]
     .sort(([left], [right]) => left - right)
     .map(([horizonMinutes, group], index) => {
-      const netReturns = group.map((item) => item.netReturnPercent);
-      return {
+      const returns = group.map((item) => item.netReturnPercent);
+      return Object.freeze({
         horizonMinutes,
         observations: group.length,
-        meanNetReturnPercent: round(average(netReturns)),
-        confidenceInterval: blockBootstrapMeanConfidenceInterval(netReturns, {
+        meanNetReturnPercent: round(average(returns)),
+        confidenceInterval: blockBootstrapMeanConfidenceInterval(returns, {
           confidenceLevel,
           iterations: bootstrapIterations,
           blockSize: options.bootstrapBlockSize,
           random: createRandom((randomSeed + index + 1) >>> 0),
         }),
-        significance: adjustedByHorizon.get(String(horizonMinutes)) ?? {
-          key: String(horizonMinutes),
-          rawPValue: 1,
-          adjustedPValue: 1,
-          rejected: false,
-        },
-      };
+        significance: adjustedByHorizon.get(String(horizonMinutes)) ??
+          Object.freeze({
+            key: String(horizonMinutes),
+            rawPValue: 1,
+            adjustedPValue: 1,
+            rejected: false,
+          }),
+      });
     });
 
-  const pathJoined = sortedJoined.filter((item) =>
+  const pathJoined = independentPrimaryJoined.filter((item) =>
     hasObservedExcursionPath(item.outcome),
   );
   const volatility = pathJoined.map(
@@ -555,13 +532,15 @@ export const createStatisticalValidationReport = (input: {
       value <= lowCutoff ? 'LOW' : value <= highCutoff ? 'MEDIUM' : 'HIGH';
     regimeGroups[regime].push(item.netReturnPercent);
   }
-  const byRegime = (['LOW', 'MEDIUM', 'HIGH'] as const).map((regime) => ({
-    regime,
-    basis: 'OUTCOME_PATH_VOLATILITY' as const,
-    availableAtDecisionTime: false as const,
-    observations: regimeGroups[regime].length,
-    meanNetReturnPercent: round(average(regimeGroups[regime])),
-  }));
+  const byRegime = (['LOW', 'MEDIUM', 'HIGH'] as const).map((regime) =>
+    Object.freeze({
+      regime,
+      basis: 'OUTCOME_PATH_VOLATILITY' as const,
+      availableAtDecisionTime: false as const,
+      observations: regimeGroups[regime].length,
+      meanNetReturnPercent: round(average(regimeGroups[regime])),
+    }),
+  );
 
   const costs = [
     0,
@@ -573,28 +552,39 @@ export const createStatisticalValidationReport = (input: {
   const uniqueCosts = [...new Set(costs.map((value) => round(value)))].sort(
     (left, right) => left - right,
   );
-  const grossReturns = sortedJoined.map(
+  const grossReturns = independentPrimaryJoined.map(
     (item) => item.outcome.directionAdjustedReturnPercent,
   );
   const feeSensitivity = uniqueCosts.map((roundTripCostPercent) => {
     const meanNetReturnPercent = round(
       average(grossReturns.map((value) => value - roundTripCostPercent)),
     );
-    return {
+    return Object.freeze({
       roundTripCostPercent,
       meanNetReturnPercent,
       positive: meanNetReturnPercent > 0,
-    };
+    });
   });
 
   const malformedRecords = integrity.malformedRecords;
   const unmatchedObservations = integrity.unmatchedObservations;
-  const independentAlerts = allNetReturns.length;
+  const independentAlerts = independentPrimaryJoined.length;
+  const dependentPrimaryHorizonAlerts =
+    primaryJoined.length - independentPrimaryJoined.length;
   const sampleRequirementMet = independentAlerts >= minimumSampleSize;
+  const missingPrimaryHorizonOutcomes = Math.max(
+    0,
+    integrity.alerts.length - primaryJoined.length,
+  );
   const reasons: string[] = [];
   if (!sampleRequirementMet) {
     reasons.push(
       `Requires at least ${minimumSampleSize} independent alerts; found ${independentAlerts}`,
+    );
+  }
+  if (missingPrimaryHorizonOutcomes > 0) {
+    reasons.push(
+      `${missingPrimaryHorizonOutcomes} alert(s) are missing the ${policy.primaryHorizonMinutes}m primary outcome`,
     );
   }
   if (overallConfidenceInterval.lower <= 0) {
@@ -627,7 +617,10 @@ export const createStatisticalValidationReport = (input: {
     generatedAt: input.generatedAt,
     evaluationId: input.evaluationId,
     matchedObservations: joined.length,
+    primaryHorizonMinutes: policy.primaryHorizonMinutes,
+    primaryHorizonObservations: primaryJoined.length,
     independentAlerts,
+    dependentPrimaryHorizonAlerts,
     unmatchedObservations,
     malformedRecords,
     sampleRequirement: minimumSampleSize,
