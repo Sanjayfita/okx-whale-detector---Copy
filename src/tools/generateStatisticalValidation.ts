@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { isErrorWithCode } from '../core/errorGuards';
 import { parseAlertOutcomeObservation } from '../research/alertOutcomeObservation';
 import { parseEvidenceNdjson } from '../research/evidenceNdjson';
+import { EVIDENCE_PRIMARY_HORIZON_MINUTES } from '../research/evidenceEvaluationDefinition';
 import type { ProfitabilityPolicy } from '../research/evidenceProfitability';
 import { parseQualifiedAlertEvidenceRecord } from '../research/qualifiedAlertEvidence';
 import {
@@ -66,7 +67,8 @@ export const generateStatisticalValidationReport = async (input: {
     startingCapital: input.policy?.startingCapital ?? 10_000,
     positionNotional: input.policy?.positionNotional ?? 100,
     roundTripCostPercent: input.policy?.roundTripCostPercent ?? 0.2,
-    primaryHorizonMinutes: input.policy?.primaryHorizonMinutes ?? 15,
+    primaryHorizonMinutes:
+      input.policy?.primaryHorizonMinutes ?? EVIDENCE_PRIMARY_HORIZON_MINUTES,
   };
 
   return createStatisticalValidationReport({
@@ -112,6 +114,10 @@ const main = async (): Promise<void> => {
   console.log('STATISTICAL VALIDATION REPORT');
   console.log(`Evaluation ID: ${report.evaluationId}`);
   console.log(`Matched observations: ${report.matchedObservations}`);
+  console.log(
+    `Primary horizon: ${report.primaryHorizonMinutes} minute(s)`,
+  );
+  console.log(`Independent alerts: ${report.independentAlerts}`);
   console.log(
     `95% block-bootstrap interval: ${report.overallConfidenceInterval.lower}% to ${report.overallConfidenceInterval.upper}%`,
   );
