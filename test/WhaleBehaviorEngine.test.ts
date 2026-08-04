@@ -123,6 +123,59 @@ describe('WhaleBehaviorEngine', () => {
     expect(behaviors.map((behavior) => behavior.type)).toContain('PERSISTENT');
   });
 
+  it('exposes immutable event-time lifecycle metrics without changing behavior', () => {
+    const engine = new WhaleBehaviorEngine();
+    const firstSeenAt = Date.now();
+    engine.analyze(
+      createWhale({
+        firstSeenAt,
+        price: 100,
+        notionalQuote: 1_000_000,
+      }),
+    );
+    vi.advanceTimersByTime(1_000);
+    engine.analyze(
+      createWhale({
+        firstSeenAt,
+        price: 101,
+        notionalQuote: 1_200_000,
+        ageSeconds: 1,
+      }),
+    );
+    vi.advanceTimersByTime(1_000);
+    const current = createWhale({
+      firstSeenAt,
+      price: 99,
+      notionalQuote: 900_000,
+      ageSeconds: 2,
+    });
+    engine.analyze(current);
+
+    const metrics = engine.getLifecycleMetrics(current);
+    expect(metrics).toEqual(
+      expect.objectContaining({
+        wallId: 'wall-1',
+        firstSeenAt,
+        availabilityTimestamp: Date.now(),
+        lifetimeMs: 2_000,
+        updateCount: 3,
+        initialNotionalQuote: 1_000_000,
+        currentNotionalQuote: 900_000,
+        highestNotionalQuote: 1_200_000,
+        lowestNotionalQuote: 900_000,
+        increaseCount: 1,
+        decreaseCount: 1,
+        initialPrice: 100,
+        currentPrice: 99,
+      }),
+    );
+    expect(metrics?.priceChangePercent).toBeCloseTo(-1);
+    expect(metrics?.notionalChangeFromInitialPercent).toBeCloseTo(-10);
+    expect(metrics?.peakDrawdownPercent).toBeCloseTo(25);
+    expect(metrics?.recoveryFromMinimumPercent).toBe(0);
+    expect(Object.isFrozen(metrics)).toBe(true);
+  });
+
   it('still detects a young removed wall as SPOOF', () => {
     const engine = new WhaleBehaviorEngine();
 
