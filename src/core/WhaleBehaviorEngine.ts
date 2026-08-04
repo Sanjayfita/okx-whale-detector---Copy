@@ -26,14 +26,37 @@ export interface WhaleBehaviorConfig {
   growthMultiplier: number;
 }
 
+export interface WhaleLifecycleMetrics {
+  readonly wallId: string;
+  readonly firstSeenAt: number;
+  readonly availabilityTimestamp: number;
+  readonly lifetimeMs: number;
+  readonly updateCount: number;
+  readonly initialNotionalQuote: number;
+  readonly currentNotionalQuote: number;
+  readonly highestNotionalQuote: number;
+  readonly lowestNotionalQuote: number;
+  readonly increaseCount: number;
+  readonly decreaseCount: number;
+  readonly initialPrice: number;
+  readonly currentPrice: number;
+  readonly priceChangePercent: number;
+  readonly notionalChangeFromInitialPercent: number;
+  readonly peakDrawdownPercent: number;
+  readonly recoveryFromMinimumPercent: number;
+}
+
 interface WhaleBehaviorHistory {
   firstSeenAt: number;
   lastSeenAt: number;
+  updateCount: number;
+  initialNotionalQuote: number;
   highestNotionalQuote: number;
   lowestNotionalQuote: number;
   previousNotionalQuote: number;
   increaseCount: number;
   decreaseCount: number;
+  initialPrice: number;
   lastPrice: number;
 }
 
@@ -69,16 +92,21 @@ export class WhaleBehaviorEngine {
     const now = Date.now();
     const key = this.getKey(whale);
     let history = this.history.get(key);
+    let created = false;
 
     if (!history) {
+      created = true;
       history = {
         firstSeenAt: whale.firstSeenAt ?? now,
         lastSeenAt: now,
+        updateCount: 1,
+        initialNotionalQuote: whale.notionalQuote,
         highestNotionalQuote: whale.notionalQuote,
         lowestNotionalQuote: whale.notionalQuote,
         previousNotionalQuote: whale.notionalQuote,
         increaseCount: 0,
         decreaseCount: 0,
+        initialPrice: whale.price,
         lastPrice: whale.price,
       };
 
@@ -89,6 +117,10 @@ export class WhaleBehaviorEngine {
     const ageSeconds =
       whale.ageSeconds ?? Math.floor((now - history.firstSeenAt) / 1000);
     const previousNotional = history.previousNotionalQuote;
+
+    if (!created) {
+      history.updateCount += 1;
+    }
 
     if (whale.notionalQuote > previousNotional) {
       history.increaseCount++;
@@ -146,6 +178,40 @@ export class WhaleBehaviorEngine {
     history.lastPrice = whale.price;
 
     return behaviors;
+  }
+
+  public getLifecycleMetrics(whale: Whale): WhaleLifecycleMetrics | undefined {
+    const history = this.history.get(this.getKey(whale));
+    if (!history) return undefined;
+    return Object.freeze({
+      wallId: whale.wallId,
+      firstSeenAt: history.firstSeenAt,
+      availabilityTimestamp: history.lastSeenAt,
+      lifetimeMs: Math.max(0, history.lastSeenAt - history.firstSeenAt),
+      updateCount: history.updateCount,
+      initialNotionalQuote: history.initialNotionalQuote,
+      currentNotionalQuote: history.previousNotionalQuote,
+      highestNotionalQuote: history.highestNotionalQuote,
+      lowestNotionalQuote: history.lowestNotionalQuote,
+      increaseCount: history.increaseCount,
+      decreaseCount: history.decreaseCount,
+      initialPrice: history.initialPrice,
+      currentPrice: history.lastPrice,
+      priceChangePercent:
+        ((history.lastPrice - history.initialPrice) / history.initialPrice) * 100,
+      notionalChangeFromInitialPercent:
+        ((history.previousNotionalQuote - history.initialNotionalQuote) /
+          history.initialNotionalQuote) *
+        100,
+      peakDrawdownPercent:
+        ((history.highestNotionalQuote - history.previousNotionalQuote) /
+          history.highestNotionalQuote) *
+        100,
+      recoveryFromMinimumPercent:
+        ((history.previousNotionalQuote - history.lowestNotionalQuote) /
+          history.lowestNotionalQuote) *
+        100,
+    });
   }
 
   public analyzeRemoval(
