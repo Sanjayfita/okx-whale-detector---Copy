@@ -54,6 +54,7 @@ export const renderEvidenceDashboardHtml = async (
       : statistics.reasons
           .map((reason) => `<li>${escapeHtml(reason)}</li>`)
           .join('');
+  const primaryHorizon = report.policy.primaryHorizonMinutes;
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -63,24 +64,28 @@ export const renderEvidenceDashboardHtml = async (
 </style></head><body><main class="wrap">
 <div class="header"><div><h1>Evidence Profitability Dashboard</h1><p>Evaluation: <code>${escapeHtml(report.evaluationId)}</code> · refreshes every 30 seconds</p></div><div class="badge">READ ONLY · EXECUTION DISABLED</div></div>
 <div class="cards">
-<div class="card"><div class="label">Qualified alerts</div><div class="value">${report.qualifiedAlerts}</div></div>
-<div class="card"><div class="label">Completed observations</div><div class="value">${report.completedObservations}</div></div>
-<div class="card"><div class="label">Overall win rate</div><div class="value">${format(report.overall.winRatePercent)}%</div></div>
-<div class="card"><div class="label">Net expectancy / obs.</div><div class="value ${report.overall.netExpectancyUsdt >= 0 ? 'positive' : 'negative'}">${format(report.overall.netExpectancyUsdt)} USDT</div></div>
-<div class="card"><div class="label">Hypothetical net PnL</div><div class="value ${report.overall.hypotheticalNetPnlUsdt >= 0 ? 'positive' : 'negative'}">${format(report.overall.hypotheticalNetPnlUsdt)} USDT</div></div>
+<div class="card"><div class="label">Raw qualified alerts</div><div class="value">${report.qualifiedAlerts}</div></div>
+<div class="card"><div class="label">Completed horizon observations</div><div class="value">${report.completedObservations}</div></div>
+<div class="card"><div class="label">Primary horizon</div><div class="value">${primaryHorizon}m</div></div>
+<div class="card"><div class="label">Primary-horizon outcomes</div><div class="value">${report.primaryHorizonCompleteAlerts}</div></div>
+<div class="card"><div class="label">Independent episodes</div><div class="value">${report.independentPrimaryHorizonAlerts}</div></div>
+<div class="card"><div class="label">Overlapping alerts</div><div class="value">${report.dependentPrimaryHorizonAlerts}</div></div>
+<div class="card"><div class="label">${primaryHorizon}m win rate</div><div class="value">${format(report.overall.winRatePercent)}%</div></div>
+<div class="card"><div class="label">${primaryHorizon}m net expectancy / alert</div><div class="value ${report.overall.netExpectancyUsdt >= 0 ? 'positive' : 'negative'}">${format(report.overall.netExpectancyUsdt)} USDT</div></div>
+<div class="card"><div class="label">${primaryHorizon}m hypothetical net PnL</div><div class="value ${report.overall.hypotheticalNetPnlUsdt >= 0 ? 'positive' : 'negative'}">${format(report.overall.hypotheticalNetPnlUsdt)} USDT</div></div>
 <div class="card"><div class="label">Estimated round-trip cost</div><div class="value">${format(report.policy.roundTripCostPercent)}%</div></div>
-<div class="card"><div class="label">Bootstrap lower bound</div><div class="value ${statistics.overallConfidenceInterval.lower > 0 ? 'positive' : 'negative'}">${format(statistics.overallConfidenceInterval.lower)}%</div></div>
-<div class="card"><div class="label">Purged test mean</div><div class="value ${statistics.chronologicalSplit.testMeanNetReturnPercent > 0 ? 'positive' : 'negative'}">${format(statistics.chronologicalSplit.testMeanNetReturnPercent)}%</div></div>
+<div class="card"><div class="label">Independent bootstrap lower bound</div><div class="value ${statistics.overallConfidenceInterval.lower > 0 ? 'positive' : 'negative'}">${format(statistics.overallConfidenceInterval.lower)}%</div></div>
+<div class="card"><div class="label">Purged independent test mean</div><div class="value ${statistics.chronologicalSplit.testMeanNetReturnPercent > 0 ? 'positive' : 'negative'}">${format(statistics.chronologicalSplit.testMeanNetReturnPercent)}%</div></div>
 <div class="card"><div class="label">Unmatched observations</div><div class="value">${report.unmatchedObservations}</div></div>
 <div class="card"><div class="label">Malformed records</div><div class="value">${report.malformedRecords}</div></div>
 </div>
-${report.insufficientData ? '<div class="badge warning">INSUFFICIENT DATA: fewer than 100 matched observations. Do not treat this as profitability proof.</div>' : ''}
+${report.insufficientData ? '<div class="badge warning">INSUFFICIENT DATA: fewer than 100 independent primary-horizon episodes. Do not treat this as profitability proof.</div>' : ''}
 <div class="badge ${statistics.readyForQualification ? '' : 'blocked'}">STATISTICAL QUALIFICATION: ${statistics.readyForQualification ? 'READY' : 'BLOCKED'}</div>
-<section class="panel"><h2>Statistical validation</h2><p>Block-bootstrap ${format(statistics.overallConfidenceInterval.confidenceLevel * 100)}% interval: <strong>${format(statistics.overallConfidenceInterval.lower)}%</strong> to <strong>${format(statistics.overallConfidenceInterval.upper)}%</strong>. Purged chronological split: ${statistics.chronologicalSplit.trainCount} train / ${statistics.chronologicalSplit.validationCount} validation / ${statistics.chronologicalSplit.testCount} test observations.</p><ul>${statisticalReasons}</ul></section>
-${groupTable('Performance by horizon', report.byHorizon)}
-${groupTable('Performance by instrument', report.byInstrument)}
-${groupTable('Performance by direction', report.byDirection)}
-<section class="panel"><h2>Frozen paper policy</h2><p>Starting capital: ${format(report.policy.startingCapital)} USDT · Fixed notional: ${format(report.policy.positionNotional)} USDT per alert · No leverage · No compounding · Estimated round-trip cost: ${format(report.policy.roundTripCostPercent)}%</p></section>
+<section class="panel"><h2>Statistical validation</h2><p>Inference uses ${statistics.independentAlerts} non-overlapping ${statistics.primaryHorizonMinutes}m episodes. Block-bootstrap ${format(statistics.overallConfidenceInterval.confidenceLevel * 100)}% interval: <strong>${format(statistics.overallConfidenceInterval.lower)}%</strong> to <strong>${format(statistics.overallConfidenceInterval.upper)}%</strong>. Purged chronological split: ${statistics.chronologicalSplit.trainCount} train / ${statistics.chronologicalSplit.validationCount} validation / ${statistics.chronologicalSplit.testCount} test observations.</p><ul>${statisticalReasons}</ul></section>
+${groupTable('Descriptive performance by horizon', report.byHorizon)}
+${groupTable(`Primary ${primaryHorizon}m performance by instrument`, report.byInstrument)}
+${groupTable(`Primary ${primaryHorizon}m performance by direction`, report.byDirection)}
+<section class="panel"><h2>Frozen paper policy</h2><p>Primary holding horizon: ${primaryHorizon} minutes · Starting capital: ${format(report.policy.startingCapital)} USDT · Fixed notional: ${format(report.policy.positionNotional)} USDT per alert · No leverage · No compounding · Estimated round-trip cost: ${format(report.policy.roundTripCostPercent)}%</p></section>
 <p class="footer">Research analytics only. This page cannot submit orders, access private OKX APIs, or authorize execution. Generated at ${new Date(report.generatedAt).toISOString()}.</p>
 </main></body></html>`;
 };
