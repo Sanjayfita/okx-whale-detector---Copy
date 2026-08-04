@@ -46,6 +46,7 @@ export const createEvidenceCollectRuntimeBundle = (
     throw new Error('Evidence collection safety locks are invalid');
   }
 
+  const clock = options.clock ?? Date.now;
   const recorder = new QualifiedAlertRecorder({
     evaluationDirectory: bootstrap.evaluationDirectory,
   });
@@ -57,6 +58,7 @@ export const createEvidenceCollectRuntimeBundle = (
     recorder,
     scheduler,
     readPrice: options.readPrice,
+    clock,
     onObservationError: (error) => options.onError?.(error),
   });
   const alphaSnapshotRecorder = new AlphaResearchSnapshotRecorder({
@@ -72,7 +74,7 @@ export const createEvidenceCollectRuntimeBundle = (
     collector,
     alphaSnapshotRecorder,
     intervalMs: options.intervalMs,
-    clock: options.clock,
+    clock,
     onError: options.onError,
   });
 
