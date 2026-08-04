@@ -41,7 +41,8 @@ describe('risk management research', () => {
     const report = simulateRiskManagementPolicy({
       policy: {
         ...policy,
-        maximumConcurrentPortfolioRiskFraction: 0.019,
+        maximumConcurrentPortfolioRiskFraction: 0.02,
+        maximumConcurrentCorrelationRiskFraction: 0.015,
       },
       trades: [
         trade('accepted-1', start, { exitedAt: start + 10 * 60_000 }),
@@ -52,9 +53,16 @@ describe('risk management research', () => {
           estimatedTotalCostPercent: 0.2,
         }),
         trade('correlation-rejected', start + 2 * 60_000),
-        trade('portfolio-rejected', start + 3 * 60_000, {
+        trade('accepted-diversifier', start + 3 * 60_000, {
           instrumentId: 'XAU-USDT',
           correlationGroup: 'METALS',
+          volatilityPercent: 2,
+          realizedNetReturnPercent: 0,
+          exitedAt: start + 10 * 60_000,
+        }),
+        trade('portfolio-rejected', start + 4 * 60_000, {
+          instrumentId: 'SOL-USDT',
+          correlationGroup: 'ALT',
         }),
         trade('accepted-after-close', start + 11 * 60_000, {
           realizedNetReturnPercent: -0.5,
@@ -62,8 +70,8 @@ describe('risk management research', () => {
       ],
     });
 
-    expect(report.inputTradeCount).toBe(5);
-    expect(report.acceptedTradeCount).toBe(2);
+    expect(report.inputTradeCount).toBe(6);
+    expect(report.acceptedTradeCount).toBe(3);
     expect(report.rejectedForCostCount).toBe(1);
     expect(report.rejectedForCorrelationRiskCount).toBe(1);
     expect(report.rejectedForPortfolioRiskCount).toBe(1);
@@ -71,12 +79,13 @@ describe('risk management research', () => {
       'ACCEPTED',
       'EXPECTED_MOVE_BELOW_COST_THRESHOLD',
       'CORRELATION_RISK_LIMIT',
+      'ACCEPTED',
       'PORTFOLIO_RISK_LIMIT',
       'ACCEPTED',
     ]);
     expect(report.endingEquity).toBeCloseTo(10_049.5);
     expect(report.totalReturnPercent).toBeCloseTo(0.495);
-    expect(report.returnMetrics.sampleSize).toBe(2);
+    expect(report.returnMetrics.sampleSize).toBe(3);
     expect(report.liveOrderExecutionAllowed).toBe(false);
   });
 
