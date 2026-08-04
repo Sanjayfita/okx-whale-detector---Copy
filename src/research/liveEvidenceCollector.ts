@@ -89,11 +89,9 @@ export class LiveEvidenceCollector {
     if (!Number.isSafeInteger(now) || now < 0) {
       throw new Error('now must be a non-negative safe integer');
     }
-    const dueJobs = this.dependencies.scheduler.getDueJobs(now);
-    let completed = 0;
 
-    for (const job of dueJobs) {
-      const jobKey = this.getJobKey(job);
+    const jobsByInstrument = new Map<string, PendingOutcomeJob[]>();
+    for (const job of this.dependencies.scheduler.getDueJobs(now)) {
       if (now - job.dueAt > this.maximumObservationDelayMs) {
         this.reportObservationErrorOnce(
           new Error(
@@ -103,9 +101,42 @@ export class LiveEvidenceCollector {
         );
         continue;
       }
+      const jobs = jobsByInstrument.get(job.instrumentId) ?? [];
+      jobs.push(job);
+      jobsByInstrument.set(job.instrumentId, jobs);
+    }
 
+    const completedByInstrument = await Promise.all(
+      [...jobsByInstrument.entries()].map(([instrumentId, jobs]) =>
+        this.processInstrumentJobs(instrumentId, jobs),
+      ),
+    );
+    return completedByInstrument.reduce((sum, count) => sum + count, 0);
+  }
+
+  private async processInstrumentJobs(
+    instrumentId: string,
+    jobs: readonly PendingOutcomeJob[],
+  ): Promise<number> {
+    const latestDueAt = jobs.reduce(
+      (latest, job) => Math.max(latest, job.dueAt),
+      0,
+    );
+    let snapshot: LivePriceSnapshot;
+    try {
+      snapshot = await this.dependencies.readPrice(instrumentId, latestDueAt);
+    } catch (error: unknown) {
+      for (const job of jobs) {
+        this.reportObservationErrorOnce(error, job);
+      }
+      return 0;
+    }
+
+    let completed = 0;
+    for (const job of jobs) {
+      const jobKey = this.getJobKey(job);
       try {
-        await this.processObservation(job);
+        await this.processObservation(job, snapshot);
         this.reportedJobErrors.delete(jobKey);
         completed += 1;
       } catch (error: unknown) {
@@ -114,15 +145,13 @@ export class LiveEvidenceCollector {
         this.reportObservationErrorOnce(error, job);
       }
     }
-
     return completed;
   }
 
-  private async processObservation(job: PendingOutcomeJob): Promise<void> {
-    const snapshot = await this.dependencies.readPrice(
-      job.instrumentId,
-      job.dueAt,
-    );
+  private async processObservation(
+    job: PendingOutcomeJob,
+    snapshot: LivePriceSnapshot,
+  ): Promise<void> {
     if (snapshot.instrumentId !== job.instrumentId) {
       throw new Error(
         'Price snapshot instrument does not match the pending job',
