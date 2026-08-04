@@ -57,6 +57,7 @@ export const createEvidenceCollectRuntimeBundle = (
     recorder,
     scheduler,
     readPrice: options.readPrice,
+    onObservationError: (error) => options.onError?.(error),
   });
   const alphaSnapshotRecorder = new AlphaResearchSnapshotRecorder({
     evaluationDirectory: bootstrap.evaluationDirectory,
