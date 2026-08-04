@@ -129,7 +129,7 @@ describe('LiveEvidenceCollector', () => {
     expect(scheduler.getPendingJobs()).toHaveLength(5);
   });
 
-  it('continues processing unrelated jobs after one observation fails', async () => {
+  it('continues processing unrelated instruments after one ticker fails', async () => {
     const directory = await createEvaluationDirectory();
     const scheduler = new PersistentOutcomeScheduler(directory);
     const onObservationError = vi.fn();
@@ -165,6 +165,33 @@ describe('LiveEvidenceCollector', () => {
     const outcomes = await readFile(join(directory, 'outcomes.ndjson'), 'utf8');
     expect(outcomes).toContain('"alertId":"alert-2"');
     expect(outcomes).not.toContain('"alertId":"alert-1"');
+  });
+
+  it('shares one ticker snapshot across same-instrument due jobs', async () => {
+    const directory = await createEvaluationDirectory();
+    const scheduler = new PersistentOutcomeScheduler(directory);
+    const readPrice = vi.fn(async (instrumentId: string, dueAt: number) => ({
+      instrumentId,
+      observedAt: dueAt,
+      price: 101,
+      maximumFavorableExcursionPercent: 0,
+      maximumAdverseExcursionPercent: 0,
+      excursionMeasurement: 'UNAVAILABLE' as const,
+    }));
+    const collector = new LiveEvidenceCollector({
+      recorder: new QualifiedAlertRecorder({ evaluationDirectory: directory }),
+      scheduler,
+      readPrice,
+    });
+
+    await collector.initialize();
+    await collector.recordQualifiedAlert(createEvidence());
+    await collector.recordQualifiedAlert(createEvidence({ alertId: 'alert-2' }));
+
+    expect(await collector.processDueObservations(61_000)).toBe(2);
+    expect(readPrice).toHaveBeenCalledOnce();
+    expect(readPrice).toHaveBeenCalledWith('BTC-USDT', 61_000);
+    expect(scheduler.getPendingJobs()).toHaveLength(8);
   });
 
   it('validates exchange timestamps against request completion time', async () => {
