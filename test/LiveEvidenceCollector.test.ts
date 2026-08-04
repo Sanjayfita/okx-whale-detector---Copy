@@ -168,4 +168,34 @@ describe('LiveEvidenceCollector', () => {
     expect(outcomes).toContain('"alertId":"alert-2"');
     expect(outcomes).not.toContain('"alertId":"alert-1"');
   });
+
+  it('validates exchange timestamps against request completion time', async () => {
+    const directory = await createEvaluationDirectory();
+    const scheduler = new PersistentOutcomeScheduler(directory);
+    let clockNow = 61_000;
+    const collector = new LiveEvidenceCollector({
+      recorder: new QualifiedAlertRecorder({ evaluationDirectory: directory }),
+      scheduler,
+      clock: () => clockNow,
+      maximumObservationDelayMs: 10_000,
+      maximumFutureSkewMs: 0,
+      readPrice: async (instrumentId) => {
+        clockNow = 66_000;
+        return {
+          instrumentId,
+          observedAt: 66_000,
+          price: 101,
+          maximumFavorableExcursionPercent: 0,
+          maximumAdverseExcursionPercent: 0,
+          excursionMeasurement: 'UNAVAILABLE',
+        };
+      },
+    });
+
+    await collector.initialize();
+    await collector.recordQualifiedAlert(createEvidence());
+
+    expect(await collector.processDueObservations(61_000)).toBe(1);
+    expect(scheduler.getPendingJobs()).toHaveLength(4);
+  });
 });
