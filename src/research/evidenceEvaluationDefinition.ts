@@ -5,6 +5,9 @@ import { ALPHA_FEATURE_REGISTRY_VERSION } from './alphaFeatureRegistry';
 import { createAlphaResearchConfigurationFingerprint } from './alphaResearchFingerprint';
 import type { AlertOutcomeHorizonMinutes } from './alertOutcomeObservation';
 
+export const EVIDENCE_EVENT_GENERATOR_POLICY =
+  'OKX_WHALE_SIGNAL_ONLY_V1' as const;
+
 export interface EvidenceEvaluationDefinition {
   readonly configuration: Readonly<Record<string, unknown>>;
   readonly instruments: readonly string[];
@@ -25,6 +28,11 @@ export const createCurrentEvidenceEvaluationDefinition =
     const configuration = Object.freeze({
       application: appConfig,
       watchlist: instruments,
+      evidenceProtocol: Object.freeze({
+        eventGeneratorPolicy: EVIDENCE_EVENT_GENERATOR_POLICY,
+        externalSignalsMayQualifyEvents: false,
+        publicOkxMarketDataOnly: true,
+      }),
       alphaResearchConfig,
       alphaResearchConfigurationFingerprint:
         createAlphaResearchConfigurationFingerprint(alphaResearchConfig),
