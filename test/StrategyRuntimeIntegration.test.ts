@@ -247,10 +247,7 @@ describe('StrategyResearchRecorder', () => {
     };
     const outcome = JSON.parse(
       readFileSync('research/strategy-outcomes.ndjson', 'utf8').trim(),
-    ) as {
-      paperOnly: boolean;
-      observation: { candidateId: string };
-    };
+    ) as { paperOnly: boolean; candidateId: string };
     const whale = JSON.parse(
       readFileSync(
         'research/whale-incremental-observations.ndjson',
@@ -268,7 +265,7 @@ describe('StrategyResearchRecorder', () => {
     });
     expect(outcome).toMatchObject({
       paperOnly: true,
-      observation: { candidateId: qualification!.candidate.candidateId },
+      candidateId: qualification!.candidate.candidateId,
     });
     expect(whale).toMatchObject({
       whaleGroup: 'WHALE_NEUTRAL',
