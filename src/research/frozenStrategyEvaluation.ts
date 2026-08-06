@@ -83,8 +83,20 @@ const requireText = (value: string, name: string): string => {
   return normalized;
 };
 
+const stableValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => [key, stableValue(nested)]),
+    );
+  }
+  return value;
+};
+
 const stableFingerprint = (value: unknown): string =>
-  createHash('sha256').update(JSON.stringify(value)).digest('hex');
+  createHash('sha256').update(JSON.stringify(stableValue(value))).digest('hex');
 
 export const createFrozenStrategyEvaluationManifest = (input: {
   readonly evaluationId: string;
@@ -104,7 +116,12 @@ export const createFrozenStrategyEvaluationManifest = (input: {
     input.configuration.minimumWhaleObservationsPerGroup <= 0 ||
     !Number.isSafeInteger(input.configuration.candidateEventWindowMs) ||
     input.configuration.candidateEventWindowMs <= 0 ||
-    input.configuration.strategyIds.length === 0
+    input.configuration.strategyIds.length === 0 ||
+    input.configuration.strategyIds.some((strategyId) =>
+      strategyId.trim().length === 0,
+    ) ||
+    new Set(input.configuration.strategyIds).size !==
+      input.configuration.strategyIds.length
   ) {
     throw new Error('Frozen strategy configuration is invalid');
   }
@@ -136,6 +153,8 @@ export const validateFrozenStrategyEvaluationManifest = (
     manifest.schemaVersion !== FROZEN_STRATEGY_EVALUATION_SCHEMA_VERSION ||
     manifest.evaluationId.trim().length === 0 ||
     manifest.sourceCommit.trim().length === 0 ||
+    !Number.isSafeInteger(manifest.createdAt) ||
+    manifest.createdAt < 0 ||
     manifest.configurationFingerprint !==
       createConfigurationFingerprint(manifest.configuration) ||
     manifest.parameterTuningAllowed !== false ||
@@ -150,18 +169,47 @@ export const validateFrozenStrategyEvaluationManifest = (
   return manifest;
 };
 
-export const runFrozenStrategyEvaluation = (input: {
-  readonly manifest: FrozenStrategyEvaluationManifest;
-  readonly observations: readonly StrategyOutcomeObservation[];
-}): FrozenStrategyEvaluationReport => {
-  const manifest = validateFrozenStrategyEvaluationManifest(input.manifest);
+const validateAndOrderObservations = (
+  manifest: FrozenStrategyEvaluationManifest,
+  input: readonly StrategyOutcomeObservation[],
+): readonly StrategyOutcomeObservation[] => {
   const candidateIds = new Set<string>();
-  for (const observation of input.observations) {
+  const allowedStrategies = new Set(manifest.configuration.strategyIds);
+
+  for (const observation of input) {
+    const minimumOutcomeTimestamp =
+      observation.generatedAt + observation.horizonMinutes * 60_000;
     if (
       observation.schemaVersion !==
         STRATEGY_OUTCOME_OBSERVATION_SCHEMA_VERSION ||
+      observation.eventId.trim().length === 0 ||
+      observation.candidateId.trim().length === 0 ||
       candidateIds.has(observation.candidateId) ||
+      !allowedStrategies.has(observation.strategyId) ||
+      observation.instrumentId.trim().length === 0 ||
+      (observation.direction !== 'BULLISH' &&
+        observation.direction !== 'BEARISH') ||
+      !Number.isSafeInteger(observation.generatedAt) ||
+      observation.generatedAt < 0 ||
+      !Number.isSafeInteger(observation.horizonMinutes) ||
+      observation.horizonMinutes <= 0 ||
+      !Number.isSafeInteger(minimumOutcomeTimestamp) ||
+      !Number.isSafeInteger(observation.outcomeObservedAt) ||
+      observation.outcomeObservedAt < minimumOutcomeTimestamp ||
+      !Number.isFinite(observation.referencePrice) ||
+      observation.referencePrice <= 0 ||
+      !Number.isFinite(observation.outcomePrice) ||
+      observation.outcomePrice <= 0 ||
       !Number.isFinite(observation.grossReturnPercent) ||
+      !Number.isFinite(observation.spreadPercent) ||
+      observation.spreadPercent < 0 ||
+      !Number.isFinite(observation.depthNotionalQuote) ||
+      observation.depthNotionalQuote < 0 ||
+      !Number.isFinite(observation.realizedVolatilityPercent) ||
+      observation.realizedVolatilityPercent < 0 ||
+      !['WHALE_SUPPORTS', 'WHALE_NEUTRAL', 'WHALE_CONTRADICTS'].includes(
+        observation.whaleGroup,
+      ) ||
       observation.paperOnly !== true ||
       observation.liveOrderExecutionAllowed !== false ||
       observation.orderExecutionAuthorized !== false
@@ -171,12 +219,31 @@ export const runFrozenStrategyEvaluation = (input: {
     candidateIds.add(observation.candidateId);
   }
 
+  return Object.freeze(
+    [...input].sort(
+      (left, right) =>
+        left.generatedAt - right.generatedAt ||
+        left.candidateId.localeCompare(right.candidateId),
+    ),
+  );
+};
+
+export const runFrozenStrategyEvaluation = (input: {
+  readonly manifest: FrozenStrategyEvaluationManifest;
+  readonly observations: readonly StrategyOutcomeObservation[];
+}): FrozenStrategyEvaluationReport => {
+  const manifest = validateFrozenStrategyEvaluationManifest(input.manifest);
+  const observations = validateAndOrderObservations(
+    manifest,
+    input.observations,
+  );
+
   const walkForward = createWalkForwardValidationReport({
-    observations: input.observations,
+    observations,
     policy: manifest.configuration.walkForwardPolicy,
   });
   const robustness = analyzeStrategyRobustness({
-    observations: input.observations,
+    observations,
     policy: manifest.configuration.robustnessPolicy,
   });
   const primaryScenario = manifest.configuration.robustnessPolicy.scenarios[0];
@@ -184,7 +251,7 @@ export const runFrozenStrategyEvaluation = (input: {
     throw new Error('Frozen robustness policy has no primary cost scenario');
   }
   const whaleIncrementalValue = analyzeWhaleIncrementalValue(
-    input.observations
+    observations
       .filter((observation) => observation.baseQualified)
       .map((observation) => ({
         observationId: observation.candidateId,
@@ -211,8 +278,7 @@ export const runFrozenStrategyEvaluation = (input: {
 
   const reasons: string[] = [];
   if (
-    input.observations.length <
-    manifest.configuration.minimumOutcomeObservations
+    observations.length < manifest.configuration.minimumOutcomeObservations
   ) {
     reasons.push('Minimum frozen outcome observation count was not met');
   }
@@ -247,7 +313,7 @@ export const runFrozenStrategyEvaluation = (input: {
     evaluationId: manifest.evaluationId,
     sourceCommit: manifest.sourceCommit,
     configurationFingerprint: manifest.configurationFingerprint,
-    observations: input.observations.length,
+    observations: observations.length,
     walkForward,
     robustness,
     whaleIncrementalValue,
