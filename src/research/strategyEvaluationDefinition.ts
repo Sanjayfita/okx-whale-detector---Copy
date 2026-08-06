@@ -44,6 +44,8 @@ export const createCurrentFrozenStrategyConfiguration = (): FrozenStrategyConfig
       highLiquidityMinimumDepthNotionalQuote: 2_000_000,
       lowVolatilityMaximumPercent: 0.2,
       highVolatilityMinimumPercent: 1,
+      tightSpreadMaximumPercent: 0.03,
+      wideSpreadMinimumPercent: 0.08,
       confidenceLevel: 0.95,
       bootstrapIterations: 2_000,
       bootstrapBlockSize: 10,
