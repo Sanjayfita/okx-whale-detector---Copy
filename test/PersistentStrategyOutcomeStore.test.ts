@@ -6,10 +6,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import { WhaleConfirmationEngine } from '../src/confirmation/WhaleConfirmationEngine';
 import { MarketRegimeClassifier } from '../src/regime/MarketRegimeClassifier';
+import type { StrategyResearchRecorder } from '../src/recording/StrategyResearchRecorder';
 import {
   PENDING_STRATEGY_OUTCOME_SCHEMA_VERSION,
   PersistentStrategyOutcomeStore,
 } from '../src/research/PersistentStrategyOutcomeStore';
+import type { RuntimeStrategyFeatureAdapter } from '../src/research/RuntimeStrategyFeatureAdapter';
+import type { RuntimeWhaleFeatureAdapter } from '../src/research/RuntimeWhaleFeatureAdapter';
+import { StrategyShadowRuntime } from '../src/research/StrategyShadowRuntime';
 import { CandidateDeduplicator } from '../src/selection/CandidateDeduplicator';
 import { CandidatePipeline } from '../src/selection/CandidatePipeline';
 import { TradeQualificationEngine } from '../src/selection/TradeQualificationEngine';
@@ -25,7 +29,7 @@ afterEach(() => {
   directory = undefined;
 });
 
-const createQualification = () => {
+const createPipeline = (): CandidatePipeline => {
   const registry = new StrategyRegistry();
   registry.register(
     new TrendContinuationStrategy(
@@ -45,7 +49,7 @@ const createQualification = () => {
       },
     ),
   );
-  const pipeline = new CandidatePipeline(
+  return new CandidatePipeline(
     registry,
     new CandidateDeduplicator(60 * 60_000),
     new WhaleConfirmationEngine(),
@@ -56,6 +60,9 @@ const createQualification = () => {
       blockedRegimes: ['RANGING', 'VOLATILE', 'ILLIQUID', 'UNKNOWN'],
     }),
   );
+};
+
+const createQualification = () => {
   const strategyContext = Object.freeze({
     instrumentId: 'BTC-USDT-SWAP',
     observedAt: 1_000_000,
@@ -67,7 +74,7 @@ const createQualification = () => {
     spreadPercent: 0.02,
     depthNotionalQuote: 2_000_000,
   });
-  const qualification = pipeline.evaluate({
+  const qualification = createPipeline().evaluate({
     strategyContext,
     whaleFeaturesByInstrument: new Map(),
   }).qualified[0];
@@ -77,29 +84,33 @@ const createQualification = () => {
   return { qualification, strategyContext };
 };
 
+const persistQualification = (filePath: string) => {
+  const { qualification, strategyContext } = createQualification();
+  const dueAt =
+    qualification.candidate.generatedAt +
+    qualification.candidate.holdingHorizonMinutes * 60_000;
+  const store = new PersistentStrategyOutcomeStore(filePath);
+  store.replace([
+    Object.freeze({
+      schemaVersion: PENDING_STRATEGY_OUTCOME_SCHEMA_VERSION,
+      qualification,
+      strategyContext,
+      dueAt,
+      paperOnly: true,
+      liveOrderExecutionAllowed: false,
+      orderExecutionAuthorized: false,
+      transportDispatchAllowed: false,
+      testnetExecutionAuthorized: false,
+    }),
+  ]);
+  return { qualification, strategyContext, store };
+};
+
 describe('PersistentStrategyOutcomeStore', () => {
   it('persists and restores execution-disabled pending outcomes', () => {
     directory = mkdtempSync(join(tmpdir(), 'pending-strategy-'));
     const filePath = join(directory, 'pending.json');
-    const { qualification, strategyContext } = createQualification();
-    const dueAt =
-      qualification.candidate.generatedAt +
-      qualification.candidate.holdingHorizonMinutes * 60_000;
-
-    const first = new PersistentStrategyOutcomeStore(filePath);
-    first.replace([
-      Object.freeze({
-        schemaVersion: PENDING_STRATEGY_OUTCOME_SCHEMA_VERSION,
-        qualification,
-        strategyContext,
-        dueAt,
-        paperOnly: true,
-        liveOrderExecutionAllowed: false,
-        orderExecutionAuthorized: false,
-        transportDispatchAllowed: false,
-        testnetExecutionAuthorized: false,
-      }),
-    ]);
+    const { qualification } = persistQualification(filePath);
 
     const restored = new PersistentStrategyOutcomeStore(filePath).getAll();
     expect(restored).toHaveLength(1);
@@ -113,6 +124,27 @@ describe('PersistentStrategyOutcomeStore', () => {
       transportDispatchAllowed: false,
       testnetExecutionAuthorized: false,
     });
+  });
+
+  it('preserves pending evidence obligations across transient runtime resets', () => {
+    directory = mkdtempSync(join(tmpdir(), 'pending-strategy-'));
+    const filePath = join(directory, 'pending.json');
+    const { store } = persistQualification(filePath);
+    const runtime = new StrategyShadowRuntime(
+      'test-session',
+      {} as RuntimeStrategyFeatureAdapter,
+      {} as RuntimeWhaleFeatureAdapter,
+      createPipeline(),
+      {} as StrategyResearchRecorder,
+      store,
+    );
+
+    expect(runtime.getPendingOutcomeCount()).toBe(1);
+    runtime.resetSymbols(['BTC-USDT-SWAP']);
+    expect(runtime.getPendingOutcomeCount()).toBe(1);
+    runtime.reset();
+    expect(runtime.getPendingOutcomeCount()).toBe(1);
+    expect(new PersistentStrategyOutcomeStore(filePath).getAll()).toHaveLength(1);
   });
 
   it('rejects a persisted state that weakens execution safety', () => {
