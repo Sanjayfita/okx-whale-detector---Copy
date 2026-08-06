@@ -34,8 +34,8 @@ const context = Object.freeze({
   instrumentId: 'BTC-USDT-SWAP',
   observedAt: 2_000_000,
   referencePrice: 100.5,
-  fastReturnPercent: 0.15,
-  slowReturnPercent: 0.3,
+  fastReturnPercent: 0.35,
+  slowReturnPercent: 0.5,
   orderFlowImbalance: 0.5,
   realizedVolatilityPercent: 0.5,
   spreadPercent: 0.02,
@@ -152,6 +152,56 @@ describe('RuntimeStrategyFeatureAdapter', () => {
     expect(result?.spreadPercent).toBeGreaterThan(0);
     expect(result?.depthNotionalQuote).toBeGreaterThan(1_000_000);
     expect(Object.keys(result ?? {})).not.toContain('whaleBias');
+  });
+
+  it('rejects stale order-book and candle inputs', () => {
+    const observedAt = 2_000_000;
+    const state = new MarketState(
+      appConfig,
+      {
+        instId: 'BTC-USDT-SWAP',
+        instType: 'SWAP',
+        quoteCurrency: 'USDT',
+        baseUnitsPerSize: 1,
+      },
+      () => observedAt,
+    );
+    const firstTimestamp = observedAt - 30 * 60_000;
+    for (let index = 0; index < 21; index += 1) {
+      const close = 100 + index * 0.2;
+      state.candleHistory.add({
+        instId: 'BTC-USDT-SWAP',
+        timestamp: firstTimestamp + index * 60_000,
+        open: close,
+        high: close,
+        low: close,
+        close,
+        volume: 1,
+        volumeCurrency: 1,
+        volumeCurrencyQuote: 1_000,
+        confirm: true,
+      });
+    }
+    state.orderBookManager.applyUpdate(
+      [['100', '10000', '0', '1']],
+      [['101', '10000', '0', '1']],
+      observedAt - 10_000,
+      1,
+      -1,
+      'snapshot',
+    );
+
+    expect(
+      new RuntimeStrategyFeatureAdapter({
+        candleIntervalMs: 60_000,
+        fastLookbackCandles: 5,
+        slowLookbackCandles: 15,
+        volatilityLookbackCandles: 20,
+        minimumTradeNotionalQuote: 0,
+        maximumOrderBookAgeMs: 5_000,
+        maximumCandleAgeMs: 2 * 60_000,
+      }).createContext(state, observedAt),
+    ).toBeUndefined();
   });
 });
 
