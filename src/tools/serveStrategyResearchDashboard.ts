@@ -1,0 +1,397 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
+import path from 'node:path';
+
+interface ParsedNdjson {
+  readonly records: readonly Record<string, unknown>[];
+  readonly malformed: number;
+}
+
+interface StrategyDashboardSnapshot {
+  readonly evaluationId: string;
+  readonly generatedAt: number;
+  readonly counts: {
+    readonly candidateRecords: number;
+    readonly qualificationDecisions: number;
+    readonly qualified: number;
+    readonly rejected: number;
+    readonly completedOutcomes: number;
+    readonly pendingOutcomes: number;
+    readonly whaleIncrementalObservations: number;
+    readonly malformedRecords: number;
+  };
+  readonly latestQualification?: Record<string, unknown>;
+  readonly latestOutcome?: Record<string, unknown>;
+  readonly qualificationByInstrument: readonly {
+    readonly instrumentId: string;
+    readonly decisions: number;
+    readonly qualified: number;
+    readonly rejected: number;
+  }[];
+  readonly qualificationByDirection: readonly {
+    readonly direction: string;
+    readonly decisions: number;
+    readonly qualified: number;
+    readonly rejected: number;
+  }[];
+  readonly outcomeSummary: {
+    readonly observations: number;
+    readonly wins: number;
+    readonly winRatePercent: number | null;
+    readonly averageGrossReturnPercent: number | null;
+  };
+  readonly paperOnly: true;
+  readonly liveOrderExecutionAllowed: false;
+  readonly orderExecutionAuthorized: false;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const safeEvaluationId = (value: string): string => {
+  const id = value.trim();
+  if (
+    id.length === 0 ||
+    id === '.' ||
+    id === '..' ||
+    id.includes('/') ||
+    id.includes('\\')
+  ) {
+    throw new Error('Evaluation ID must be a safe directory name');
+  }
+  return id;
+};
+
+const parseNdjson = (filePath: string): ParsedNdjson => {
+  if (!existsSync(filePath)) return { records: [], malformed: 0 };
+  const lines = readFileSync(filePath, 'utf8')
+    .split(/\r?\n/u)
+    .filter((line) => line.trim().length > 0);
+  const records: Record<string, unknown>[] = [];
+  let malformed = 0;
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line) as unknown;
+      if (isRecord(parsed)) records.push(parsed);
+      else malformed += 1;
+    } catch {
+      malformed += 1;
+    }
+  }
+  return { records, malformed };
+};
+
+const nestedRecord = (
+  record: Record<string, unknown>,
+  key: string,
+): Record<string, unknown> | undefined => {
+  const value = record[key];
+  return isRecord(value) ? value : undefined;
+};
+
+const qualificationOf = (
+  record: Record<string, unknown>,
+): Record<string, unknown> | undefined => nestedRecord(record, 'qualification');
+
+const candidateOf = (
+  record: Record<string, unknown>,
+): Record<string, unknown> | undefined => {
+  const qualification = qualificationOf(record);
+  return qualification ? nestedRecord(qualification, 'candidate') : undefined;
+};
+
+const booleanOf = (
+  record: Record<string, unknown> | undefined,
+  key: string,
+): boolean | undefined => {
+  const value = record?.[key];
+  return typeof value === 'boolean' ? value : undefined;
+};
+
+const stringOf = (
+  record: Record<string, unknown> | undefined,
+  key: string,
+): string | undefined => {
+  const value = record?.[key];
+  return typeof value === 'string' && value.trim().length > 0
+    ? value
+    : undefined;
+};
+
+const numberOf = (
+  record: Record<string, unknown> | undefined,
+  key: string,
+): number | undefined => {
+  const value = record?.[key];
+  return typeof value === 'number' && Number.isFinite(value)
+    ? value
+    : undefined;
+};
+
+const readPendingCount = (filePath: string): number => {
+  if (!existsSync(filePath)) return 0;
+  try {
+    const parsed = JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
+    if (!isRecord(parsed) || !Array.isArray(parsed.pending)) return 0;
+    return parsed.pending.length;
+  } catch {
+    return 0;
+  }
+};
+
+const summarizeQualifications = (
+  records: readonly Record<string, unknown>[],
+  groupKey: 'instrumentId' | 'direction',
+): readonly {
+  readonly key: string;
+  readonly decisions: number;
+  readonly qualified: number;
+  readonly rejected: number;
+}[] => {
+  const groups = new Map<
+    string,
+    { decisions: number; qualified: number; rejected: number }
+  >();
+  for (const record of records) {
+    const candidate = candidateOf(record);
+    const qualification = qualificationOf(record);
+    const key = stringOf(candidate, groupKey) ?? 'UNKNOWN';
+    const group = groups.get(key) ?? { decisions: 0, qualified: 0, rejected: 0 };
+    group.decisions += 1;
+    if (booleanOf(qualification, 'qualified') === true) group.qualified += 1;
+    else group.rejected += 1;
+    groups.set(key, group);
+  }
+  return [...groups.entries()]
+    .map(([key, group]) => ({ key, ...group }))
+    .sort(
+      (left, right) =>
+        right.decisions - left.decisions || left.key.localeCompare(right.key),
+    );
+};
+
+export const createStrategyDashboardSnapshot = (input: {
+  readonly evaluationId: string;
+  readonly projectDirectory?: string;
+  readonly generatedAt?: number;
+}): StrategyDashboardSnapshot => {
+  const evaluationId = safeEvaluationId(input.evaluationId);
+  const projectDirectory = input.projectDirectory ?? process.cwd();
+  const directory = path.resolve(
+    projectDirectory,
+    'data',
+    'strategy-evaluations',
+    evaluationId,
+  );
+  const candidates = parseNdjson(
+    path.join(directory, 'strategy-candidates.ndjson'),
+  );
+  const qualifications = parseNdjson(
+    path.join(directory, 'strategy-qualifications.ndjson'),
+  );
+  const outcomes = parseNdjson(path.join(directory, 'strategy-outcomes.ndjson'));
+  const whale = parseNdjson(
+    path.join(directory, 'whale-incremental-observations.ndjson'),
+  );
+  const qualified = qualifications.records.filter(
+    (record) => booleanOf(qualificationOf(record), 'qualified') === true,
+  ).length;
+  const outcomeReturns = outcomes.records
+    .map((record) => {
+      const observation = nestedRecord(record, 'observation') ?? record;
+      return numberOf(observation, 'grossReturnPercent');
+    })
+    .filter((value): value is number => value !== undefined);
+  const wins = outcomeReturns.filter((value) => value > 0).length;
+  const byInstrument = summarizeQualifications(
+    qualifications.records,
+    'instrumentId',
+  ).map((group) => ({ instrumentId: group.key, ...group }));
+  const byDirection = summarizeQualifications(
+    qualifications.records,
+    'direction',
+  ).map((group) => ({ direction: group.key, ...group }));
+
+  return Object.freeze({
+    evaluationId,
+    generatedAt: input.generatedAt ?? Date.now(),
+    counts: Object.freeze({
+      candidateRecords: candidates.records.length,
+      qualificationDecisions: qualifications.records.length,
+      qualified,
+      rejected: qualifications.records.length - qualified,
+      completedOutcomes: outcomes.records.length,
+      pendingOutcomes: readPendingCount(
+        path.join(directory, 'pending-strategy-outcomes.json'),
+      ),
+      whaleIncrementalObservations: whale.records.length,
+      malformedRecords:
+        candidates.malformed +
+        qualifications.malformed +
+        outcomes.malformed +
+        whale.malformed,
+    }),
+    latestQualification: qualifications.records.at(-1),
+    latestOutcome: outcomes.records.at(-1),
+    qualificationByInstrument: Object.freeze(byInstrument),
+    qualificationByDirection: Object.freeze(byDirection),
+    outcomeSummary: Object.freeze({
+      observations: outcomeReturns.length,
+      wins,
+      winRatePercent:
+        outcomeReturns.length === 0 ? null : (wins / outcomeReturns.length) * 100,
+      averageGrossReturnPercent:
+        outcomeReturns.length === 0
+          ? null
+          : outcomeReturns.reduce((sum, value) => sum + value, 0) /
+            outcomeReturns.length,
+    }),
+    paperOnly: true,
+    liveOrderExecutionAllowed: false,
+    orderExecutionAuthorized: false,
+  });
+};
+
+const escapeHtml = (value: string): string =>
+  value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+
+const formatPercent = (value: number | null): string =>
+  value === null ? 'N/A' : `${value.toFixed(4)}%`;
+
+const renderGroupRows = (
+  groups: readonly {
+    readonly key: string;
+    readonly decisions: number;
+    readonly qualified: number;
+    readonly rejected: number;
+  }[],
+): string =>
+  groups
+    .map(
+      (group) =>
+        `<tr><td>${escapeHtml(group.key)}</td><td>${group.decisions}</td><td>${group.qualified}</td><td>${group.rejected}</td><td>${group.decisions === 0 ? '0.00%' : `${((group.qualified / group.decisions) * 100).toFixed(2)}%`}</td></tr>`,
+    )
+    .join('');
+
+export const renderStrategyResearchDashboardHtml = (
+  snapshot: StrategyDashboardSnapshot,
+): string => {
+  const instrumentGroups = snapshot.qualificationByInstrument.map((group) => ({
+    key: group.instrumentId,
+    decisions: group.decisions,
+    qualified: group.qualified,
+    rejected: group.rejected,
+  }));
+  const directionGroups = snapshot.qualificationByDirection.map((group) => ({
+    key: group.direction,
+    decisions: group.decisions,
+    qualified: group.qualified,
+    rejected: group.rejected,
+  }));
+  const latestQualification = snapshot.latestQualification
+    ? escapeHtml(JSON.stringify(snapshot.latestQualification, null, 2))
+    : 'No qualification has been recorded.';
+  const latestOutcome = snapshot.latestOutcome
+    ? escapeHtml(JSON.stringify(snapshot.latestOutcome, null, 2))
+    : 'No completed outcome has been recorded yet.';
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="refresh" content="10"><title>Strategy Research Dashboard</title>
+<style>
+:root{font-family:Inter,Segoe UI,Arial,sans-serif;color:#e8eef8;background:#07111f}*{box-sizing:border-box}body{margin:0;padding:24px;background:linear-gradient(135deg,#07111f,#102a45);min-height:100vh}.wrap{max-width:1400px;margin:auto}.header{display:flex;justify-content:space-between;gap:20px;align-items:flex-start}.badge{background:#113b2d;border:1px solid #30d58b;color:#b2f4d5;padding:10px 14px;border-radius:10px;font-weight:750}.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(185px,1fr));gap:14px;margin:22px 0}.card,.panel{background:rgba(14,31,52,.95);border:1px solid #294a6d;border-radius:14px;padding:18px;box-shadow:0 12px 30px rgba(0,0,0,.22)}.label{color:#91aac6;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em}.value{font-size:1.7rem;font-weight:750;margin-top:7px}.panel{margin-top:16px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(430px,1fr));gap:16px}h1,h2{margin-top:0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:520px}th,td{text-align:right;padding:10px;border-bottom:1px solid #263f5d}th:first-child,td:first-child{text-align:left}th{color:#9fb8d2}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#081625;border:1px solid #213d5c;padding:14px;border-radius:10px;max-height:520px;overflow:auto;color:#c9ddf2}.positive{color:#55dfa0}.negative{color:#ff9090}.muted{color:#91aac6}.footer{color:#8fa4bd;margin:20px 4px;font-size:.9rem}code{color:#acd8ff}
+</style></head><body><main class="wrap">
+<div class="header"><div><h1>Strategy Research Dashboard</h1><p>Evaluation: <code>${escapeHtml(snapshot.evaluationId)}</code> · refreshes every 10 seconds</p></div><div class="badge">READ ONLY · PAPER ONLY · EXECUTION DISABLED</div></div>
+<div class="cards">
+<div class="card"><div class="label">Candidate records</div><div class="value">${snapshot.counts.candidateRecords}</div></div>
+<div class="card"><div class="label">Qualification decisions</div><div class="value">${snapshot.counts.qualificationDecisions}</div></div>
+<div class="card"><div class="label">Qualified</div><div class="value positive">${snapshot.counts.qualified}</div></div>
+<div class="card"><div class="label">Rejected</div><div class="value">${snapshot.counts.rejected}</div></div>
+<div class="card"><div class="label">Pending outcomes</div><div class="value">${snapshot.counts.pendingOutcomes}</div></div>
+<div class="card"><div class="label">Completed outcomes</div><div class="value">${snapshot.counts.completedOutcomes}</div></div>
+<div class="card"><div class="label">Outcome win rate</div><div class="value">${formatPercent(snapshot.outcomeSummary.winRatePercent)}</div></div>
+<div class="card"><div class="label">Average gross return</div><div class="value ${snapshot.outcomeSummary.averageGrossReturnPercent !== null && snapshot.outcomeSummary.averageGrossReturnPercent >= 0 ? 'positive' : 'negative'}">${formatPercent(snapshot.outcomeSummary.averageGrossReturnPercent)}</div></div>
+<div class="card"><div class="label">Whale observations</div><div class="value">${snapshot.counts.whaleIncrementalObservations}</div></div>
+<div class="card"><div class="label">Malformed records</div><div class="value">${snapshot.counts.malformedRecords}</div></div>
+</div>
+<div class="grid">
+<section class="panel"><h2>Qualifications by instrument</h2><div class="table-wrap"><table><thead><tr><th>Instrument</th><th>Decisions</th><th>Qualified</th><th>Rejected</th><th>Pass rate</th></tr></thead><tbody>${renderGroupRows(instrumentGroups)}</tbody></table></div></section>
+<section class="panel"><h2>Qualifications by direction</h2><div class="table-wrap"><table><thead><tr><th>Direction</th><th>Decisions</th><th>Qualified</th><th>Rejected</th><th>Pass rate</th></tr></thead><tbody>${renderGroupRows(directionGroups)}</tbody></table></div></section>
+</div>
+<div class="grid">
+<section class="panel"><h2>Latest qualification</h2><pre>${latestQualification}</pre></section>
+<section class="panel"><h2>Latest completed outcome</h2><pre>${latestOutcome}</pre></section>
+</div>
+<p class="footer">Research analytics only. This server reads local strategy research files and cannot place orders or authorize execution. Generated at ${new Date(snapshot.generatedAt).toISOString()}.</p>
+</main></body></html>`;
+};
+
+export const createStrategyResearchDashboardServer = (
+  evaluationId: string,
+): Server =>
+  createServer((request, response) => {
+    if (request.url === '/health') {
+      response.writeHead(200, {
+        'content-type': 'application/json; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+      response.end(
+        JSON.stringify({
+          status: 'ok',
+          mode: 'paper-only',
+          evaluationId,
+          liveOrderExecutionAllowed: false,
+          orderExecutionAuthorized: false,
+        }),
+      );
+      return;
+    }
+    try {
+      const snapshot = createStrategyDashboardSnapshot({ evaluationId });
+      if (request.url === '/api/snapshot') {
+        response.writeHead(200, {
+          'content-type': 'application/json; charset=utf-8',
+          'cache-control': 'no-store',
+        });
+        response.end(JSON.stringify(snapshot));
+        return;
+      }
+      response.writeHead(200, {
+        'content-type': 'text/html; charset=utf-8',
+        'cache-control': 'no-store',
+      });
+      response.end(renderStrategyResearchDashboardHtml(snapshot));
+    } catch (error: unknown) {
+      response.writeHead(500, {
+        'content-type': 'text/plain; charset=utf-8',
+      });
+      response.end(error instanceof Error ? error.message : String(error));
+    }
+  });
+
+const main = (): void => {
+  const evaluationId = safeEvaluationId(
+    process.argv[2] ?? 'strategy-eval-2026-08-06-v1',
+  );
+  const port = Number(process.env.STRATEGY_DASHBOARD_PORT ?? 4175);
+  if (!Number.isSafeInteger(port) || port <= 0 || port > 65_535) {
+    throw new Error('STRATEGY_DASHBOARD_PORT must be a valid port');
+  }
+  const server = createStrategyResearchDashboardServer(evaluationId);
+  server.listen(port, '127.0.0.1', () => {
+    console.log(`Strategy research dashboard: http://127.0.0.1:${port}`);
+    console.log(`Evaluation ID: ${evaluationId}`);
+    console.log('Read-only paper research. All order execution remains disabled.');
+  });
+  const stop = (): void => {
+    server.close(() => process.exit(0));
+  };
+  process.once('SIGINT', stop);
+  process.once('SIGTERM', stop);
+};
+
+if (require.main === module) main();
