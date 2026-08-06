@@ -1,3 +1,5 @@
+import path from 'node:path';
+
 import { WhaleConfirmationEngine } from '../confirmation/WhaleConfirmationEngine';
 import type { StrategyResearchConfig } from '../config/strategyResearchConfig';
 import type { MarketState } from '../core/MarketState';
@@ -16,6 +18,11 @@ import {
 import type { StrategyEvaluationContext } from '../strategies/Strategy';
 import { StrategyRegistry } from '../strategies/StrategyRegistry';
 import { TrendContinuationStrategy } from '../strategies/TrendContinuationStrategy';
+import {
+  PENDING_STRATEGY_OUTCOME_SCHEMA_VERSION,
+  PersistentStrategyOutcomeStore,
+  type PendingStrategyOutcomeRecord,
+} from './PersistentStrategyOutcomeStore';
 import { RuntimeStrategyFeatureAdapter } from './RuntimeStrategyFeatureAdapter';
 import { RuntimeWhaleFeatureAdapter } from './RuntimeWhaleFeatureAdapter';
 import {
@@ -29,12 +36,7 @@ export interface StrategyShadowRuntimeDependencies {
   readonly config: StrategyResearchConfig;
   readonly clock?: () => number;
   readonly recorder?: StrategyResearchRecorder;
-}
-
-interface PendingStrategyOutcome {
-  readonly qualification: PaperTradeCandidate;
-  readonly strategyContext: StrategyEvaluationContext;
-  readonly dueAt: number;
+  readonly pendingOutcomeStore?: PersistentStrategyOutcomeStore;
 }
 
 const whaleGroup = (
@@ -64,7 +66,10 @@ export class StrategyShadowRuntime {
   public readonly paperOnly = true as const;
   public readonly liveOrderExecutionAllowed = false as const;
 
-  private readonly pendingOutcomes = new Map<string, PendingStrategyOutcome>();
+  private readonly pendingOutcomes = new Map<
+    string,
+    PendingStrategyOutcomeRecord
+  >();
 
   public constructor(
     private readonly sourceSessionId: string,
@@ -72,10 +77,21 @@ export class StrategyShadowRuntime {
     private readonly whaleFeatureAdapter: RuntimeWhaleFeatureAdapter,
     private readonly candidatePipeline: CandidatePipeline,
     private readonly recorder: StrategyResearchRecorder,
+    private readonly pendingOutcomeStore?: PersistentStrategyOutcomeStore,
   ) {
     if (sourceSessionId.trim().length === 0) {
       throw new Error('sourceSessionId must not be empty');
     }
+    const restored = pendingOutcomeStore?.getAll() ?? [];
+    for (const pending of restored) {
+      this.pendingOutcomes.set(
+        pending.qualification.candidate.candidateId,
+        pending,
+      );
+    }
+    this.candidatePipeline.restoreAcceptedCandidates(
+      restored.map((pending) => pending.qualification.candidate),
+    );
   }
 
   public evaluate(input: {
@@ -131,19 +147,24 @@ export class StrategyShadowRuntime {
   public reset(): void {
     this.candidatePipeline.reset();
     this.pendingOutcomes.clear();
+    this.persistPendingOutcomes();
   }
 
   public resetSymbols(instrumentIds: readonly string[]): void {
     this.candidatePipeline.resetInstruments(instrumentIds);
     const instruments = new Set(instrumentIds);
+    let changed = false;
     for (const [candidateId, pending] of this.pendingOutcomes) {
       if (instruments.has(pending.qualification.candidate.instrumentId)) {
         this.pendingOutcomes.delete(candidateId);
+        changed = true;
       }
     }
+    if (changed) this.persistPendingOutcomes();
   }
 
   public close(): void {
+    this.persistPendingOutcomes();
     this.recorder.close();
   }
 
@@ -151,6 +172,7 @@ export class StrategyShadowRuntime {
     strategyContext: StrategyEvaluationContext,
     qualifications: readonly PaperTradeCandidate[],
   ): void {
+    let changed = false;
     for (const qualification of qualifications) {
       if (!qualification.baseQualified) continue;
       const candidateId = qualification.candidate.candidateId;
@@ -163,9 +185,21 @@ export class StrategyShadowRuntime {
       }
       this.pendingOutcomes.set(
         candidateId,
-        Object.freeze({ qualification, strategyContext, dueAt }),
+        Object.freeze({
+          schemaVersion: PENDING_STRATEGY_OUTCOME_SCHEMA_VERSION,
+          qualification,
+          strategyContext,
+          dueAt,
+          paperOnly: true,
+          liveOrderExecutionAllowed: false,
+          orderExecutionAuthorized: false,
+          transportDispatchAllowed: false,
+          testnetExecutionAuthorized: false,
+        }),
       );
+      changed = true;
     }
+    if (changed) this.persistPendingOutcomes();
   }
 
   private resolveDueOutcomes(
@@ -216,6 +250,11 @@ export class StrategyShadowRuntime {
       });
       this.pendingOutcomes.delete(candidateId);
     }
+    if (due.length > 0) this.persistPendingOutcomes();
+  }
+
+  private persistPendingOutcomes(): void {
+    this.pendingOutcomeStore?.replace([...this.pendingOutcomes.values()]);
   }
 }
 
@@ -246,6 +285,15 @@ export const createStrategyShadowRuntime = (
       flushAfterEachRecord: dependencies.config.flushAfterEachRecord,
       clock: dependencies.clock,
     });
+  const pendingOutcomeStore =
+    dependencies.pendingOutcomeStore ??
+    new PersistentStrategyOutcomeStore(
+      path.join(
+        dependencies.config.outputDirectory,
+        'pending-strategy-outcomes.json',
+      ),
+      dependencies.config.enabled,
+    );
 
   return new StrategyShadowRuntime(
     dependencies.sourceSessionId,
@@ -253,5 +301,6 @@ export const createStrategyShadowRuntime = (
     new RuntimeWhaleFeatureAdapter(dependencies.config.whaleFeaturePolicy),
     candidatePipeline,
     recorder,
+    pendingOutcomeStore,
   );
 };
