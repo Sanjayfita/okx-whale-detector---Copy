@@ -10,6 +10,7 @@ import { MarketState } from '../src/core/MarketState';
 import { MarketRegimeClassifier } from '../src/regime/MarketRegimeClassifier';
 import { StrategyResearchRecorder } from '../src/recording/StrategyResearchRecorder';
 import { RuntimeStrategyFeatureAdapter } from '../src/research/RuntimeStrategyFeatureAdapter';
+import { STRATEGY_OUTCOME_OBSERVATION_SCHEMA_VERSION } from '../src/research/strategyResearchTypes';
 import { CandidateDeduplicator } from '../src/selection/CandidateDeduplicator';
 import { CandidatePipeline } from '../src/selection/CandidatePipeline';
 import { TradeQualificationEngine } from '../src/selection/TradeQualificationEngine';
@@ -187,7 +188,7 @@ describe('CandidateDeduplicator', () => {
 });
 
 describe('StrategyResearchRecorder', () => {
-  it('writes isolated paper-only candidate, qualification, and whale datasets', () => {
+  it('writes isolated paper-only candidate, qualification, outcome, and whale datasets', () => {
     temporaryDirectory = mkdtempSync(join(tmpdir(), 'strategy-research-'));
     originalDirectory = process.cwd();
     process.chdir(temporaryDirectory);
@@ -196,6 +197,8 @@ describe('StrategyResearchRecorder', () => {
       strategyContext: context,
       whaleFeaturesByInstrument: new Map(),
     });
+    const qualification = result.qualified[0];
+    expect(qualification).toBeDefined();
     const recorder = new StrategyResearchRecorder({
       outputDirectory: 'research',
       clock: () => context.observedAt,
@@ -205,34 +208,70 @@ describe('StrategyResearchRecorder', () => {
       strategyContext: context,
       result,
     });
+    recorder.recordOutcome({
+      sourceSessionId: 'session',
+      observation: Object.freeze({
+        schemaVersion: STRATEGY_OUTCOME_OBSERVATION_SCHEMA_VERSION,
+        eventId: qualification!.candidate.candidateId,
+        candidateId: qualification!.candidate.candidateId,
+        strategyId: qualification!.candidate.strategyId,
+        instrumentId: qualification!.candidate.instrumentId,
+        direction: qualification!.candidate.direction,
+        generatedAt: qualification!.candidate.generatedAt,
+        outcomeObservedAt: context.observedAt + 60 * 60_000,
+        horizonMinutes: 60,
+        referencePrice: context.referencePrice,
+        outcomePrice: 101,
+        grossReturnPercent: 0.4975124378,
+        whaleGroup: 'WHALE_NEUTRAL',
+        baseQualified: true,
+        finalQualified: true,
+        spreadPercent: context.spreadPercent,
+        depthNotionalQuote: context.depthNotionalQuote,
+        realizedVolatilityPercent: context.realizedVolatilityPercent,
+        paperOnly: true,
+        liveOrderExecutionAllowed: false,
+        orderExecutionAuthorized: false,
+      }),
+    });
     recorder.close();
 
     const candidate = JSON.parse(
       readFileSync('research/strategy-candidates.ndjson', 'utf8').trim(),
     ) as { paperOnly: boolean; liveOrderExecutionAllowed: boolean };
-    const qualification = JSON.parse(
+    const qualificationRecord = JSON.parse(
       readFileSync('research/strategy-qualifications.ndjson', 'utf8').trim(),
     ) as {
       paperOnly: boolean;
       orderExecutionAuthorized: boolean;
+    };
+    const outcome = JSON.parse(
+      readFileSync('research/strategy-outcomes.ndjson', 'utf8').trim(),
+    ) as {
+      paperOnly: boolean;
+      observation: { candidateId: string };
     };
     const whale = JSON.parse(
       readFileSync(
         'research/whale-incremental-observations.ndjson',
         'utf8',
       ).trim(),
-    ) as { group: string; finalQualified: boolean };
+    ) as { whaleGroup: string; finalQualified: boolean };
 
     expect(candidate).toMatchObject({
       paperOnly: true,
       liveOrderExecutionAllowed: false,
     });
-    expect(qualification).toMatchObject({
+    expect(qualificationRecord).toMatchObject({
       paperOnly: true,
       orderExecutionAuthorized: false,
     });
+    expect(outcome).toMatchObject({
+      paperOnly: true,
+      observation: { candidateId: qualification!.candidate.candidateId },
+    });
     expect(whale).toMatchObject({
-      group: 'WHALE_NEUTRAL',
+      whaleGroup: 'WHALE_NEUTRAL',
       finalQualified: true,
     });
   });
