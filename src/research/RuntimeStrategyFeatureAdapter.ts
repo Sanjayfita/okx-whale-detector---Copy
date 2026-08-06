@@ -1,4 +1,5 @@
 import type { MarketState } from '../core/MarketState';
+import type { OrderLevel } from '../types/orderbook';
 import type { StrategyEvaluationContext } from '../strategies/Strategy';
 
 export interface RuntimeStrategyFeaturePolicy {
@@ -7,6 +8,10 @@ export interface RuntimeStrategyFeaturePolicy {
   readonly slowLookbackCandles: number;
   readonly volatilityLookbackCandles: number;
   readonly minimumTradeNotionalQuote: number;
+  readonly maximumOrderBookAgeMs?: number;
+  readonly maximumCandleAgeMs?: number;
+  readonly maximumCandleGapMs?: number;
+  readonly depthLevelsPerSide?: number;
 }
 
 const requirePositiveInteger = (value: number, name: string): number => {
@@ -36,7 +41,24 @@ const realizedVolatilityPercent = (closes: readonly number[]): number => {
   return Math.sqrt(variance);
 };
 
+const sumNearTouchDepth = (
+  levels: Iterable<OrderLevel>,
+  descending: boolean,
+  maximumLevels: number,
+): number =>
+  [...levels]
+    .sort((left, right) =>
+      descending ? right.price - left.price : left.price - right.price,
+    )
+    .slice(0, maximumLevels)
+    .reduce((sum, level) => sum + level.notionalQuote, 0);
+
 export class RuntimeStrategyFeatureAdapter {
+  private readonly maximumOrderBookAgeMs: number;
+  private readonly maximumCandleAgeMs: number;
+  private readonly maximumCandleGapMs: number;
+  private readonly depthLevelsPerSide: number;
+
   public constructor(private readonly policy: RuntimeStrategyFeaturePolicy) {
     requirePositiveInteger(policy.candleIntervalMs, 'candleIntervalMs');
     requirePositiveInteger(policy.fastLookbackCandles, 'fastLookbackCandles');
@@ -56,6 +78,26 @@ export class RuntimeStrategyFeatureAdapter {
     ) {
       throw new Error('minimumTradeNotionalQuote must be non-negative');
     }
+
+    this.maximumOrderBookAgeMs = requirePositiveInteger(
+      policy.maximumOrderBookAgeMs ?? 5_000,
+      'maximumOrderBookAgeMs',
+    );
+    this.maximumCandleAgeMs = requirePositiveInteger(
+      policy.maximumCandleAgeMs ?? policy.candleIntervalMs * 2,
+      'maximumCandleAgeMs',
+    );
+    this.maximumCandleGapMs = requirePositiveInteger(
+      policy.maximumCandleGapMs ?? Math.ceil(policy.candleIntervalMs * 1.5),
+      'maximumCandleGapMs',
+    );
+    if (this.maximumCandleGapMs < policy.candleIntervalMs) {
+      throw new Error('maximumCandleGapMs must be at least candleIntervalMs');
+    }
+    this.depthLevelsPerSide = requirePositiveInteger(
+      policy.depthLevelsPerSide ?? 20,
+      'depthLevelsPerSide',
+    );
   }
 
   public createContext(
@@ -69,10 +111,12 @@ export class RuntimeStrategyFeatureAdapter {
     const orderBook = state.orderBookManager.getOrderBook();
     const bestBid = state.orderBookManager.getBestBid();
     const bestAsk = state.orderBookManager.getBestAsk();
+    const orderBookAgeMs = observedAt - orderBook.updatedAt;
     if (
       !orderBook.initialized ||
       orderBook.status !== 'SYNCED' ||
-      orderBook.updatedAt > observedAt ||
+      orderBookAgeMs < 0 ||
+      orderBookAgeMs > this.maximumOrderBookAgeMs ||
       bestBid === undefined ||
       bestAsk === undefined ||
       bestBid.price >= bestAsk.price
@@ -96,14 +140,15 @@ export class RuntimeStrategyFeatureAdapter {
       return undefined;
     }
 
-    const latest = confirmedCandles[confirmedCandles.length - 1];
+    const requiredCandles = confirmedCandles.slice(-(requiredLookback + 1));
+    const latest = requiredCandles[requiredCandles.length - 1];
     const fastAnchor =
-      confirmedCandles[
-        confirmedCandles.length - 1 - this.policy.fastLookbackCandles
+      requiredCandles[
+        requiredCandles.length - 1 - this.policy.fastLookbackCandles
       ];
     const slowAnchor =
-      confirmedCandles[
-        confirmedCandles.length - 1 - this.policy.slowLookbackCandles
+      requiredCandles[
+        requiredCandles.length - 1 - this.policy.slowLookbackCandles
       ];
     if (
       latest === undefined ||
@@ -113,15 +158,42 @@ export class RuntimeStrategyFeatureAdapter {
       return undefined;
     }
 
-    const volatilityCandles = confirmedCandles.slice(
+    const latestClosedAt = latest.timestamp + this.policy.candleIntervalMs;
+    if (
+      observedAt - latestClosedAt < 0 ||
+      observedAt - latestClosedAt > this.maximumCandleAgeMs
+    ) {
+      return undefined;
+    }
+    for (let index = 1; index < requiredCandles.length; index += 1) {
+      const previous = requiredCandles[index - 1];
+      const current = requiredCandles[index];
+      if (
+        previous === undefined ||
+        current === undefined ||
+        current.timestamp <= previous.timestamp ||
+        current.timestamp - previous.timestamp > this.maximumCandleGapMs
+      ) {
+        return undefined;
+      }
+    }
+
+    const volatilityCandles = requiredCandles.slice(
       -(this.policy.volatilityLookbackCandles + 1),
     );
     const midpoint = (bestBid.price + bestAsk.price) / 2;
     const spreadPercent = ((bestAsk.price - bestBid.price) / midpoint) * 100;
-    const depthNotionalQuote = [
-      ...orderBook.bids.values(),
-      ...orderBook.asks.values(),
-    ].reduce((sum, level) => sum + level.notionalQuote, 0);
+    const depthNotionalQuote =
+      sumNearTouchDepth(
+        orderBook.bids.values(),
+        true,
+        this.depthLevelsPerSide,
+      ) +
+      sumNearTouchDepth(
+        orderBook.asks.values(),
+        false,
+        this.depthLevelsPerSide,
+      );
     const tradeFlow = state.tradeFlowTracker.getSnapshot(observedAt);
     const totalAggressiveNotional =
       tradeFlow.aggressiveBuyNotionalQuote +
