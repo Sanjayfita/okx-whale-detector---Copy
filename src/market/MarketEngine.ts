@@ -1,5 +1,5 @@
-import type { OKXOrderBookUpdate } from '../clients/okx/OKXWebSocketClient';
 import type { CorrelatedAlertEngine } from '../alerts/CorrelatedAlertEngine';
+import type { OKXOrderBookUpdate } from '../clients/okx/OKXWebSocketClient';
 import { performanceConfig } from '../config/performanceConfig';
 import type { MarketState } from '../core/MarketState';
 import { PipelineProfiler } from '../core/PipelineProfiler';
@@ -10,21 +10,24 @@ import {
 import { ProcessingMonitor } from '../core/ProcessingMonitor';
 import { SummaryThrottle } from '../core/SummaryThrottle';
 import type { WhaleScanResult } from '../core/WhaleTracker';
+import type { ExternalSignalCorrelationService } from '../external/core/ExternalSignalCorrelationService';
+import type { StrategyShadowRuntime } from '../research/StrategyShadowRuntime';
+import type { AlphaMarketContextSnapshot } from '../research/alphaFeatureTypes';
+import type { CorrelatedAlertRecorder } from '../recording/CorrelatedAlertRecorder';
+import { createCorrelatedAlertEvaluationContext } from '../recording/correlatedAlertEvaluationContext';
+import { CorrelatedAlertReporter } from '../reporting/CorrelatedAlertReporter';
 import {
   MarketReporter,
   type MarketSummaryAggregates,
 } from '../reporting/MarketReporter';
-import { CorrelatedAlertReporter } from '../reporting/CorrelatedAlertReporter';
-import type { ExternalSignalCorrelationService } from '../external/core/ExternalSignalCorrelationService';
-import type { CorrelatedAlertRecorder } from '../recording/CorrelatedAlertRecorder';
-import { createCorrelatedAlertEvaluationContext } from '../recording/correlatedAlertEvaluationContext';
-import type { CorrelatedAlertProvenance } from '../types/correlatedAlertEvaluation';
+import type { VersionedCorrelatedAlert } from '../types/correlatedAlert';
+import type {
+  CorrelatedAlertEvaluationContext,
+  CorrelatedAlertProvenance,
+} from '../types/correlatedAlertEvaluation';
 import type { MarketEvaluation } from '../types/marketEvaluation';
 import type { OrderLevel } from '../types/orderbook';
 import type { Wall } from '../types/wall';
-import type { VersionedCorrelatedAlert } from '../types/correlatedAlert';
-import type { CorrelatedAlertEvaluationContext } from '../types/correlatedAlertEvaluation';
-import type { AlphaMarketContextSnapshot } from '../research/alphaFeatureTypes';
 
 export interface MarketEngineFreshnessOptions {
   readonly maximumOrderBookAgeMs?: number;
@@ -127,6 +130,7 @@ export class MarketEngine {
     private readonly onSequenceGap?: (symbol: string) => void,
     freshness: MarketEngineFreshnessOptions = {},
     private readonly alphaMarketContextObserver?: AlphaMarketContextObserver,
+    private readonly strategyShadowRuntime?: StrategyShadowRuntime,
   ) {
     this.maximumOrderBookAgeMs =
       freshness.maximumOrderBookAgeMs ?? Number.POSITIVE_INFINITY;
@@ -330,10 +334,28 @@ export class MarketEngine {
       trace.measure('summary.analyzeAndReport', () => {
         const bestBid = state.orderBookManager.getBestBid();
         const bestAsk = state.orderBookManager.getBestAsk();
+        const correlationNow = this.clock();
+
+        if (this.strategyShadowRuntime !== undefined) {
+          try {
+            trace.measure('strategy.shadow.evaluate', () =>
+              this.strategyShadowRuntime?.evaluate({
+                state,
+                whaleScan: result,
+                observedAt: correlationNow,
+              }),
+            );
+          } catch (error: unknown) {
+            console.error(
+              `Strategy shadow evaluation failed for ${update.instId}:`,
+              error,
+            );
+          }
+        }
+
         const marketSignal = trace.measure('summary.marketAnalysis', () =>
           state.marketAnalyzer.analyze(result.active, currentPrice),
         );
-        const correlationNow = this.clock();
         const evaluation = this.correlationService?.correlateMarketSignal(
           update.instId,
           marketSignal,
@@ -442,6 +464,7 @@ export class MarketEngine {
     this.pipelineProfiler.reset();
     this.lastEvaluations.clear();
     this.correlatedAlertEngine?.clear();
+    this.strategyShadowRuntime?.reset();
   }
 
   public resetSymbols(symbols: readonly string[]): void {
@@ -460,6 +483,7 @@ export class MarketEngine {
       this.lastEvaluations.delete(symbol);
       this.correlatedAlertEngine?.resetSymbol(symbol);
     }
+    this.strategyShadowRuntime?.resetSymbols(symbols);
   }
 
   private suspendOrderBookDerivedState(
@@ -475,6 +499,7 @@ export class MarketEngine {
     this.summaryThrottle.reset(symbol);
     this.lastEvaluations.delete(symbol);
     this.correlatedAlertEngine?.resetSymbol(symbol);
+    this.strategyShadowRuntime?.resetSymbols([symbol]);
   }
 
   private captureAlphaMarketContext(

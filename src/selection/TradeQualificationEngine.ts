@@ -13,6 +13,8 @@ export interface PaperTradeCandidate {
   readonly whaleAssessment: WhaleConfirmationAssessment;
   readonly estimatedNetEdgePercent: number;
   readonly adjustedConfidence: number;
+  readonly baseQualified: boolean;
+  readonly baseReasons: readonly string[];
   readonly qualified: boolean;
   readonly reasons: readonly string[];
   readonly paperOnly: true;
@@ -45,29 +47,36 @@ export class TradeQualificationEngine {
       throw new Error('Whale assessment does not belong to the candidate');
     }
 
-    const reasons: string[] = [];
+    const baseReasons: string[] = [];
     const estimatedNetEdgePercent =
       candidate.expectedMovePercent -
       this.policy.estimatedRoundTripCostPercent;
-    const adjustedConfidence = Math.max(
-      0,
-      Math.min(100, candidate.baseConfidence + whaleAssessment.confidenceAdjustment),
-    );
-
     if (estimatedNetEdgePercent < this.policy.minimumNetEdgePercent) {
-      reasons.push('Expected movement does not exceed cost and safety margin');
+      baseReasons.push(
+        'Expected movement does not exceed cost and safety margin',
+      );
     }
     if (candidate.baseConfidence < this.policy.minimumBaseConfidence) {
-      reasons.push('Base strategy confidence is below the required threshold');
+      baseReasons.push('Base strategy confidence is below the required threshold');
     }
     if (this.policy.blockedRegimes.includes(candidate.regime)) {
-      reasons.push(`Market regime ${candidate.regime} is blocked`);
-    }
-    if (whaleAssessment.blocksCandidate) {
-      reasons.push('Whale contradiction blocks the candidate');
+      baseReasons.push(`Market regime ${candidate.regime} is blocked`);
     }
 
-    const qualified = reasons.length === 0;
+    const baseQualified = baseReasons.length === 0;
+    const reasons = [...baseReasons];
+    if (baseQualified && whaleAssessment.blocksCandidate) {
+      reasons.push('Whale contradiction blocks the candidate');
+    }
+    const qualified = baseQualified && !whaleAssessment.blocksCandidate;
+    const adjustedConfidence = Math.max(
+      0,
+      Math.min(
+        100,
+        candidate.baseConfidence + whaleAssessment.confidenceAdjustment,
+      ),
+    );
+
     if (qualified) {
       reasons.push(
         whaleAssessment.alignment === 'SUPPORTS'
@@ -81,6 +90,8 @@ export class TradeQualificationEngine {
       whaleAssessment,
       estimatedNetEdgePercent,
       adjustedConfidence,
+      baseQualified,
+      baseReasons: Object.freeze(baseReasons),
       qualified,
       reasons: Object.freeze(reasons),
       paperOnly: true,

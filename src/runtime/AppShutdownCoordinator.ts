@@ -7,6 +7,7 @@ export interface AppShutdownResources {
   stopThroughputMonitor(): void;
   closeSubscriptions(): void;
   closeAlertRecorder(): void;
+  closeStrategyResearch?: () => void;
   closeMarketRecorder?: (reason: AppShutdownReason) => Promise<void>;
 }
 
@@ -40,6 +41,7 @@ export class AppShutdownCoordinator {
     run(() => this.resources.stopThroughputMonitor());
     run(() => this.resources.closeSubscriptions());
     run(() => this.resources.closeAlertRecorder());
+    run(() => this.resources.closeStrategyResearch?.());
 
     try {
       await this.resources.closeMarketRecorder?.(reason);

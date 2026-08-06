@@ -21,10 +21,29 @@ const strategy = new TrendContinuationStrategy(classifier, {
 });
 
 describe('TrendContinuationStrategy', () => {
-  it('creates an independent bullish candidate only in a liquid trending regime', () => {
+  it('creates an independent bullish candidate only when observed movement clears the frozen edge gate', () => {
     const candidate = strategy.evaluate({
       instrumentId: 'BTC-USDT-SWAP',
       observedAt: 1_000,
+      referencePrice: 60_000,
+      fastReturnPercent: 0.35,
+      slowReturnPercent: 0.5,
+      orderFlowImbalance: 0.35,
+      realizedVolatilityPercent: 0.8,
+      spreadPercent: 0.02,
+      depthNotionalQuote: 1_000_000,
+    });
+
+    expect(candidate?.direction).toBe('BULLISH');
+    expect(candidate?.strategyId).toBe('TREND_CONTINUATION_V1');
+    expect(candidate?.expectedMovePercent).toBe(0.5);
+    expect(candidate?.liveOrderExecutionAllowed).toBe(false);
+  });
+
+  it('does not fabricate expected movement by flooring a weak setup', () => {
+    const candidate = strategy.evaluate({
+      instrumentId: 'BTC-USDT-SWAP',
+      observedAt: 1_500,
       referencePrice: 60_000,
       fastReturnPercent: 0.08,
       slowReturnPercent: 0.15,
@@ -34,10 +53,7 @@ describe('TrendContinuationStrategy', () => {
       depthNotionalQuote: 1_000_000,
     });
 
-    expect(candidate?.direction).toBe('BULLISH');
-    expect(candidate?.strategyId).toBe('TREND_CONTINUATION_V1');
-    expect(candidate?.expectedMovePercent).toBe(0.3);
-    expect(candidate?.liveOrderExecutionAllowed).toBe(false);
+    expect(candidate).toBeUndefined();
   });
 
   it('rejects an otherwise aligned setup when liquidity is insufficient', () => {
@@ -45,8 +61,8 @@ describe('TrendContinuationStrategy', () => {
       instrumentId: 'BTC-USDT-SWAP',
       observedAt: 2_000,
       referencePrice: 60_000,
-      fastReturnPercent: 0.08,
-      slowReturnPercent: 0.15,
+      fastReturnPercent: 0.35,
+      slowReturnPercent: 0.5,
       orderFlowImbalance: 0.35,
       realizedVolatilityPercent: 0.8,
       spreadPercent: 0.2,
@@ -58,26 +74,38 @@ describe('TrendContinuationStrategy', () => {
 });
 
 describe('whale incremental-value research', () => {
-  it('reports differences without claiming inference from small groups', () => {
+  it('reports differences and intervals without claiming inference from small groups', () => {
     const report = analyzeWhaleIncrementalValue(
       [
-        { observationId: 'base', group: 'BASE_ONLY', netReturnPercent: 0.1 },
         {
           observationId: 'support',
-          group: 'WHALE_SUPPORTS',
+          observedAt: 1,
+          whaleGroup: 'WHALE_SUPPORTS',
           netReturnPercent: 0.2,
         },
         {
+          observationId: 'neutral',
+          observedAt: 2,
+          whaleGroup: 'WHALE_NEUTRAL',
+          netReturnPercent: 0.1,
+        },
+        {
           observationId: 'contradict',
-          group: 'WHALE_CONTRADICTS',
+          observedAt: 3,
+          whaleGroup: 'WHALE_CONTRADICTS',
           netReturnPercent: -0.1,
         },
       ],
-      100,
+      {
+        minimumObservationsPerGroup: 100,
+        bootstrapIterations: 100,
+        bootstrapBlockSize: 1,
+      },
     );
 
-    expect(report.supportIncrementPercent).toBeCloseTo(0.1);
-    expect(report.contradictionIncrementPercent).toBeCloseTo(-0.2);
+    expect(report.supportIncrementPercent).toBeCloseTo(0.1333333333);
+    expect(report.contradictionIncrementPercent).toBeCloseTo(-0.1666666667);
+    expect(report.groups).toHaveLength(4);
     expect(report.sufficientForInference).toBe(false);
     expect(report.liveOrderExecutionAllowed).toBe(false);
   });

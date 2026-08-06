@@ -5,7 +5,20 @@ export interface CandidateDeduplicationResult {
   readonly rejectedCandidateIds: readonly string[];
 }
 
+interface AcceptedEvent {
+  readonly generatedAt: number;
+  readonly candidateId: string;
+}
+
+const score = (candidate: StrategyCandidate): number =>
+  candidate.baseConfidence + candidate.expectedMovePercent * 100;
+
+const eventKey = (candidate: StrategyCandidate): string =>
+  `${candidate.instrumentId}:${candidate.direction}`;
+
 export class CandidateDeduplicator {
+  private readonly lastAcceptedByEvent = new Map<string, AcceptedEvent>();
+
   public constructor(private readonly eventWindowMs: number = 15 * 60_000) {
     if (!Number.isSafeInteger(eventWindowMs) || eventWindowMs <= 0) {
       throw new Error('eventWindowMs must be a positive safe integer');
@@ -15,62 +28,107 @@ export class CandidateDeduplicator {
   public deduplicate(
     candidates: readonly StrategyCandidate[],
   ): CandidateDeduplicationResult {
-    const ordered = [...candidates].sort(
-      (left, right) =>
-        left.generatedAt - right.generatedAt ||
-        right.baseConfidence - left.baseConfidence ||
-        right.expectedMovePercent - left.expectedMovePercent ||
-        left.candidateId.localeCompare(right.candidateId),
-    );
-    const accepted: StrategyCandidate[] = [];
+    const bestByEvent = new Map<string, StrategyCandidate>();
     const rejectedCandidateIds: string[] = [];
 
-    for (const candidate of ordered) {
-      const conflictIndex = accepted.findIndex(
-        (existing) =>
-          existing.instrumentId === candidate.instrumentId &&
-          existing.direction === candidate.direction &&
-          Math.abs(existing.generatedAt - candidate.generatedAt) <
-            this.eventWindowMs,
-      );
-
-      if (conflictIndex < 0) {
-        accepted.push(candidate);
-        continue;
-      }
-
-      const existing = accepted[conflictIndex];
+    for (const candidate of [...candidates].sort(
+      (left, right) =>
+        left.generatedAt - right.generatedAt ||
+        left.candidateId.localeCompare(right.candidateId),
+    )) {
+      const key = eventKey(candidate);
+      const existing = bestByEvent.get(key);
       if (existing === undefined) {
-        accepted.push(candidate);
+        bestByEvent.set(key, candidate);
         continue;
       }
 
-      const candidateScore =
-        candidate.baseConfidence + candidate.expectedMovePercent * 100;
-      const existingScore =
-        existing.baseConfidence + existing.expectedMovePercent * 100;
-
+      const candidateScore = score(candidate);
+      const existingScore = score(existing);
       if (
         candidateScore > existingScore ||
         (candidateScore === existingScore &&
           candidate.candidateId.localeCompare(existing.candidateId) < 0)
       ) {
-        accepted[conflictIndex] = candidate;
+        bestByEvent.set(key, candidate);
         rejectedCandidateIds.push(existing.candidateId);
       } else {
         rejectedCandidateIds.push(candidate.candidateId);
       }
     }
 
+    const accepted: StrategyCandidate[] = [];
+    for (const candidate of [...bestByEvent.values()].sort(
+      (left, right) =>
+        left.generatedAt - right.generatedAt ||
+        left.candidateId.localeCompare(right.candidateId),
+    )) {
+      const key = eventKey(candidate);
+      const previous = this.lastAcceptedByEvent.get(key);
+      if (
+        previous !== undefined &&
+        candidate.generatedAt >= previous.generatedAt &&
+        candidate.generatedAt - previous.generatedAt < this.eventWindowMs
+      ) {
+        rejectedCandidateIds.push(candidate.candidateId);
+        continue;
+      }
+      if (
+        previous !== undefined &&
+        candidate.generatedAt < previous.generatedAt
+      ) {
+        throw new Error('Candidates must not move backwards in event time');
+      }
+      accepted.push(candidate);
+      this.remember(candidate);
+    }
+
     return Object.freeze({
-      accepted: Object.freeze(
-        [...accepted].sort(
-          (left, right) =>
-            left.generatedAt - right.generatedAt ||
-            left.candidateId.localeCompare(right.candidateId),
-        ),
+      accepted: Object.freeze(accepted),
+      rejectedCandidateIds: Object.freeze(
+        [...new Set(rejectedCandidateIds)].sort(),
       ),
-      rejectedCandidateIds: Object.freeze(rejectedCandidateIds.sort()),
     });
+  }
+
+  public restore(candidates: readonly StrategyCandidate[]): void {
+    for (const candidate of [...candidates].sort(
+      (left, right) =>
+        left.generatedAt - right.generatedAt ||
+        left.candidateId.localeCompare(right.candidateId),
+    )) {
+      const previous = this.lastAcceptedByEvent.get(eventKey(candidate));
+      if (
+        previous === undefined ||
+        candidate.generatedAt > previous.generatedAt ||
+        (candidate.generatedAt === previous.generatedAt &&
+          candidate.candidateId.localeCompare(previous.candidateId) < 0)
+      ) {
+        this.remember(candidate);
+      }
+    }
+  }
+
+  public reset(): void {
+    this.lastAcceptedByEvent.clear();
+  }
+
+  public resetInstruments(instrumentIds: readonly string[]): void {
+    const prefixes = instrumentIds.map((instrumentId) => `${instrumentId}:`);
+    for (const key of this.lastAcceptedByEvent.keys()) {
+      if (prefixes.some((prefix) => key.startsWith(prefix))) {
+        this.lastAcceptedByEvent.delete(key);
+      }
+    }
+  }
+
+  private remember(candidate: StrategyCandidate): void {
+    this.lastAcceptedByEvent.set(
+      eventKey(candidate),
+      Object.freeze({
+        generatedAt: candidate.generatedAt,
+        candidateId: candidate.candidateId,
+      }),
+    );
   }
 }
