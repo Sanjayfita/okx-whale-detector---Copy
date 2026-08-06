@@ -80,13 +80,7 @@ export class CandidateDeduplicator {
         throw new Error('Candidates must not move backwards in event time');
       }
       accepted.push(candidate);
-      this.lastAcceptedByEvent.set(
-        key,
-        Object.freeze({
-          generatedAt: candidate.generatedAt,
-          candidateId: candidate.candidateId,
-        }),
-      );
+      this.remember(candidate);
     }
 
     return Object.freeze({
@@ -95,6 +89,24 @@ export class CandidateDeduplicator {
         [...new Set(rejectedCandidateIds)].sort(),
       ),
     });
+  }
+
+  public restore(candidates: readonly StrategyCandidate[]): void {
+    for (const candidate of [...candidates].sort(
+      (left, right) =>
+        left.generatedAt - right.generatedAt ||
+        left.candidateId.localeCompare(right.candidateId),
+    )) {
+      const previous = this.lastAcceptedByEvent.get(eventKey(candidate));
+      if (
+        previous === undefined ||
+        candidate.generatedAt > previous.generatedAt ||
+        (candidate.generatedAt === previous.generatedAt &&
+          candidate.candidateId.localeCompare(previous.candidateId) < 0)
+      ) {
+        this.remember(candidate);
+      }
+    }
   }
 
   public reset(): void {
@@ -108,5 +120,15 @@ export class CandidateDeduplicator {
         this.lastAcceptedByEvent.delete(key);
       }
     }
+  }
+
+  private remember(candidate: StrategyCandidate): void {
+    this.lastAcceptedByEvent.set(
+      eventKey(candidate),
+      Object.freeze({
+        generatedAt: candidate.generatedAt,
+        candidateId: candidate.candidateId,
+      }),
+    );
   }
 }
