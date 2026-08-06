@@ -108,8 +108,8 @@ describe('RuntimeStrategyFeatureAdapter', () => {
     }
     expect(
       state.orderBookManager.applyUpdate(
-        [['100', '10_000', '0', '1']],
-        [['101', '10_000', '0', '1']],
+        [['100', '10000', '0', '1']],
+        [['101', '10000', '0', '1']],
         observedAt,
         1,
         -1,
