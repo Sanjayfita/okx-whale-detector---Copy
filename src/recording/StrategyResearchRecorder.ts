@@ -18,7 +18,6 @@ import type { StrategyCandidate } from '../strategies/StrategyCandidate';
 
 export const STRATEGY_CANDIDATE_RECORD_SCHEMA_VERSION = 1 as const;
 export const STRATEGY_QUALIFICATION_RECORD_SCHEMA_VERSION = 1 as const;
-export const STRATEGY_OUTCOME_RECORD_SCHEMA_VERSION = 1 as const;
 export const WHALE_INCREMENTAL_OUTCOME_SCHEMA_VERSION = 1 as const;
 
 export interface StrategyCandidateRecord {
@@ -37,16 +36,6 @@ export interface StrategyQualificationRecord {
   readonly recordedAt: number;
   readonly sourceSessionId: string;
   readonly qualification: PaperTradeCandidate;
-  readonly paperOnly: true;
-  readonly liveOrderExecutionAllowed: false;
-  readonly orderExecutionAuthorized: false;
-}
-
-export interface StrategyOutcomeRecord {
-  readonly schemaVersion: typeof STRATEGY_OUTCOME_RECORD_SCHEMA_VERSION;
-  readonly recordedAt: number;
-  readonly sourceSessionId: string;
-  readonly observation: StrategyOutcomeObservation;
   readonly paperOnly: true;
   readonly liveOrderExecutionAllowed: false;
   readonly orderExecutionAuthorized: false;
@@ -222,15 +211,6 @@ export class StrategyResearchRecorder {
     if (!this.enabled || this.closed) return;
     this.requireSourceSessionId(input.sourceSessionId);
     const recordedAt = this.recordingTime();
-    const strategyRecord: StrategyOutcomeRecord = Object.freeze({
-      schemaVersion: STRATEGY_OUTCOME_RECORD_SCHEMA_VERSION,
-      recordedAt,
-      sourceSessionId: input.sourceSessionId,
-      observation: input.observation,
-      paperOnly: true,
-      liveOrderExecutionAllowed: false,
-      orderExecutionAuthorized: false,
-    });
     const whaleRecord: WhaleIncrementalOutcomeRecord = Object.freeze({
       schemaVersion: WHALE_INCREMENTAL_OUTCOME_SCHEMA_VERSION,
       recordedAt,
@@ -253,7 +233,10 @@ export class StrategyResearchRecorder {
       this.whaleWriter ??= new AppendOnlyJsonlWriter(
         this.whaleIncrementalFilePath,
       );
-      this.outcomeWriter.append(strategyRecord, this.flushAfterEachRecord);
+      this.outcomeWriter.append(
+        input.observation,
+        this.flushAfterEachRecord,
+      );
       this.whaleWriter.append(whaleRecord, this.flushAfterEachRecord);
       this.failureWarned = false;
     } catch (error: unknown) {
