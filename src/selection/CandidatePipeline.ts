@@ -3,6 +3,7 @@ import {
   type WhaleFeatureSnapshot,
 } from '../confirmation/WhaleConfirmationEngine';
 import type { StrategyEvaluationContext } from '../strategies/Strategy';
+import type { StrategyCandidate } from '../strategies/StrategyCandidate';
 import { StrategyRegistry } from '../strategies/StrategyRegistry';
 import { CandidateDeduplicator } from './CandidateDeduplicator';
 import {
@@ -16,6 +17,8 @@ export interface CandidatePipelineInput {
 }
 
 export interface CandidatePipelineResult {
+  readonly generated: readonly StrategyCandidate[];
+  readonly accepted: readonly StrategyCandidate[];
   readonly qualified: readonly PaperTradeCandidate[];
   readonly rejected: readonly PaperTradeCandidate[];
   readonly duplicateCandidateIds: readonly string[];
@@ -38,7 +41,9 @@ export class CandidatePipeline {
     const rejected: PaperTradeCandidate[] = [];
 
     for (const candidate of deduplicated.accepted) {
-      const features = input.whaleFeaturesByInstrument.get(candidate.instrumentId) ?? {
+      const features = input.whaleFeaturesByInstrument.get(
+        candidate.instrumentId,
+      ) ?? {
         instrumentId: candidate.instrumentId,
         observedAt: candidate.generatedAt,
         directionalBias: 'NEUTRAL' as const,
@@ -54,11 +59,21 @@ export class CandidatePipeline {
     }
 
     return Object.freeze({
+      generated,
+      accepted: deduplicated.accepted,
       qualified: Object.freeze(qualified),
       rejected: Object.freeze(rejected),
       duplicateCandidateIds: deduplicated.rejectedCandidateIds,
       paperOnly: true,
       liveOrderExecutionAllowed: false,
     });
+  }
+
+  public reset(): void {
+    this.deduplicator.reset();
+  }
+
+  public resetInstruments(instrumentIds: readonly string[]): void {
+    this.deduplicator.resetInstruments(instrumentIds);
   }
 }
