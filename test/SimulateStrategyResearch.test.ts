@@ -7,15 +7,22 @@ describe('strategy research simulation', () => {
     vi.restoreAllMocks();
   });
 
-  it('verifies a deterministic robustly better research candidate', () => {
+  it('verifies the deterministic integrated R22-R28 research pipeline', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 
     expect(() => runStrategyResearchSimulation()).not.toThrow();
 
     const output = log.mock.calls.map((call) => call.join(' ')).join('\n');
-    expect(output).toContain('STRATEGY RESEARCH SIMULATION');
-    expect(output).toContain('Direct comparison verdict: BETTER');
-    expect(output).toContain('Walk-forward verdict: ROBUSTLY_BETTER');
-    expect(output).toContain('Deterministic controlled strategy research verified: true');
+    expect(output).toContain(
+      'R22-R28 INTEGRATED STRATEGY SIMULATION PASSED',
+    );
+    expect(output).toContain('Replay events: 24');
+    expect(output).toContain('Outcome observations: 24');
+    expect(output).toContain('Walk-forward folds: 4');
+    expect(output).toContain('Cost scenarios: 2');
+    expect(output).toContain('Whale study sufficient: true');
+    expect(output).toContain(
+      'Paper-only research. Order execution remains disabled.',
+    );
   });
 });
