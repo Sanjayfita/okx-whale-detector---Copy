@@ -10,6 +10,7 @@ export interface StrategyCostScenario {
 
 export type LiquidityRegime = 'LOW' | 'MEDIUM' | 'HIGH';
 export type VolatilityRegime = 'LOW' | 'MEDIUM' | 'HIGH';
+export type SpreadRegime = 'TIGHT' | 'NORMAL' | 'WIDE';
 
 export interface StrategyRobustnessPolicy {
   readonly scenarios: readonly StrategyCostScenario[];
@@ -17,6 +18,8 @@ export interface StrategyRobustnessPolicy {
   readonly highLiquidityMinimumDepthNotionalQuote: number;
   readonly lowVolatilityMaximumPercent: number;
   readonly highVolatilityMinimumPercent: number;
+  readonly tightSpreadMaximumPercent?: number;
+  readonly wideSpreadMinimumPercent?: number;
   readonly confidenceLevel: number;
   readonly bootstrapIterations: number;
   readonly bootstrapBlockSize: number;
@@ -40,6 +43,7 @@ export interface StrategyCostScenarioSummary {
   readonly positiveLowerBound: boolean;
   readonly byLiquidityRegime: readonly RobustnessBucketSummary[];
   readonly byVolatilityRegime: readonly RobustnessBucketSummary[];
+  readonly bySpreadRegime: readonly RobustnessBucketSummary[];
 }
 
 export interface StrategyRobustnessReport {
@@ -65,6 +69,14 @@ const createRandom = (seed: number): (() => number) => {
     return ((value ^ (value >>> 14)) >>> 0) / 4_294_967_296;
   };
 };
+
+const spreadThresholds = (
+  policy: StrategyRobustnessPolicy,
+): Readonly<{ tight: number; wide: number }> =>
+  Object.freeze({
+    tight: policy.tightSpreadMaximumPercent ?? 0.03,
+    wide: policy.wideSpreadMinimumPercent ?? 0.08,
+  });
 
 const validatePolicy = (policy: StrategyRobustnessPolicy): void => {
   if (policy.scenarios.length === 0) {
@@ -103,6 +115,15 @@ const validatePolicy = (policy: StrategyRobustnessPolicy): void => {
       policy.lowVolatilityMaximumPercent
   ) {
     throw new Error('Volatility regime thresholds are invalid');
+  }
+  const spread = spreadThresholds(policy);
+  if (
+    !Number.isFinite(spread.tight) ||
+    spread.tight < 0 ||
+    !Number.isFinite(spread.wide) ||
+    spread.wide <= spread.tight
+  ) {
+    throw new Error('Spread regime thresholds are invalid');
   }
   if (
     !Number.isFinite(policy.confidenceLevel) ||
@@ -143,6 +164,18 @@ const volatilityRegime = (
       ? 'HIGH'
       : 'MEDIUM';
 
+const spreadRegime = (
+  observation: StrategyOutcomeObservation,
+  policy: StrategyRobustnessPolicy,
+): SpreadRegime => {
+  const thresholds = spreadThresholds(policy);
+  return observation.spreadPercent <= thresholds.tight
+    ? 'TIGHT'
+    : observation.spreadPercent >= thresholds.wide
+      ? 'WIDE'
+      : 'NORMAL';
+};
+
 const netReturn = (
   observation: StrategyOutcomeObservation,
   scenario: StrategyCostScenario,
@@ -176,9 +209,13 @@ export const analyzeStrategyRobustness = (input: {
   readonly policy: StrategyRobustnessPolicy;
 }): StrategyRobustnessReport => {
   validatePolicy(input.policy);
-  const observations = input.observations.filter(
-    (observation) => observation.baseQualified,
-  );
+  const observations = input.observations
+    .filter((observation) => observation.baseQualified)
+    .sort(
+      (left, right) =>
+        left.generatedAt - right.generatedAt ||
+        left.candidateId.localeCompare(right.candidateId),
+    );
   const scenarios = input.policy.scenarios.map((scenario, scenarioIndex) => {
     const values = observations.map((observation) =>
       netReturn(observation, scenario),
@@ -211,6 +248,16 @@ export const analyzeStrategyRobustness = (input: {
           scenario,
         ),
     );
+    const bySpreadRegime = (['TIGHT', 'NORMAL', 'WIDE'] as const).map(
+      (regime) =>
+        summarizeBucket(
+          regime,
+          observations.filter(
+            (observation) => spreadRegime(observation, input.policy) === regime,
+          ),
+          scenario,
+        ),
+    );
 
     return Object.freeze({
       scenario: Object.freeze({ ...scenario }),
@@ -225,6 +272,7 @@ export const analyzeStrategyRobustness = (input: {
       positiveLowerBound: confidenceInterval.lower > 0,
       byLiquidityRegime: Object.freeze(byLiquidityRegime),
       byVolatilityRegime: Object.freeze(byVolatilityRegime),
+      bySpreadRegime: Object.freeze(bySpreadRegime),
     });
   });
 
