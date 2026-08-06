@@ -2,7 +2,7 @@
 
 Branch: `feature/r21-strategy-redesign`
 
-Status: implementation complete; local pre-merge validation required before merge to `main`.
+Status: implementation and GitHub CI validation complete; local Windows pre-merge validation is still required before merging to `main`.
 
 ## Scope completed
 
@@ -121,7 +121,9 @@ Status: implementation complete; local pre-merge validation required before merg
 - `src/selection/CandidateDeduplicator.ts`
 - `src/selection/TradeQualificationEngine.ts`
 - `src/tools/simulateStrategyResearch.ts`
+- `test/SimulateStrategyResearch.test.ts`
 - `docs/r21-strategy-redesign.md`
+- `docs/phase-r-completion-report.md`
 
 ## Removed files
 
@@ -169,13 +171,24 @@ npm.cmd run strategy:evaluation:run -- strategy-eval-YYYY-MM-DD-v1
 - Append-only writers are opened lazily.
 - Shadow recorder failures are isolated from the existing detector.
 - Flush-after-each-record favors research integrity over maximum write throughput and can be disabled only before a non-frozen exploratory run.
-- Block-bootstrap iterations are deterministic and should be run offline rather than inside the live market-data loop.
+- Block-bootstrap iterations are deterministic and run offline rather than inside the live market-data loop.
 
-## Validation status
+## Validation results
 
-Source changes and tests have been committed to the feature branch. The integrated simulation, focused test command, full test suite, lint, typecheck, and build must still be executed in the local repository before merge. No GitHub workflow result was available for the latest branch commit at the time of this report.
+GitHub CI passed on the feature branch using Node.js 24:
 
-A passing synthetic simulation validates architecture and determinism only. It is not evidence that the market strategy is profitable.
+- dependency installation: passed
+- npm audit during `npm ci`: 0 vulnerabilities
+- TypeScript type checking: passed
+- ESLint: passed
+- unit and integration tests: 255 files passed, 1,480 tests passed
+- production TypeScript build: passed
+- R16-R20 trading-research readiness workflow: passed
+- profitability and dashboard validation workflow: passed
+
+The integrated R22-R28 simulation is covered by the passing test suite. Local Windows validation remains required because the user runs the project with CMD and `npm.cmd`.
+
+A passing synthetic simulation validates architecture, determinism, and execution safety. It is not evidence that the market strategy is profitable.
 
 ## Remaining risks
 
@@ -185,7 +198,7 @@ A passing synthetic simulation validates architecture and determinism only. It i
 - Absorption remains neutral in the runtime whale adapter until a validated feature source is connected.
 - In-memory pending outcomes are lost if the process exits before the holding horizon; long collection sessions should be stopped only after allowing pending observations to mature, or pending-state persistence should be added before unattended production research.
 - Fee and slippage scenarios are frozen assumptions, not guaranteed realized costs.
-- The package audit warning previously observed locally requires a fresh `npm audit` review; no automatic dependency rewrite was performed.
+- GitHub Actions reported a deprecation warning for JavaScript actions that currently target the Node.js 20 action runtime while the runner forces Node.js 24. The repository application itself type-checks, tests, and builds on Node.js 24.
 
 ## Recommended future work
 
