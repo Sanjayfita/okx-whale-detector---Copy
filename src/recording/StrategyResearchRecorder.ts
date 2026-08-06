@@ -7,7 +7,10 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 
-import type { WhaleDecisionGroup } from '../research/strategyResearchTypes';
+import {
+  type StrategyOutcomeObservation,
+  type WhaleDecisionGroup,
+} from '../research/strategyResearchTypes';
 import type { CandidatePipelineResult } from '../selection/CandidatePipeline';
 import type { PaperTradeCandidate } from '../selection/TradeQualificationEngine';
 import type { StrategyEvaluationContext } from '../strategies/Strategy';
@@ -15,7 +18,8 @@ import type { StrategyCandidate } from '../strategies/StrategyCandidate';
 
 export const STRATEGY_CANDIDATE_RECORD_SCHEMA_VERSION = 1 as const;
 export const STRATEGY_QUALIFICATION_RECORD_SCHEMA_VERSION = 1 as const;
-export const WHALE_INCREMENTAL_DECISION_SCHEMA_VERSION = 1 as const;
+export const STRATEGY_OUTCOME_RECORD_SCHEMA_VERSION = 1 as const;
+export const WHALE_INCREMENTAL_OUTCOME_SCHEMA_VERSION = 1 as const;
 
 export interface StrategyCandidateRecord {
   readonly schemaVersion: typeof STRATEGY_CANDIDATE_RECORD_SCHEMA_VERSION;
@@ -38,20 +42,29 @@ export interface StrategyQualificationRecord {
   readonly orderExecutionAuthorized: false;
 }
 
-export interface WhaleIncrementalDecisionRecord {
-  readonly schemaVersion: typeof WHALE_INCREMENTAL_DECISION_SCHEMA_VERSION;
+export interface StrategyOutcomeRecord {
+  readonly schemaVersion: typeof STRATEGY_OUTCOME_RECORD_SCHEMA_VERSION;
   readonly recordedAt: number;
   readonly sourceSessionId: string;
-  readonly candidateId: string;
-  readonly strategyId: string;
-  readonly instrumentId: string;
-  readonly generatedAt: number;
-  readonly holdingHorizonMinutes: number;
-  readonly group: WhaleDecisionGroup;
+  readonly observation: StrategyOutcomeObservation;
+  readonly paperOnly: true;
+  readonly liveOrderExecutionAllowed: false;
+  readonly orderExecutionAuthorized: false;
+}
+
+export interface WhaleIncrementalOutcomeRecord {
+  readonly schemaVersion: typeof WHALE_INCREMENTAL_OUTCOME_SCHEMA_VERSION;
+  readonly recordedAt: number;
+  readonly sourceSessionId: string;
+  readonly observationId: string;
+  readonly observedAt: number;
+  readonly whaleGroup: WhaleDecisionGroup;
+  readonly grossReturnPercent: number;
   readonly baseQualified: boolean;
   readonly finalQualified: boolean;
   readonly paperOnly: true;
   readonly liveOrderExecutionAllowed: false;
+  readonly orderExecutionAuthorized: false;
 }
 
 export interface StrategyResearchRecorderOptions {
@@ -108,22 +121,10 @@ const requireSafeDirectory = (directory: string): string => {
   return normalized;
 };
 
-const decisionGroup = (
-  qualification: PaperTradeCandidate,
-): WhaleDecisionGroup => {
-  switch (qualification.whaleAssessment.alignment) {
-    case 'SUPPORTS':
-      return 'WHALE_SUPPORTS';
-    case 'CONTRADICTS':
-      return 'WHALE_CONTRADICTS';
-    case 'NEUTRAL':
-      return 'WHALE_NEUTRAL';
-  }
-};
-
 export class StrategyResearchRecorder {
   public readonly candidateFilePath: string;
   public readonly qualificationFilePath: string;
+  public readonly strategyOutcomeFilePath: string;
   public readonly whaleIncrementalFilePath: string;
 
   private readonly enabled: boolean;
@@ -132,6 +133,7 @@ export class StrategyResearchRecorder {
   private readonly warn: (message: string) => void;
   private candidateWriter?: AppendOnlyJsonlWriter;
   private qualificationWriter?: AppendOnlyJsonlWriter;
+  private outcomeWriter?: AppendOnlyJsonlWriter;
   private whaleWriter?: AppendOnlyJsonlWriter;
   private closed = false;
   private failureWarned = false;
@@ -149,6 +151,10 @@ export class StrategyResearchRecorder {
       directory,
       'strategy-qualifications.ndjson',
     );
+    this.strategyOutcomeFilePath = path.join(
+      directory,
+      'strategy-outcomes.ndjson',
+    );
     this.whaleIncrementalFilePath = path.join(
       directory,
       'whale-incremental-observations.ndjson',
@@ -164,14 +170,8 @@ export class StrategyResearchRecorder {
     readonly result: CandidatePipelineResult;
   }): void {
     if (!this.enabled || this.closed) return;
-    if (input.sourceSessionId.trim().length === 0) {
-      throw new Error('sourceSessionId must not be empty');
-    }
-    const recordedAt = this.clock();
-    if (!Number.isSafeInteger(recordedAt) || recordedAt < 0) {
-      throw new Error('recording clock returned an invalid timestamp');
-    }
-
+    this.requireSourceSessionId(input.sourceSessionId);
+    const recordedAt = this.recordingTime();
     const duplicateIds = new Set(input.result.duplicateCandidateIds);
     try {
       for (const candidate of input.result.generated) {
@@ -191,17 +191,70 @@ export class StrategyResearchRecorder {
         this.candidateWriter.append(record, this.flushAfterEachRecord);
       }
 
-      const qualifications = [
+      for (const qualification of [
         ...input.result.qualified,
         ...input.result.rejected,
-      ];
-      for (const qualification of qualifications) {
-        this.writeQualification(
+      ]) {
+        const record: StrategyQualificationRecord = Object.freeze({
+          schemaVersion: STRATEGY_QUALIFICATION_RECORD_SCHEMA_VERSION,
           recordedAt,
-          input.sourceSessionId,
+          sourceSessionId: input.sourceSessionId,
           qualification,
+          paperOnly: true,
+          liveOrderExecutionAllowed: false,
+          orderExecutionAuthorized: false,
+        });
+        this.qualificationWriter ??= new AppendOnlyJsonlWriter(
+          this.qualificationFilePath,
         );
+        this.qualificationWriter.append(record, this.flushAfterEachRecord);
       }
+      this.failureWarned = false;
+    } catch (error: unknown) {
+      this.reportFailure(error);
+    }
+  }
+
+  public recordOutcome(input: {
+    readonly sourceSessionId: string;
+    readonly observation: StrategyOutcomeObservation;
+  }): void {
+    if (!this.enabled || this.closed) return;
+    this.requireSourceSessionId(input.sourceSessionId);
+    const recordedAt = this.recordingTime();
+    const strategyRecord: StrategyOutcomeRecord = Object.freeze({
+      schemaVersion: STRATEGY_OUTCOME_RECORD_SCHEMA_VERSION,
+      recordedAt,
+      sourceSessionId: input.sourceSessionId,
+      observation: input.observation,
+      paperOnly: true,
+      liveOrderExecutionAllowed: false,
+      orderExecutionAuthorized: false,
+    });
+    const whaleRecord: WhaleIncrementalOutcomeRecord = Object.freeze({
+      schemaVersion: WHALE_INCREMENTAL_OUTCOME_SCHEMA_VERSION,
+      recordedAt,
+      sourceSessionId: input.sourceSessionId,
+      observationId: input.observation.candidateId,
+      observedAt: input.observation.generatedAt,
+      whaleGroup: input.observation.whaleGroup,
+      grossReturnPercent: input.observation.grossReturnPercent,
+      baseQualified: input.observation.baseQualified,
+      finalQualified: input.observation.finalQualified,
+      paperOnly: true,
+      liveOrderExecutionAllowed: false,
+      orderExecutionAuthorized: false,
+    });
+
+    try {
+      this.outcomeWriter ??= new AppendOnlyJsonlWriter(
+        this.strategyOutcomeFilePath,
+      );
+      this.whaleWriter ??= new AppendOnlyJsonlWriter(
+        this.whaleIncrementalFilePath,
+      );
+      this.outcomeWriter.append(strategyRecord, this.flushAfterEachRecord);
+      this.whaleWriter.append(whaleRecord, this.flushAfterEachRecord);
       this.failureWarned = false;
     } catch (error: unknown) {
       this.reportFailure(error);
@@ -214,6 +267,7 @@ export class StrategyResearchRecorder {
     for (const writer of [
       this.candidateWriter,
       this.qualificationWriter,
+      this.outcomeWriter,
       this.whaleWriter,
     ]) {
       try {
@@ -226,48 +280,18 @@ export class StrategyResearchRecorder {
     if (failure) throw failure;
   }
 
-  private writeQualification(
-    recordedAt: number,
-    sourceSessionId: string,
-    qualification: PaperTradeCandidate,
-  ): void {
-    const qualificationRecord: StrategyQualificationRecord = Object.freeze({
-      schemaVersion: STRATEGY_QUALIFICATION_RECORD_SCHEMA_VERSION,
-      recordedAt,
-      sourceSessionId,
-      qualification,
-      paperOnly: true,
-      liveOrderExecutionAllowed: false,
-      orderExecutionAuthorized: false,
-    });
-    const whaleRecord: WhaleIncrementalDecisionRecord = Object.freeze({
-      schemaVersion: WHALE_INCREMENTAL_DECISION_SCHEMA_VERSION,
-      recordedAt,
-      sourceSessionId,
-      candidateId: qualification.candidate.candidateId,
-      strategyId: qualification.candidate.strategyId,
-      instrumentId: qualification.candidate.instrumentId,
-      generatedAt: qualification.candidate.generatedAt,
-      holdingHorizonMinutes:
-        qualification.candidate.holdingHorizonMinutes,
-      group: decisionGroup(qualification),
-      baseQualified: qualification.baseQualified,
-      finalQualified: qualification.qualified,
-      paperOnly: true,
-      liveOrderExecutionAllowed: false,
-    });
+  private requireSourceSessionId(sourceSessionId: string): void {
+    if (sourceSessionId.trim().length === 0) {
+      throw new Error('sourceSessionId must not be empty');
+    }
+  }
 
-    this.qualificationWriter ??= new AppendOnlyJsonlWriter(
-      this.qualificationFilePath,
-    );
-    this.whaleWriter ??= new AppendOnlyJsonlWriter(
-      this.whaleIncrementalFilePath,
-    );
-    this.qualificationWriter.append(
-      qualificationRecord,
-      this.flushAfterEachRecord,
-    );
-    this.whaleWriter.append(whaleRecord, this.flushAfterEachRecord);
+  private recordingTime(): number {
+    const recordedAt = this.clock();
+    if (!Number.isSafeInteger(recordedAt) || recordedAt < 0) {
+      throw new Error('recording clock returned an invalid timestamp');
+    }
+    return recordedAt;
   }
 
   private reportFailure(error: unknown): void {
