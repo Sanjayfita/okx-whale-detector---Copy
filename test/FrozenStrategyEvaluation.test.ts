@@ -112,6 +112,8 @@ const configuration = Object.freeze({
     highLiquidityMinimumDepthNotionalQuote: 2_000_000,
     lowVolatilityMaximumPercent: 0.2,
     highVolatilityMinimumPercent: 1,
+    tightSpreadMaximumPercent: 0.03,
+    wideSpreadMinimumPercent: 0.08,
     confidenceLevel: 0.95,
     bootstrapIterations: 500,
     bootstrapBlockSize: 3,
@@ -134,12 +136,13 @@ describe('strategy robustness analysis', () => {
     ).toBe(true);
     expect(report.scenarios[0]?.byLiquidityRegime).toHaveLength(3);
     expect(report.scenarios[0]?.byVolatilityRegime).toHaveLength(3);
+    expect(report.scenarios[0]?.bySpreadRegime).toHaveLength(3);
     expect(report.orderExecutionAuthorized).toBe(false);
   });
 });
 
 describe('frozen strategy evaluation', () => {
-  it('is deterministic, parameter-locked, and paper-only', () => {
+  it('is deterministic, parameter-locked, paper-only, and independent of input order', () => {
     const manifest = createFrozenStrategyEvaluationManifest({
       evaluationId: 'eval-test',
       sourceCommit: 'abc123',
@@ -147,7 +150,10 @@ describe('frozen strategy evaluation', () => {
       configuration,
     });
     const first = runFrozenStrategyEvaluation({ manifest, observations });
-    const second = runFrozenStrategyEvaluation({ manifest, observations });
+    const second = runFrozenStrategyEvaluation({
+      manifest,
+      observations: [...observations].reverse(),
+    });
 
     expect(first.deterministicFingerprint).toBe(
       second.deterministicFingerprint,
@@ -160,5 +166,34 @@ describe('frozen strategy evaluation', () => {
     expect(first.orderExecutionAuthorized).toBe(false);
     expect(first.transportDispatchAllowed).toBe(false);
     expect(first.testnetExecutionAuthorized).toBe(false);
+  });
+
+  it('rejects duplicated candidates and outcomes observed before their horizon', () => {
+    const manifest = createFrozenStrategyEvaluationManifest({
+      evaluationId: 'eval-invalid',
+      sourceCommit: 'abc123',
+      createdAt: 1,
+      configuration,
+    });
+    const first = observations[0];
+    expect(first).toBeDefined();
+
+    expect(() =>
+      runFrozenStrategyEvaluation({
+        manifest,
+        observations: [first!, first!],
+      }),
+    ).toThrow('invalid or duplicated');
+    expect(() =>
+      runFrozenStrategyEvaluation({
+        manifest,
+        observations: [
+          {
+            ...first!,
+            outcomeObservedAt: first!.outcomeObservedAt - 1,
+          },
+        ],
+      }),
+    ).toThrow('invalid or duplicated');
   });
 });
