@@ -1,6 +1,6 @@
+import { CorrelatedAlertEngine } from './alerts/CorrelatedAlertEngine';
 import { OKXInstrumentClient } from './clients/okx/OKXInstrumentClient';
 import { OKXMarketDiscoveryClient } from './clients/okx/OKXMarketDiscoveryClient';
-import { CorrelatedAlertEngine } from './alerts/CorrelatedAlertEngine';
 import { appConfig } from './config/appConfig';
 import { healthConfig, validateHealthConfig } from './config/healthConfig';
 import {
@@ -16,33 +16,41 @@ import {
   validateRecordingConfig,
 } from './config/recordingConfig';
 import {
+  strategyResearchConfig,
+  validateStrategyResearchConfig,
+} from './config/strategyResearchConfig';
+import {
   subscriptionConfig,
   validateSubscriptionConfig,
 } from './config/subscriptionConfig';
+import { resolveSymbolConfig, SYMBOL_PROFILES } from './config/symbolProfiles';
 import {
   throughputConfig,
   validateThroughputConfig,
 } from './config/throughputConfig';
-import { resolveSymbolConfig, SYMBOL_PROFILES } from './config/symbolProfiles';
 import { validateAppConfig } from './config/validateAppConfig';
 import { CandleUpdateHandler } from './core/CandleUpdateHandler';
 import { MarketHealthMonitor } from './core/MarketHealthMonitor';
 import { MarketState } from './core/MarketState';
+import { PipelineProfiler } from './core/PipelineProfiler';
+import { ProcessingMonitor } from './core/ProcessingMonitor';
 import { SubscriptionManager } from './core/SubscriptionManager';
 import { SummaryThrottle } from './core/SummaryThrottle';
 import { ThroughputMonitor } from './core/ThroughputMonitor';
-import { PipelineProfiler } from './core/PipelineProfiler';
-import { ProcessingMonitor } from './core/ProcessingMonitor';
+import { ExternalSignalCorrelationService } from './external/core/ExternalSignalCorrelationService';
+import { PolymarketLiveSignalRuntime } from './external/providers/polymarket/PolymarketLiveSignalRuntime';
 import {
   MarketEngine,
   type AlphaMarketContextObserver,
 } from './market/MarketEngine';
-import { ExternalSignalCorrelationService } from './external/core/ExternalSignalCorrelationService';
-import { PolymarketLiveSignalRuntime } from './external/providers/polymarket/PolymarketLiveSignalRuntime';
 import { BoundedRecorderQueue } from './recording/BoundedRecorderQueue';
-import { MarketDataRecorder } from './recording/MarketDataRecorder';
 import { CorrelatedAlertRecorder } from './recording/CorrelatedAlertRecorder';
+import { MarketDataRecorder } from './recording/MarketDataRecorder';
 import { CorrelatedAlertReporter } from './reporting/CorrelatedAlertReporter';
+import {
+  createStrategyShadowRuntime,
+  type StrategyShadowRuntime,
+} from './research/StrategyShadowRuntime';
 import {
   AppShutdownCoordinator,
   type AppShutdownReason,
@@ -65,6 +73,7 @@ export interface AppRuntimeDependencies {
   correlatedAlertReporter?: CorrelatedAlertReporter;
   correlatedAlertRecorder?: CorrelatedAlertRecorder;
   alphaMarketContextObserver?: AlphaMarketContextObserver;
+  strategyShadowRuntime?: StrategyShadowRuntime;
   polymarketRuntime?: PolymarketLiveSignalRuntime;
   marketDataRecorderFactory?: (
     directory: string,
@@ -82,6 +91,7 @@ export const createAppRuntime = async (
   sourceSessionId: string;
   marketDataRecorder?: MarketDataRecorder;
   marketEngine: MarketEngine;
+  strategyShadowRuntime?: StrategyShadowRuntime;
   polymarketRuntime: PolymarketLiveSignalRuntime;
   shutdown: (signal: AppShutdownReason) => Promise<void>;
 }> => {
@@ -118,6 +128,7 @@ export const createAppRuntime = async (
   validateMarketDiscoveryConfig(marketDiscoveryConfig);
   validatePerformanceConfig(performanceConfig);
   validateRecordingConfig(recordingConfig);
+  validateStrategyResearchConfig(strategyResearchConfig);
   validateSubscriptionConfig(subscriptionConfig);
   validateThroughputConfig(throughputConfig);
 
@@ -244,6 +255,15 @@ export const createAppRuntime = async (
       flushAfterEachAlert:
         appConfig.correlatedAlertRecording.flushAfterEachAlert,
     });
+  const strategyShadowRuntime =
+    dependencies.strategyShadowRuntime ??
+    (strategyResearchConfig.enabled
+      ? createStrategyShadowRuntime({
+          sourceSessionId,
+          config: strategyResearchConfig,
+          clock: Date.now,
+        })
+      : undefined);
   const orderBookResyncRequester: {
     request?: (symbol: string) => boolean;
   } = {};
@@ -272,6 +292,7 @@ export const createAppRuntime = async (
       maximumFutureSkewMs: 5_000,
     },
     dependencies.alphaMarketContextObserver,
+    strategyShadowRuntime,
   );
   const polymarketRuntime =
     dependencies.polymarketRuntime ??
@@ -446,6 +467,12 @@ export const createAppRuntime = async (
   if (recorder) {
     console.log(`Recording order-book and candle data to ${recorder.filePath}`);
   }
+  if (strategyShadowRuntime) {
+    console.log(
+      `Strategy shadow research enabled at ${strategyResearchConfig.outputDirectory}.`,
+    );
+    console.log('Strategy candidates remain paper-only and execution-disabled.');
+  }
 
   const shutdownCoordinator = new AppShutdownCoordinator({
     beforeClose: (signal) => {
@@ -457,6 +484,7 @@ export const createAppRuntime = async (
     stopThroughputMonitor: () => throughputMonitor.stop(),
     closeSubscriptions: () => subscriptionManager.close(),
     closeAlertRecorder: () => correlatedAlertRecorder.close(),
+    closeStrategyResearch: () => strategyShadowRuntime?.close(),
     closeMarketRecorder:
       recorder === undefined
         ? undefined
@@ -486,6 +514,7 @@ export const createAppRuntime = async (
     sourceSessionId,
     marketDataRecorder: recorder,
     marketEngine,
+    strategyShadowRuntime,
     polymarketRuntime,
     shutdown,
   };
