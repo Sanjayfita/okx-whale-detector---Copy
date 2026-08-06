@@ -2,9 +2,9 @@
 
 ## Decision
 
-Whale activity is no longer a primary trade trigger. Independent strategies must first produce candidates. Whale-derived information is evaluated only after candidate generation as supporting, neutral, contradicting, or potentially spoofed evidence.
+Whale activity is no longer a primary trade trigger. Independent strategies generate candidates first. Whale-derived information is evaluated afterward as supporting, neutral, contradicting, or potentially spoofed evidence.
 
-The architecture remains research-only. It cannot submit orders, use private OKX trading endpoints, authorize testnet execution, or dispatch an execution transport.
+The architecture is research-only. It cannot submit orders, use private OKX trading endpoints, authorize testnet execution, or dispatch an execution transport.
 
 ## Integrated pipeline
 
@@ -16,11 +16,12 @@ Public market data
 → event-level deduplication
 → market-regime gate
 → whale confirmation / contradiction analysis
-→ cost and risk qualification
+→ cost and qualification gates
 → append-only shadow research datasets
+→ persistent holding-horizon obligations
 → deterministic replay
 → purged walk-forward validation
-→ cost and regime robustness analysis
+→ fee, slippage, spread, liquidity, and volatility robustness
 → frozen paper-only evaluation
 ```
 
@@ -28,35 +29,37 @@ Public market data
 
 R21 introduced:
 
-- `StrategyCandidate` as the independent candidate contract.
-- `StrategyRegistry` for deterministic strategy ordering.
-- `TrendContinuationStrategy` as the first independent strategy family.
-- `CandidateDeduplicator` to prevent repeated same-event candidates.
-- `WhaleConfirmationEngine` as a secondary confirmation and contradiction layer.
-- `TradeQualificationEngine` with separate base-strategy and final qualification decisions.
+- `StrategyCandidate` as the independent candidate contract,
+- `StrategyRegistry` for deterministic strategy ordering,
+- `TrendContinuationStrategy` as the first independent strategy family,
+- `CandidateDeduplicator` for one candidate per independent event window,
+- `WhaleConfirmationEngine` as a secondary confirmation and contradiction layer,
+- `TradeQualificationEngine` with separate base and final qualification decisions.
 
-Whale support cannot rescue a base strategy that fails its own confidence, regime, or estimated net-edge requirements.
+Whale support cannot rescue a base strategy that fails its own confidence, regime, observed-movement, or estimated-net-edge requirements.
 
 ## R22 — Runtime feature adapter
 
-`RuntimeStrategyFeatureAdapter` constructs `StrategyEvaluationContext` from data available at the decision timestamp:
+`RuntimeStrategyFeatureAdapter` constructs `StrategyEvaluationContext` only from information available at the decision timestamp:
 
-- confirmed candle fast return,
-- confirmed candle slow return,
-- realized volatility from confirmed candle closes,
+- confirmed-candle fast return,
+- confirmed-candle slow return,
+- realized volatility from confirmed closes,
 - current best-bid / best-ask spread,
-- visible order-book depth notional,
+- bounded near-touch depth,
 - public aggressive trade-flow imbalance,
 - reference midpoint,
 - observation timestamp.
 
+It rejects stale or future order books, stale confirmed candles, excessive candle gaps, incomplete lookbacks, and non-finite values.
+
 Whale direction, wall size, whale score, and whale behavior are deliberately excluded from this context.
 
-`RuntimeWhaleFeatureAdapter` is a separate adapter that transforms whale tracking into confirmation features. Unknown absorption and spoof labels are not fabricated. Unsupported absorption remains neutral until a validated runtime source is available.
+`RuntimeWhaleFeatureAdapter` is separate. It transforms whale tracking into confirmation features without fabricating unsupported absorption or spoof labels.
 
 ## R23 — Shadow candidate recorder
 
-The strategy pipeline is integrated into `MarketEngine` through an optional `StrategyShadowRuntime`.
+The strategy pipeline is integrated into `MarketEngine` through optional `StrategyShadowRuntime`.
 
 It is disabled by default. To enable paper-only shadow collection in Windows CMD:
 
@@ -65,25 +68,29 @@ set STRATEGY_RESEARCH_ENABLED=true
 npm.cmd run dev
 ```
 
-Optional output location:
+Optional output directory:
 
 ```cmd
 set STRATEGY_RESEARCH_DIRECTORY=data\strategy-research-session-1
 ```
 
-The shadow path writes separate append-only datasets:
+The shadow path writes isolated research state:
 
 - `strategy-candidates.ndjson`
 - `strategy-qualifications.ndjson`
+- `strategy-outcomes.ndjson`
 - `whale-incremental-observations.ndjson`
+- `pending-strategy-outcomes.json`
 
-These files do not replace or mutate the existing evidence pipeline. Recorder failures are isolated so the existing detector continues running. Graceful shutdown flushes and closes the strategy writers.
+`PersistentStrategyOutcomeStore` atomically persists unresolved holding-horizon obligations. On restart, `StrategyShadowRuntime` restores both pending outcomes and candidate-event memory. Transient market resets do not erase those obligations or permit duplicate candidates inside the frozen event window.
+
+These files do not replace or mutate the existing evidence pipeline. Recorder failures remain isolated from the detector, and graceful shutdown flushes all writers.
 
 ## R24 — Comparative whale research
 
 `analyzeWhaleIncrementalValue` compares:
 
-- `BASE_ONLY`: every independently viable base candidate,
+- `BASE_ONLY`,
 - `WHALE_SUPPORTS`,
 - `WHALE_NEUTRAL`,
 - `WHALE_CONTRADICTS`.
@@ -96,7 +103,7 @@ For each group it reports:
 - deterministic block-bootstrap confidence interval,
 - statistical-sufficiency flag.
 
-It also reports incremental differences from the base population. Whale support remains informational unless every frozen group meets the required sample size and unseen-period evidence shows a stable incremental benefit.
+Incremental differences are measured against the base population. Whale support remains informational unless each frozen group reaches its sample requirement and the benefit remains stable in unseen periods.
 
 ## R25 — Deterministic replay and walk-forward validation
 
@@ -104,15 +111,15 @@ It also reports incremental differences from the base population. Whale support 
 
 - sorts records by event-time availability,
 - rejects duplicate event IDs,
-- rejects decision features that were unavailable at decision time,
-- rejects outcomes that appear before the candidate holding horizon,
-- uses the existing deterministic `ReplayClock`,
-- resets stateful candidate deduplication before replay,
+- rejects features unavailable at decision time,
+- rejects outcomes available before the holding horizon,
+- uses deterministic replay time,
+- resets and restores stateful candidate deduplication,
 - emits a deterministic SHA-256 fingerprint.
 
-`createWalkForwardValidationReport` uses fixed expanding training windows with frozen validation and testing windows. Purge and embargo controls remove observations whose labels overlap a later decision boundary. No parameter mutation or optimization is performed during validation.
+`createWalkForwardValidationReport` uses expanding training windows and fixed validation and testing windows. Purge and embargo controls remove label overlap around decision boundaries. No parameter optimization is performed during evaluation.
 
-The existing `strategyWalkForwardEvaluation.ts` remains a generic comparison utility for already summarized candidate metrics. The new `walkForwardValidation.ts` validates raw strategy-outcome observations with purge and embargo rules; the modules serve different layers and are not parallel implementations of the same responsibility.
+Existing generic candidate-comparison utilities remain because they consume already summarized metrics. The Phase R walk-forward layer operates on raw event-time outcomes and has a distinct responsibility.
 
 ## R26 — Cost and robustness analysis
 
@@ -121,27 +128,30 @@ The existing `strategyWalkForwardEvaluation.ts` remains a generic comparison uti
 - fee assumptions,
 - slippage assumptions,
 - spread multipliers,
+- tight / normal / wide spread buckets,
 - low / medium / high liquidity buckets,
 - low / medium / high volatility buckets,
-- block-bootstrap confidence intervals.
+- deterministic block-bootstrap intervals.
 
-The current frozen definition includes `BASE`, `CONSERVATIVE`, and `STRESS` cost scenarios. A strategy is not robust unless the lower confidence bound remains positive under every required scenario.
+The frozen definition includes `BASE`, `CONSERVATIVE`, and `STRESS` scenarios. A candidate is not robust unless the lower confidence bound remains positive under every required scenario.
 
 ## R27 — Frozen candidate evaluation
 
 A frozen strategy evaluation stores:
 
 - source commit,
-- immutable configuration,
-- configuration fingerprint,
+- immutable configuration and fingerprint,
 - strategy IDs,
-- event window,
-- feature and whale policies,
+- candidate event window,
+- feature freshness and near-touch depth policies,
+- whale feature policy,
 - regime and strategy thresholds,
 - qualification policy,
 - walk-forward windows,
-- robustness scenarios,
+- robustness scenarios and regime thresholds,
 - sample requirements.
+
+The evaluator canonicalizes observation order and rejects duplicate candidates, unsupported strategy IDs, invalid safety state, non-finite market fields, and outcomes before their required horizon.
 
 Initialize only from a clean committed worktree:
 
@@ -149,85 +159,80 @@ Initialize only from a clean committed worktree:
 npm.cmd run strategy:evaluation:init -- strategy-eval-YYYY-MM-DD-v1
 ```
 
-After independently generated outcome observations have been written to the evaluation directory:
+Generate the frozen report:
 
 ```cmd
 npm.cmd run strategy:evaluation:run -- strategy-eval-YYYY-MM-DD-v1
 ```
 
-The runner refuses a dirty worktree or a source commit different from the frozen manifest. It never tunes parameters and never authorizes execution.
+The runner refuses a dirty worktree or source commit different from the frozen manifest. It never tunes parameters and never authorizes execution.
 
-## R28 — Final audit decisions
+## R28 — Audit and consolidation decisions
 
-The final Phase R audit made these consolidation decisions:
+- The historical whale-alert path remains for compatibility and baseline research, but it cannot originate strategy candidates.
+- Runtime strategy features and whale confirmation features use separate adapters.
+- Existing evidence files remain untouched.
+- Event deduplication is centralized in `CandidateDeduplicator`.
+- Base cost, confidence, and regime qualification is centralized in `TradeQualificationEngine`.
+- Weak observed movement is rejected rather than raised to a configured expected-move floor.
+- The existing strategy simulation was consolidated into one integrated R22-R28 simulation.
+- Historical branches were inspected. Superseded or fully-behind implementations were not copied into the active architecture.
+- No tested production file or dependency was removed without a verified safe replacement.
 
-- The historical whale-alert path is retained for compatibility and baseline research, but it is not used to originate strategy candidates.
-- Runtime strategy features and whale confirmation features are separate adapters.
-- Existing evidence files remain untouched; the new shadow datasets are isolated.
-- Stateful event deduplication is centralized in `CandidateDeduplicator` rather than repeated in recorders or strategies.
-- Base qualification is centralized in `TradeQualificationEngine`; whale logic cannot duplicate cost or regime gates.
-- The prior generic strategy simulation was consolidated into the integrated R22-R28 simulation instead of adding a second simulator.
-- Historical feature branches were inspected. Superseded or fully-behind branches were not merged. Useful dependency-aware statistical concepts were represented through the repository's existing block-bootstrap, chronological split, and new frozen robustness layers rather than copied as competing modules.
-- No active source file or production dependency was removed without a verified safe replacement. Historical research utilities with tests were retained because they still provide distinct public functionality.
+## Frozen research thresholds
 
-## Validation commands
+The current definition is intentionally conservative and must not change after evaluation initialization:
 
-Focused integrated validation:
+- strategy: `TREND_CONTINUATION_V1`,
+- candidate event window: 60 minutes,
+- holding horizon: 60 minutes,
+- minimum observed slow-trend magnitude: 0.35%,
+- estimated round-trip cost gate: 0.20%,
+- minimum remaining edge: 0.10%,
+- minimum frozen outcomes: 1,000,
+- minimum whale observations per group: 100,
+- maximum order-book age: 5 seconds,
+- maximum confirmed-candle age: 2 minutes,
+- near-touch depth: 20 levels per side.
+
+These values are hypotheses, not claims of profitability. Any later change requires a new strategy version and a new frozen evaluation.
+
+## Promotion gate
+
+A candidate may advance only to another paper-only evaluation when:
+
+- the minimum independent outcome count is met,
+- every frozen validation fold is positive after costs,
+- every frozen test fold is positive after costs,
+- the bootstrap lower bound is positive under every cost scenario,
+- spread, liquidity, and volatility robustness remain acceptable,
+- data integrity is clean,
+- deterministic replay fingerprints match,
+- whale incremental value is treated only as a secondary result.
+
+No Phase R result authorizes testnet or live trading.
+
+## Validation
 
 ```cmd
+npm.cmd ci
 npm.cmd run strategy:validate
-```
-
-Full repository validation:
-
-```cmd
 npm.cmd run check
 npm.cmd run build --silent
 git diff --check
 git status
 ```
 
-The integrated deterministic simulation must end with:
+The integrated simulation must end with:
 
 ```text
 R22-R28 INTEGRATED STRATEGY SIMULATION PASSED
 Paper-only research. Order execution remains disabled.
 ```
 
-A simulation pass validates architecture, determinism, and safety behavior. It does not demonstrate market profitability.
-
-## Frozen research thresholds
-
-The current candidate definition is intentionally conservative and must not be changed after an evaluation starts:
-
-- primary strategy: `TREND_CONTINUATION_V1`,
-- candidate event window: 60 minutes,
-- holding horizon: 60 minutes,
-- minimum predicted move: 0.35%,
-- base estimated round-trip cost: 0.20%,
-- minimum remaining edge: 0.10%,
-- minimum frozen outcomes: 1,000,
-- minimum whale observations per comparison group: 100.
-
-These values are research hypotheses, not claims of profitability. A later strategy version must receive a new ID and a new frozen evaluation rather than rewriting an existing manifest.
-
-## Promotion gate
-
-A candidate may advance only to another paper-only evaluation when:
-
-- minimum independent outcome count is met,
-- every frozen validation fold is positive after costs,
-- every frozen test fold is positive after costs,
-- the bootstrap lower bound is positive under every required cost scenario,
-- data integrity remains clean,
-- deterministic replay fingerprints match,
-- whale incremental value is treated only as a secondary result.
-
-No result from Phase R authorizes testnet or live trading.
+A synthetic pass validates architecture, determinism, and safety behavior. It does not demonstrate market profitability.
 
 ## Permanent execution locks
-
-All new outputs preserve:
 
 ```text
 paperOnly: true
