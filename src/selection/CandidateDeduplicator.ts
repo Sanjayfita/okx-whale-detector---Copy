@@ -40,6 +40,11 @@ export class CandidateDeduplicator {
       }
 
       const existing = accepted[conflictIndex];
+      if (existing === undefined) {
+        accepted.push(candidate);
+        continue;
+      }
+
       const candidateScore =
         candidate.baseConfidence + candidate.expectedMovePercent * 100;
       const existingScore =
