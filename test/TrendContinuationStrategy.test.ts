@@ -58,26 +58,38 @@ describe('TrendContinuationStrategy', () => {
 });
 
 describe('whale incremental-value research', () => {
-  it('reports differences without claiming inference from small groups', () => {
+  it('reports differences and intervals without claiming inference from small groups', () => {
     const report = analyzeWhaleIncrementalValue(
       [
-        { observationId: 'base', group: 'BASE_ONLY', netReturnPercent: 0.1 },
         {
           observationId: 'support',
-          group: 'WHALE_SUPPORTS',
+          observedAt: 1,
+          whaleGroup: 'WHALE_SUPPORTS',
           netReturnPercent: 0.2,
         },
         {
+          observationId: 'neutral',
+          observedAt: 2,
+          whaleGroup: 'WHALE_NEUTRAL',
+          netReturnPercent: 0.1,
+        },
+        {
           observationId: 'contradict',
-          group: 'WHALE_CONTRADICTS',
+          observedAt: 3,
+          whaleGroup: 'WHALE_CONTRADICTS',
           netReturnPercent: -0.1,
         },
       ],
-      100,
+      {
+        minimumObservationsPerGroup: 100,
+        bootstrapIterations: 100,
+        bootstrapBlockSize: 1,
+      },
     );
 
-    expect(report.supportIncrementPercent).toBeCloseTo(0.1);
-    expect(report.contradictionIncrementPercent).toBeCloseTo(-0.2);
+    expect(report.supportIncrementPercent).toBeCloseTo(0.1333333333);
+    expect(report.contradictionIncrementPercent).toBeCloseTo(-0.1666666667);
+    expect(report.groups).toHaveLength(4);
     expect(report.sufficientForInference).toBe(false);
     expect(report.liveOrderExecutionAllowed).toBe(false);
   });
