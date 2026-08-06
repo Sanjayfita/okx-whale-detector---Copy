@@ -56,6 +56,7 @@ const parsePendingRecord = (
     | StrategyEvaluationContext
     | undefined;
   const candidate = qualification.candidate;
+  const dueAt = value.dueAt;
   if (
     value.schemaVersion !== PENDING_STRATEGY_OUTCOME_SCHEMA_VERSION ||
     value.paperOnly !== true ||
@@ -64,7 +65,9 @@ const parsePendingRecord = (
     value.transportDispatchAllowed !== false ||
     value.testnetExecutionAuthorized !== false ||
     candidate === undefined ||
+    typeof candidate.candidateId !== 'string' ||
     candidate.candidateId.trim().length === 0 ||
+    typeof candidate.instrumentId !== 'string' ||
     candidate.instrumentId.trim().length === 0 ||
     candidate.liveOrderExecutionAllowed !== false ||
     qualification.paperOnly !== true ||
@@ -75,9 +78,9 @@ const parsePendingRecord = (
     strategyContext === undefined ||
     strategyContext.instrumentId !== candidate.instrumentId ||
     strategyContext.observedAt !== candidate.generatedAt ||
-    !Number.isSafeInteger(value.dueAt) ||
-    value.dueAt !==
-      candidate.generatedAt + candidate.holdingHorizonMinutes * 60_000
+    typeof dueAt !== 'number' ||
+    !Number.isSafeInteger(dueAt) ||
+    dueAt !== candidate.generatedAt + candidate.holdingHorizonMinutes * 60_000
   ) {
     return undefined;
   }
@@ -86,7 +89,7 @@ const parsePendingRecord = (
     schemaVersion: PENDING_STRATEGY_OUTCOME_SCHEMA_VERSION,
     qualification,
     strategyContext: Object.freeze({ ...strategyContext }),
-    dueAt: value.dueAt,
+    dueAt,
     paperOnly: true,
     liveOrderExecutionAllowed: false,
     orderExecutionAuthorized: false,
