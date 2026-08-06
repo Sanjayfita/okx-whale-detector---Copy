@@ -21,10 +21,29 @@ const strategy = new TrendContinuationStrategy(classifier, {
 });
 
 describe('TrendContinuationStrategy', () => {
-  it('creates an independent bullish candidate only in a liquid trending regime', () => {
+  it('creates an independent bullish candidate only when observed movement clears the frozen edge gate', () => {
     const candidate = strategy.evaluate({
       instrumentId: 'BTC-USDT-SWAP',
       observedAt: 1_000,
+      referencePrice: 60_000,
+      fastReturnPercent: 0.35,
+      slowReturnPercent: 0.5,
+      orderFlowImbalance: 0.35,
+      realizedVolatilityPercent: 0.8,
+      spreadPercent: 0.02,
+      depthNotionalQuote: 1_000_000,
+    });
+
+    expect(candidate?.direction).toBe('BULLISH');
+    expect(candidate?.strategyId).toBe('TREND_CONTINUATION_V1');
+    expect(candidate?.expectedMovePercent).toBe(0.5);
+    expect(candidate?.liveOrderExecutionAllowed).toBe(false);
+  });
+
+  it('does not fabricate expected movement by flooring a weak setup', () => {
+    const candidate = strategy.evaluate({
+      instrumentId: 'BTC-USDT-SWAP',
+      observedAt: 1_500,
       referencePrice: 60_000,
       fastReturnPercent: 0.08,
       slowReturnPercent: 0.15,
@@ -34,10 +53,7 @@ describe('TrendContinuationStrategy', () => {
       depthNotionalQuote: 1_000_000,
     });
 
-    expect(candidate?.direction).toBe('BULLISH');
-    expect(candidate?.strategyId).toBe('TREND_CONTINUATION_V1');
-    expect(candidate?.expectedMovePercent).toBe(0.3);
-    expect(candidate?.liveOrderExecutionAllowed).toBe(false);
+    expect(candidate).toBeUndefined();
   });
 
   it('rejects an otherwise aligned setup when liquidity is insufficient', () => {
@@ -45,8 +61,8 @@ describe('TrendContinuationStrategy', () => {
       instrumentId: 'BTC-USDT-SWAP',
       observedAt: 2_000,
       referencePrice: 60_000,
-      fastReturnPercent: 0.08,
-      slowReturnPercent: 0.15,
+      fastReturnPercent: 0.35,
+      slowReturnPercent: 0.5,
       orderFlowImbalance: 0.35,
       realizedVolatilityPercent: 0.8,
       spreadPercent: 0.2,
