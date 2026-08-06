@@ -37,6 +37,10 @@ export const strategyResearchConfig: StrategyResearchConfig = Object.freeze({
     slowLookbackCandles: 15,
     volatilityLookbackCandles: 20,
     minimumTradeNotionalQuote: 0,
+    maximumOrderBookAgeMs: 5_000,
+    maximumCandleAgeMs: 2 * 60_000,
+    maximumCandleGapMs: 90_000,
+    depthLevelsPerSide: 20,
   }),
   whaleFeaturePolicy: Object.freeze({
     directionalDominanceThreshold: 0.15,
