@@ -69,6 +69,12 @@ export class CandidatePipeline {
     });
   }
 
+  public restoreAcceptedCandidates(
+    candidates: readonly StrategyCandidate[],
+  ): void {
+    this.deduplicator.restore(candidates);
+  }
+
   public reset(): void {
     this.deduplicator.reset();
   }
