@@ -28,6 +28,7 @@ export class TrendContinuationStrategy implements Strategy {
       policy.minimumSlowReturnPercent <= 0 ||
       !Number.isFinite(policy.minimumOrderFlowImbalance) ||
       policy.minimumOrderFlowImbalance <= 0 ||
+      policy.minimumOrderFlowImbalance > 1 ||
       !Number.isFinite(policy.minimumExpectedMovePercent) ||
       policy.minimumExpectedMovePercent <= 0 ||
       !Number.isSafeInteger(policy.holdingHorizonMinutes) ||
@@ -61,10 +62,14 @@ export class TrendContinuationStrategy implements Strategy {
       context.orderFlowImbalance <= -this.policy.minimumOrderFlowImbalance;
     if (!bullish && !bearish) return undefined;
 
-    const expectedMovePercent = Math.max(
-      this.policy.minimumExpectedMovePercent,
-      Math.abs(context.slowReturnPercent),
-    );
+    // The slow return is an observable momentum proxy, not a guaranteed forecast.
+    // Never raise a weak observed move to the configured minimum: doing so would
+    // fabricate edge and allow the downstream cost gate to pass without data.
+    const expectedMovePercent = Math.abs(context.slowReturnPercent);
+    if (expectedMovePercent < this.policy.minimumExpectedMovePercent) {
+      return undefined;
+    }
+
     const direction = bullish ? 'BULLISH' : 'BEARISH';
 
     return createStrategyCandidate({
@@ -81,6 +86,7 @@ export class TrendContinuationStrategy implements Strategy {
       rationale: Object.freeze([
         'Fast and slow returns agree with the candidate direction',
         'Order-flow imbalance confirms the candidate direction',
+        'Observed slow-trend magnitude exceeds the frozen expected-move gate',
         'Liquidity and spread pass the market-regime gate',
       ]),
     });
