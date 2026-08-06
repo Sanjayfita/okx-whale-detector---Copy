@@ -89,9 +89,7 @@ export class StrategyShadowRuntime {
         pending,
       );
     }
-    this.candidatePipeline.restoreAcceptedCandidates(
-      restored.map((pending) => pending.qualification.candidate),
-    );
+    this.restorePendingCandidateMemory();
   }
 
   public evaluate(input: {
@@ -146,21 +144,22 @@ export class StrategyShadowRuntime {
 
   public reset(): void {
     this.candidatePipeline.reset();
-    this.pendingOutcomes.clear();
-    this.persistPendingOutcomes();
+    // Pending outcomes are evidence obligations, not order-book-derived state.
+    // Keep them through transient runtime resets and restore their event memory
+    // so a reconnect cannot emit a duplicate candidate inside the frozen window.
+    this.restorePendingCandidateMemory();
   }
 
   public resetSymbols(instrumentIds: readonly string[]): void {
     this.candidatePipeline.resetInstruments(instrumentIds);
     const instruments = new Set(instrumentIds);
-    let changed = false;
-    for (const [candidateId, pending] of this.pendingOutcomes) {
-      if (instruments.has(pending.qualification.candidate.instrumentId)) {
-        this.pendingOutcomes.delete(candidateId);
-        changed = true;
-      }
-    }
-    if (changed) this.persistPendingOutcomes();
+    this.candidatePipeline.restoreAcceptedCandidates(
+      [...this.pendingOutcomes.values()]
+        .filter((pending) =>
+          instruments.has(pending.qualification.candidate.instrumentId),
+        )
+        .map((pending) => pending.qualification.candidate),
+    );
   }
 
   public close(): void {
@@ -251,6 +250,14 @@ export class StrategyShadowRuntime {
       this.pendingOutcomes.delete(candidateId);
     }
     if (due.length > 0) this.persistPendingOutcomes();
+  }
+
+  private restorePendingCandidateMemory(): void {
+    this.candidatePipeline.restoreAcceptedCandidates(
+      [...this.pendingOutcomes.values()].map(
+        (pending) => pending.qualification.candidate,
+      ),
+    );
   }
 
   private persistPendingOutcomes(): void {
