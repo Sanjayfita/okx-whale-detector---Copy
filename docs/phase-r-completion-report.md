@@ -2,96 +2,175 @@
 
 Branch: `feature/r21-strategy-redesign`
 
-Status: implementation and GitHub CI validation complete; local Windows pre-merge validation is still required before merging to `main`.
+Pull request: `#5 Complete Phase R strategy-first research architecture (R22-R28)`
+
+Status: implementation and GitHub CI validation complete. Local Windows pre-merge validation is still required before merging to `main`.
+
+## Executive result
+
+Phase R now uses a strategy-first, research-only architecture:
+
+```text
+public market data
+→ independent strategy features
+→ independent strategy candidates
+→ event deduplication
+→ market-regime evaluation
+→ whale confirmation / contradiction
+→ cost and qualification gates
+→ shadow research records
+→ deterministic replay and walk-forward validation
+→ robustness analysis
+→ frozen paper-only evaluation
+```
+
+Whale activity is no longer a primary trade trigger. It is a secondary confirmation, contradiction, spoof-risk, and research feature layer. Nothing in Phase R can submit or dispatch an order.
 
 ## Scope completed
 
-### R21 — Strategy-first redesign
+### R21 — Strategy-first foundation
 
-- Independent strategy candidates originate before whale analysis.
-- Whale tracking is a secondary confirmation, contradiction, spoof-risk, and research feature layer.
-- Whale support cannot rescue a base strategy that fails independent qualification.
+- Independent strategies originate candidates before whale analysis.
+- `StrategyRegistry` provides deterministic strategy ordering.
+- `CandidateDeduplicator` centralizes one-candidate-per-event behavior.
+- `WhaleConfirmationEngine` assesses support, contradiction, neutrality, and spoof risk.
+- `TradeQualificationEngine` keeps base qualification separate from whale adjustments.
+- Whale support cannot rescue a base strategy that fails its own regime, confidence, or cost gates.
 
 ### R22 — Runtime feature adapter
 
-- Confirmed candle fast and slow returns.
-- Realized volatility from confirmed closes.
-- Best-bid / best-ask spread.
-- Visible market depth notional.
-- Public aggressive trade-flow imbalance.
-- Reference midpoint and event timestamp.
-- No whale-derived field is injected into `StrategyEvaluationContext`.
+`RuntimeStrategyFeatureAdapter` connects the runtime to `StrategyEvaluationContext` using only information available at the decision timestamp:
 
-### R23 — Shadow recording
+- confirmed-candle fast return,
+- confirmed-candle slow return,
+- realized volatility,
+- best-bid / best-ask spread,
+- near-touch visible depth,
+- public aggressive trade-flow imbalance,
+- midpoint reference price,
+- event timestamp.
 
-- Optional `StrategyShadowRuntime` integrated into the existing `MarketEngine` summary cadence.
-- Disabled by default.
-- Stateful event-level deduplication.
-- Paper-only qualification recording.
-- Holding-horizon outcome resolution from later public midpoint observations.
-- Isolated append-only outputs:
-  - `strategy-candidates.ndjson`
-  - `strategy-qualifications.ndjson`
-  - `strategy-outcomes.ndjson`
-  - `whale-incremental-observations.ndjson`
-- Existing evidence datasets and alert recorders remain independent.
+Additional integrity gates reject:
+
+- stale or future order books,
+- stale confirmed candles,
+- missing or excessive candle gaps,
+- incomplete candle lookbacks,
+- non-finite features.
+
+Whale direction, wall size, whale score, and whale behavior are not injected into the strategy context.
+
+### R23 — Shadow candidate recorder
+
+- `CandidatePipeline` is integrated into `MarketEngine` through optional `StrategyShadowRuntime`.
+- The feature is disabled by default.
+- Strategy evaluation uses the existing throttled summary cadence instead of every order-book message.
+- Candidate, qualification, outcome, and whale-comparison data are isolated from the existing evidence pipeline.
+- Pending holding-horizon outcomes are atomically persisted and restored across process restarts.
+- Transient order-book resets preserve pending outcome obligations and restore deduplication memory.
+
+Research outputs:
+
+- `strategy-candidates.ndjson`
+- `strategy-qualifications.ndjson`
+- `strategy-outcomes.ndjson`
+- `whale-incremental-observations.ndjson`
+- `pending-strategy-outcomes.json`
 
 ### R24 — Comparative whale research
 
-- Base-only population.
-- Whale-supported subgroup.
-- Whale-neutral subgroup.
-- Whale-contradiction subgroup.
-- Observation counts, mean net return, win rate, deterministic block-bootstrap intervals, and sufficiency flags.
+The comparative report measures:
 
-### R25 — Replay and walk-forward validation
+- base strategy population,
+- whale-supported candidates,
+- whale-neutral candidates,
+- whale-contradicted candidates.
 
-- Deterministic chronological replay.
-- Event-availability checks.
-- Holding-horizon outcome checks.
-- Stateful pipeline reset before replay.
-- Expanding training windows.
-- Frozen validation and test windows.
-- Purge and embargo controls.
-- No parameter mutation during evaluation.
+For each population it reports:
 
-### R26 — Cost and robustness analysis
+- observation count,
+- win rate,
+- mean net return,
+- deterministic block-bootstrap interval,
+- sample-sufficiency status,
+- incremental contribution versus the base population.
 
-- Fee scenarios.
-- Slippage scenarios.
-- Spread multipliers.
-- Liquidity-regime buckets.
-- Volatility-regime buckets.
-- Confidence intervals per scenario.
-- Positive-lower-bound requirement under every frozen scenario.
+Whale support remains informational until frozen subgroup requirements and unseen-period tests are met.
+
+### R25 — Chronological replay and walk-forward validation
+
+- deterministic chronological replay,
+- duplicate-event rejection,
+- event-time availability enforcement,
+- holding-horizon timing enforcement,
+- deterministic replay fingerprints,
+- expanding training windows,
+- frozen validation and test windows,
+- purge and embargo controls,
+- no parameter mutation during evaluation.
+
+### R26 — Cost sensitivity and robustness
+
+The frozen robustness engine evaluates:
+
+- fee assumptions,
+- slippage assumptions,
+- spread multipliers,
+- tight / normal / wide spread regimes,
+- low / medium / high liquidity regimes,
+- low / medium / high volatility regimes,
+- confidence intervals under each cost scenario.
+
+A candidate is not robust unless the confidence-interval lower bound is positive under every required frozen scenario.
 
 ### R27 — Frozen candidate evaluation
 
-- Clean source-commit requirement.
-- Immutable configuration fingerprint.
-- Fixed thresholds and windows.
-- Deterministic report fingerprint.
-- Paper-only pass/fail gate.
-- Whale incremental-value insufficiency remains a warning rather than permission to change the base strategy result.
+- clean source-commit requirement,
+- immutable configuration fingerprint,
+- fixed strategy IDs and thresholds,
+- fixed feature freshness and depth policies,
+- fixed walk-forward windows,
+- fixed cost and regime scenarios,
+- canonical observation ordering,
+- duplicate-candidate rejection,
+- strict outcome-horizon validation,
+- deterministic report fingerprint,
+- no parameter tuning,
+- paper-only pass/fail decision.
 
-### R28 — Audit and consolidation
+### R28 — Final audit and consolidation
 
-- Existing generic strategy comparison utilities were retained because they summarize already-computed metrics, while the new validation layer operates on raw event-time outcome observations.
-- The existing strategy simulator was replaced with the integrated R22-R28 simulation rather than duplicated.
-- Stateful deduplication was centralized in `CandidateDeduplicator`.
-- Base qualification was centralized in `TradeQualificationEngine`.
-- Runtime strategy and whale feature adaptation were kept separate.
-- Superseded historical branches were inspected but not merged.
-- No active dependency or source file was deleted without a verified safe replacement.
+- Repository branches were inspected before integration.
+- Superseded historical feature branches were not merged into the active architecture.
+- Existing generic comparison utilities were retained only where they serve a different layer from raw event-time validation.
+- The previous strategy simulator was consolidated into the integrated R22-R28 simulation.
+- Strategy and whale feature adaptation remain separate.
+- Event deduplication remains centralized.
+- Cost and base qualification remain centralized.
+- No production dependency or active tested source file was removed without a verified safe replacement.
+- The only production dependency remains `ws`; the remaining packages are development tooling.
 
-## Added files
+## Conservative strategy corrections
+
+The audit corrected two important sources of optimistic bias:
+
+1. `TrendContinuationStrategy` no longer raises a weak observed move to the configured minimum expected move. A candidate is rejected unless the observed slow-trend magnitude itself clears the frozen edge gate.
+2. Frozen outcome evaluation now canonicalizes and validates raw observations before calculating fingerprints, walk-forward reports, or bootstrap intervals.
+
+## Files added
+
+### Runtime and configuration
 
 - `src/config/strategyResearchConfig.ts`
 - `src/recording/StrategyResearchRecorder.ts`
 - `src/regime/MarketRegimeClassifier.ts`
+- `src/research/PersistentStrategyOutcomeStore.ts`
 - `src/research/RuntimeStrategyFeatureAdapter.ts`
 - `src/research/RuntimeWhaleFeatureAdapter.ts`
 - `src/research/StrategyShadowRuntime.ts`
+
+### Research and validation
+
 - `src/research/frozenStrategyEvaluation.ts`
 - `src/research/strategyEvaluationDefinition.ts`
 - `src/research/strategyReplay.ts`
@@ -99,20 +178,29 @@ Status: implementation and GitHub CI validation complete; local Windows pre-merg
 - `src/research/strategyRobustnessAnalysis.ts`
 - `src/research/walkForwardValidation.ts`
 - `src/research/whaleIncrementalValueResearch.ts`
+
+### Candidate architecture
+
+- `src/confirmation/WhaleConfirmationEngine.ts`
 - `src/selection/CandidatePipeline.ts`
 - `src/strategies/Strategy.ts`
+- `src/strategies/StrategyCandidate.ts`
 - `src/strategies/StrategyRegistry.ts`
 - `src/strategies/TrendContinuationStrategy.ts`
+
+### Tools and tests
+
 - `src/tools/initializeFrozenStrategyEvaluation.ts`
 - `src/tools/runFrozenStrategyEvaluation.ts`
 - `test/FrozenStrategyEvaluation.test.ts`
+- `test/PersistentStrategyOutcomeStore.test.ts`
+- `test/StrategyQualificationPipeline.test.ts`
 - `test/StrategyReplayValidation.test.ts`
 - `test/StrategyRuntimeIntegration.test.ts`
 - `test/TrendContinuationStrategy.test.ts`
 - `test/WhaleConfirmationEngine.test.ts`
-- `test/StrategyQualificationPipeline.test.ts`
 
-## Modified files
+## Files modified
 
 - `package.json`
 - `src/index.ts`
@@ -125,15 +213,48 @@ Status: implementation and GitHub CI validation complete; local Windows pre-merg
 - `docs/r21-strategy-redesign.md`
 - `docs/phase-r-completion-report.md`
 
-## Removed files
+## Files removed
 
-None. Repository and branch inspection did not establish that an active tested source file or production dependency could be deleted without risking supported behavior. Obsolete historical branches were excluded rather than copied into the active architecture.
+None.
 
-## Operational workflow
+Repository and branch inspection did not establish that an active tested file or production dependency could be deleted without risking supported behavior. Obsolete branch implementations were excluded rather than copied into the current architecture.
 
-### Validate the implementation
+## Performance considerations
+
+- Strategy evaluation runs on the summary cadence, not on every order-book update.
+- Near-touch depth uses a bounded number of levels per side.
+- Stateful event deduplication suppresses repeated same-event research work.
+- Append-only writers are opened lazily.
+- Pending-state writes use an atomic temporary-file replacement.
+- Recorder failures are isolated from the existing detector.
+- Deterministic bootstrap work runs offline rather than in the live market-data loop.
+- Flush-after-each-record favors evidence integrity over maximum write throughput.
+
+## Validation results
+
+GitHub Actions validation on Node.js 24 completed successfully at the final implementation head:
+
+- `npm ci`: passed,
+- dependency audit: 0 vulnerabilities,
+- TypeScript type checking: passed,
+- ESLint: passed,
+- unit and integration tests: 256 files passed, 1,486 tests passed,
+- production TypeScript build: passed,
+- CI workflow: passed,
+- profitability and dashboard validation workflow: passed,
+- R16-R20 trading-research readiness workflow: passed.
+
+The integrated R22-R28 simulation is covered by the test suite. Passing synthetic tests validates architecture, determinism, and safety behavior; it does not establish market profitability.
+
+Local Windows validation remains mandatory because the operational environment uses CMD and `npm.cmd`.
+
+## Local pre-merge validation
 
 ```cmd
+cd /d "C:\Users\Ellan Jude\Desktop\okx-whale-detector - Copy"
+git checkout feature/r21-strategy-redesign
+git fetch origin
+git merge --ff-only origin/feature/r21-strategy-redesign
 npm.cmd ci
 npm.cmd run strategy:validate
 npm.cmd run check
@@ -142,13 +263,17 @@ git diff --check
 git status
 ```
 
-### Initialize a frozen paper evaluation
+Do not merge unless every command passes and the working tree is clean.
+
+## Frozen paper-evaluation workflow
+
+Initialize from a clean committed worktree:
 
 ```cmd
 npm.cmd run strategy:evaluation:init -- strategy-eval-YYYY-MM-DD-v1
 ```
 
-### Collect directly into the frozen evaluation directory
+Collect into that exact frozen directory:
 
 ```cmd
 set STRATEGY_RESEARCH_ENABLED=true
@@ -156,58 +281,31 @@ set STRATEGY_RESEARCH_DIRECTORY=data\strategy-evaluations\strategy-eval-YYYY-MM-
 npm.cmd run dev
 ```
 
-The 60-minute outcome resolver records a candidate at the first later public midpoint observation at or after the frozen holding horizon.
-
-### Generate the frozen report
+Generate the report:
 
 ```cmd
 npm.cmd run strategy:evaluation:run -- strategy-eval-YYYY-MM-DD-v1
 ```
 
-## Performance considerations
-
-- Strategy evaluation runs on the existing throttled summary cadence rather than every order-book message.
-- Candidate deduplication limits repeated same-event research work.
-- Append-only writers are opened lazily.
-- Shadow recorder failures are isolated from the existing detector.
-- Flush-after-each-record favors research integrity over maximum write throughput and can be disabled only before a non-frozen exploratory run.
-- Block-bootstrap iterations are deterministic and run offline rather than inside the live market-data loop.
-
-## Validation results
-
-GitHub CI passed on the feature branch using Node.js 24:
-
-- dependency installation: passed
-- npm audit during `npm ci`: 0 vulnerabilities
-- TypeScript type checking: passed
-- ESLint: passed
-- unit and integration tests: 255 files passed, 1,480 tests passed
-- production TypeScript build: passed
-- R16-R20 trading-research readiness workflow: passed
-- profitability and dashboard validation workflow: passed
-
-The integrated R22-R28 simulation is covered by the passing test suite. Local Windows validation remains required because the user runs the project with CMD and `npm.cmd`.
-
-A passing synthetic simulation validates architecture, determinism, and execution safety. It is not evidence that the market strategy is profitable.
-
 ## Remaining risks
 
-- The initial trend thresholds are hypotheses and may fail empirical testing.
-- Public trade-flow imbalance is short-lived and sensitive to the configured lookback.
-- Visible depth can change quickly and displayed liquidity can be cancelled.
-- Absorption remains neutral in the runtime whale adapter until a validated feature source is connected.
-- In-memory pending outcomes are lost if the process exits before the holding horizon; long collection sessions should be stopped only after allowing pending observations to mature, or pending-state persistence should be added before unattended production research.
-- Fee and slippage scenarios are frozen assumptions, not guaranteed realized costs.
-- GitHub Actions reported a deprecation warning for JavaScript actions that currently target the Node.js 20 action runtime while the runner forces Node.js 24. The repository application itself type-checks, tests, and builds on Node.js 24.
+- The initial trend rules and thresholds are hypotheses, not demonstrated alpha.
+- Public aggressive-flow imbalance is short-lived and depends on the configured lookback.
+- Visible order-book liquidity may be cancelled and remains an imperfect liquidity proxy.
+- Runtime absorption remains neutral until a validated feature source is connected.
+- Pending outcomes survive restarts, but a process that never reconnects cannot obtain a later public midpoint.
+- Fee, spread, and slippage scenarios are frozen assumptions rather than guaranteed realized costs.
+- The current strategy family is intentionally limited; regime coverage may be sparse.
+- GitHub Actions reports a platform warning for actions that still target the older Node action runtime while the runner executes Node.js 24. Application checks and builds pass on Node.js 24.
 
 ## Recommended future work
 
-1. Persist and resume pending strategy outcomes across process restarts.
-2. Add a second independent strategy family only after the trend strategy has a complete frozen result.
-3. Calibrate cost scenarios from measured spread and slippage distributions.
-4. Add MFE and MAE path outcomes for qualified candidates.
-5. Compare base, whale-supported, neutral, and contradicted groups only after each frozen group reaches its sample requirement.
-6. Keep leverage, compounding, testnet execution, and live execution disabled.
+1. Run one complete frozen paper evaluation of `TREND_CONTINUATION_V1` before adding another strategy family.
+2. Calibrate cost scenarios from measured public spread distributions and conservative hypothetical slippage models.
+3. Add MFE and MAE path outcomes without changing the frozen primary outcome.
+4. Add a second independent strategy ID only after the first strategy has an untouched final result.
+5. Retain whale information only when sufficient out-of-sample evidence demonstrates incremental value.
+6. Keep leverage, compounding, private trading APIs, testnet execution, and live execution disabled.
 
 ## Permanent safety state
 
